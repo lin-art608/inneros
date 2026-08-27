@@ -168,7 +168,65 @@ body {
 .nav-item svg { width:18px; height:18px; flex-shrink:0; }
 .nav-item .nav-label { flex:1; }
 .nav-item .nav-cn { font-size:11px; color:var(--text-tertiary); font-weight:400; }
+
+/* Nav Groups (二级菜单) */
+.nav-group { margin-bottom:4px; }
+.nav-group-header {
+  display:flex; align-items:center; gap:12px; padding:10px 12px;
+  border-radius:var(--radius-sm); font-size:14px; font-weight:600;
+  color:var(--text); cursor:pointer; transition:all 0.2s ease;
+  border:none; background:none; text-align:left; width:100%; font-family:var(--font-sans);
+}
+.nav-group-header:hover { background:var(--bg-subtle); }
+.nav-group-header svg { width:18px; height:18px; flex-shrink:0; }
+.nav-group-header .nav-label { flex:1; }
+.nav-group-header .nav-cn { font-size:11px; color:var(--text-tertiary); font-weight:400; }
+.nav-group-header .nav-chevron { width:14px; height:14px; flex-shrink:0; transition:transform 0.25s ease; opacity:0.5; }
+.nav-group.open .nav-chevron { transform:rotate(90deg); }
+.nav-subitems {
+  max-height:0; overflow:hidden; transition:max-height 0.3s ease;
+  padding-left:20px;
+}
+.nav-group.open .nav-subitems { max-height:400px; }
+.nav-subitems .nav-item { padding:8px 12px; font-size:13px; font-weight:400; }
+.nav-subitems .nav-item .nav-label { font-size:13px; }
 .nav-divider { height:1px; background:var(--border); margin:16px 0; }
+
+/* Resources Page */
+.res-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:20px; }
+.res-card {
+  background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius);
+  padding:24px; transition:all 0.25s ease; cursor:pointer; text-decoration:none; color:inherit; display:block;
+}
+.res-card:hover { border-color:var(--border-strong); box-shadow:var(--shadow); transform:translateY(-2px); }
+.res-card-icon { width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:22px; margin-bottom:16px; }
+.res-card-title { font-size:16px; font-weight:600; margin-bottom:6px; }
+.res-card-desc { font-size:13px; color:var(--text-secondary); line-height:1.5; margin-bottom:12px; }
+.res-card-meta { font-size:11px; color:var(--text-tertiary); display:flex; align-items:center; gap:8px; }
+.res-card-tag { padding:2px 8px; border-radius:4px; background:var(--bg-subtle); font-size:10px; font-weight:500; }
+.res-section-title { font-family:var(--font-serif); font-size:20px; font-weight:500; margin:32px 0 16px; }
+.res-link-list { display:flex; flex-direction:column; gap:8px; }
+.res-link-item {
+  display:flex; align-items:center; gap:12px; padding:14px 16px;
+  background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-sm);
+  text-decoration:none; color:inherit; transition:all 0.2s ease;
+}
+.res-link-item:hover { border-color:var(--border-strong); box-shadow:var(--shadow); }
+.res-link-favicon { width:28px; height:28px; border-radius:8px; background:var(--bg-subtle); display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+.res-link-info { flex:1; min-width:0; }
+.res-link-title { font-size:14px; font-weight:600; }
+.res-link-url { font-size:11px; color:var(--text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.res-link-arrow { color:var(--text-tertiary); font-size:18px; }
+
+/* Knowledge & AI Assistant */
+.placeholder-page { text-align:center; padding:80px 20px; }
+.placeholder-icon { font-size:64px; margin-bottom:24px; opacity:0.15; }
+.placeholder-title { font-family:var(--font-serif); font-size:28px; font-weight:500; margin-bottom:12px; }
+.placeholder-desc { font-size:15px; color:var(--text-secondary); line-height:1.6; max-width:480px; margin:0 auto 32px; }
+.placeholder-features { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; max-width:600px; margin:0 auto; }
+.placeholder-feature { padding:8px 16px; border-radius:20px; background:var(--bg-subtle); font-size:13px; color:var(--text-secondary); border:1px solid var(--border); }
+.placeholder-cta { display:inline-block; padding:12px 32px; border-radius:var(--radius-sm); background:var(--text); color:var(--bg); font-size:15px; font-weight:600; border:none; cursor:pointer; font-family:var(--font-sans); transition:opacity 0.2s ease; margin-top:8px; }
+.placeholder-cta:hover { opacity:0.85; }
 .sidebar-footer { padding:0 8px; }
 .user-card {
   display:flex; align-items:center; gap:10px; padding:10px 12px;
@@ -466,6 +524,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 @media (max-width: 1024px) {
   .content { padding:40px 32px; }
   .poster-wall { grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); }
+  .res-grid { grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); }
 }
 @media (max-width: 768px) {
   .sidebar { transform:translateX(-100%); width:280px; }
@@ -478,6 +537,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
   .detail-hero { flex-direction:column; }
   .detail-poster { width:140px; }
   .poster-wall { grid-template-columns:repeat(auto-fill, minmax(110px, 1fr)); gap:16px; }
+  .res-grid { grid-template-columns:1fr; }
   .capture-trigger { bottom:20px; right:20px; }
   .type-selector { grid-template-columns:repeat(4, 1fr); }
   .books-grid { grid-template-columns:1fr; }
@@ -494,8 +554,8 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <div class="auth-screen" id="auth-screen" style="display:none;">
   <div class="auth-card">
     <div class="auth-brand">
-      <div class="auth-brand-title">Memory OS</div>
-      <div class="auth-brand-sub">Personal Archive</div>
+      <div class="auth-brand-title">InnerOS</div>
+      <div class="auth-brand-sub">Personal Digital OS</div>
     </div>
     <div class="auth-tabs">
       <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">登录</button>
@@ -543,42 +603,93 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <div class="brand-title">Memory OS</div>
-      <div class="brand-sub">Personal Archive</div>
+      <div class="brand-title">InnerOS</div>
+      <div class="brand-sub">Personal Digital OS</div>
     </div>
     <nav class="nav">
-      <button class="nav-item active" data-page="today" onclick="navigate('today')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <span class="nav-label">Today</span><span class="nav-cn">今天</span>
-      </button>
-      <button class="nav-item" data-page="timeline" onclick="navigate('timeline')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
-        <span class="nav-label">Timeline</span><span class="nav-cn">时间线</span>
-      </button>
-      <button class="nav-item" data-page="library" onclick="navigate('library')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
-        <span class="nav-label">Library</span><span class="nav-cn">收藏</span>
-      </button>
-      <button class="nav-item" data-page="search" onclick="navigate('search')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <span class="nav-label">Search</span><span class="nav-cn">搜索</span>
-      </button>
+      <!-- Memory Group -->
+      <div class="nav-group open" id="nav-group-memory">
+        <button class="nav-group-header" onclick="toggleNavGroup('memory')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+          <span class="nav-label">Memory</span><span class="nav-cn">记忆</span>
+          <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <div class="nav-subitems" id="nav-sub-memory">
+          <button class="nav-item active" data-page="today" onclick="navigate('today')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span class="nav-label">Today</span><span class="nav-cn">今天</span>
+          </button>
+          <button class="nav-item" data-page="timeline" onclick="navigate('timeline')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+            <span class="nav-label">Timeline</span><span class="nav-cn">时间线</span>
+          </button>
+          <button class="nav-item" data-page="library" onclick="navigate('library')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+            <span class="nav-label">Library</span><span class="nav-cn">收藏</span>
+          </button>
+          <button class="nav-item" data-page="search" onclick="navigate('search')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span class="nav-label">Search</span><span class="nav-cn">搜索</span>
+          </button>
+          <button class="nav-item" data-page="onthisday" onclick="navigate('onthisday')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span class="nav-label">On This Day</span><span class="nav-cn">那年今日</span>
+          </button>
+          <button class="nav-item" data-page="random" onclick="navigate('random')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+            <span class="nav-label">Random</span><span class="nav-cn">随机回忆</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Resources Group -->
+      <div class="nav-group" id="nav-group-resources">
+        <button class="nav-group-header" onclick="toggleNavGroup('resources')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+          <span class="nav-label">Resources</span><span class="nav-cn">资源整合</span>
+          <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <div class="nav-subitems" id="nav-sub-resources">
+          <button class="nav-item" data-page="res-cs" onclick="navigate('res-cs')">
+            <span class="nav-label">CS Esports</span><span class="nav-cn">CS赛事</span>
+          </button>
+          <button class="nav-item" data-page="res-football" onclick="navigate('res-football')">
+            <span class="nav-label">Football</span><span class="nav-cn">足球</span>
+          </button>
+          <button class="nav-item" data-page="res-ai" onclick="navigate('res-ai')">
+            <span class="nav-label">AI Tools</span><span class="nav-cn">AI工具</span>
+          </button>
+          <button class="nav-item" data-page="res-links" onclick="navigate('res-links')">
+            <span class="nav-label">Quick Links</span><span class="nav-cn">常用资源</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Knowledge -->
+      <div class="nav-group" id="nav-group-knowledge">
+        <button class="nav-group-header" onclick="navigate('knowledge')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0112 4.5v15a2.5 2.5 0 00-2.5-2.5H4V2z"/><path d="M14.5 2A2.5 2.5 0 0012 4.5v15a2.5 2.5 0 012.5-2.5H20V2z"/></svg>
+          <span class="nav-label">Knowledge</span><span class="nav-cn">知识库</span>
+        </button>
+      </div>
+
+      <!-- AI Assistant -->
+      <div class="nav-group" id="nav-group-ai">
+        <button class="nav-group-header" onclick="navigate('ai-assistant')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 00-3 3v1H7a3 3 0 00-3 3v3H3a1 1 0 100 2h1v3a3 3 0 003 3h2v1a3 3 0 006 0v-1h2a3 3 0 003-3v-3h1a1 1 0 100-2h-1V9a3 3 0 00-3-3h-2V5a3 3 0 00-3-3z"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/></svg>
+          <span class="nav-label">AI Assistant</span><span class="nav-cn">AI助手</span>
+        </button>
+      </div>
+
       <div class="nav-divider"></div>
-      <button class="nav-item" data-page="onthisday" onclick="navigate('onthisday')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        <span class="nav-label">On This Day</span><span class="nav-cn">那年今日</span>
-      </button>
-      <button class="nav-item" data-page="random" onclick="navigate('random')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-        <span class="nav-label">Random</span><span class="nav-cn">随机回忆</span>
-      </button>
+
       <button class="nav-item" data-page="settings" onclick="navigate('settings')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         <span class="nav-label">Settings</span><span class="nav-cn">设置</span>
       </button>
     </nav>
     <div class="sidebar-footer">
-      <div style="font-size:11px;color:var(--text-tertiary);padding:8px 12px;text-align:center;line-height:1.5;">本地存储<br>数据不会离开你的设备</div>
+      <div style="font-size:11px;color:var(--text-tertiary);padding:8px 12px;text-align:center;line-height:1.5;">InnerOS v0.1 · 本地存储<br>数据不会离开你的设备</div>
       <button class="theme-toggle" onclick="toggleTheme()">
         <svg id="theme-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
         <span id="theme-label">Dark Mode</span>

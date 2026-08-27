@@ -346,11 +346,28 @@ function sortEntries(entries) {
 }
 
 // === Navigation ===
+function toggleNavGroup(group) {
+  const el = document.getElementById(`nav-group-${group}`);
+  if (el) el.classList.toggle('open');
+}
+
 async function navigate(page) {
   currentPage = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const navEl = document.querySelector(`[data-page="${page}"]`);
   if (navEl) navEl.classList.add('active');
+
+  // Auto-expand the parent group when navigating to a sub-item
+  const groupMap = {
+    today:'memory', timeline:'memory', library:'memory', search:'memory',
+    onthisday:'memory', random:'memory',
+    'res-cs':'resources', 'res-football':'resources', 'res-ai':'resources', 'res-links':'resources'
+  };
+  if (groupMap[page]) {
+    const grp = document.getElementById(`nav-group-${groupMap[page]}`);
+    if (grp && !grp.classList.contains('open')) grp.classList.add('open');
+  }
+
   const content = document.getElementById('content');
   content.innerHTML = '<div style="text-align:center;padding:60px;color:var(--text-tertiary);">加载中...</div>';
   content.classList.remove('fade-in');
@@ -364,8 +381,272 @@ async function navigate(page) {
     case 'onthisday': await renderOnThisDay(); break;
     case 'random': await renderRandom(); break;
     case 'settings': await renderSettings(); break;
+    case 'res-cs': renderResourceCS(); break;
+    case 'res-football': renderResourceFootball(); break;
+    case 'res-ai': renderResourceAI(); break;
+    case 'res-links': renderResourceLinks(); break;
+    case 'knowledge': renderKnowledge(); break;
+    case 'ai-assistant': renderAIAssistant(); break;
   }
   closeSidebar();
+}
+
+// === Resources: CS Esports ===
+function renderResourceCS() {
+  const links = [
+    { title:'HLTV', url:'https://www.hltv.org', icon:'🏆', desc:'CS2赛事排名、比赛日程、选手数据' },
+    { title:'Liquipedia CS', url:'https://liquipedia.net/counterstrike', icon:'📖', desc:'CS赛事百科、战队信息、选手资料' },
+    { title:'FACEIT', url:'https://www.faceit.com', icon:'🎮', desc:'CS2竞技平台，排位赛和锦标赛' },
+    { title:'ESL Play', url:'https://play.esl.com', icon:'⚡', desc:'ESL联赛报名和比赛管理' },
+    { title:'CS2 Demo', url:'https://www.hltv.org/matches', icon:'📊', desc:'比赛录像下载和观看' },
+    { title:'Steam CS2', url:'https://store.steampowered.com/app/730/CounterStrike_2', icon:'🛒', desc:'CS2 Steam商店页面' },
+  ];
+  let html = `
+    <div class="page-header">
+      <div class="page-title">CS Esports · CS赛事</div>
+      <div class="scale-switcher">
+        <button class="scale-btn active" onclick="window.open('https://www.hltv.org/matches','_blank')">今日比赛</button>
+        <button class="scale-btn" onclick="window.open('https://www.hltv.org/events','_blank')">赛事列表</button>
+        <button class="scale-btn" onclick="window.open('https://www.hltv.org/ranking/teams','_blank')">战队排名</button>
+      </div>
+    </div>
+    <div class="res-grid">`;
+  links.forEach(l => {
+    html += `<a class="res-card" href="${l.url}" target="_blank" rel="noopener">
+      <div class="res-card-icon" style="background:rgba(107,91,149,0.12)">${l.icon}</div>
+      <div class="res-card-title">${l.title}</div>
+      <div class="res-card-desc">${l.desc}</div>
+      <div class="res-card-meta"><span class="res-card-tag">CS2</span><span>外部链接</span></div>
+    </a>`;
+  });
+  html += `</div>
+    <div class="res-section-title">快速入口</div>
+    <div class="res-link-list">
+      <a class="res-link-item" href="https://www.hltv.org/matches" target="_blank" rel="noopener">
+        <div class="res-link-favicon">📺</div>
+        <div class="res-link-info"><div class="res-link-title">今日比赛日程</div><div class="res-link-url">hltv.org/matches</div></div>
+        <span class="res-link-arrow">→</span>
+      </a>
+      <a class="res-link-item" href="https://www.hltv.org/events" target="_blank" rel="noopener">
+        <div class="res-link-favicon">🏅</div>
+        <div class="res-link-info"><div class="res-link-title">正在进行的大赛</div><div class="res-link-url">hltv.org/events</div></div>
+        <span class="res-link-arrow">→</span>
+      </a>
+      <a class="res-link-item" href="https://www.hltv.org/stats" target="_blank" rel="noopener">
+        <div class="res-link-favicon">📈</div>
+        <div class="res-link-info"><div class="res-link-title">选手数据统计</div><div class="res-link-url">hltv.org/stats</div></div>
+        <span class="res-link-arrow">→</span>
+      </a>
+    </div>`;
+  document.getElementById('content').innerHTML = html;
+}
+
+// === Resources: Football ===
+function renderResourceFootball() {
+  const links = [
+    { title:'懂球帝', url:'https://www.dongqiudi.com', icon:'⚽', desc:'足球新闻、比分、赛事数据' },
+    { title:'Transfermarkt', url:'https://www.transfermarkt.com', icon:'💸', desc:'球员身价、转会信息、市场价值' },
+    { title:'Sofascore', url:'https://www.sofascore.com', icon:'📊', desc:'实时比分、比赛详情、球员评分' },
+    { title:'FIFA', url:'https://www.fifa.com', icon:'🏆', desc:'国际足联赛事、排名、规则' },
+    { title:'UEFA', url:'https://www.uefa.com', icon:'🇪🇺', desc:'欧冠、欧联、欧洲国家联赛' },
+    { title:'Premier League', url:'https://www.premierleague.com', icon:'🦁', desc:'英超联赛官方赛事和数据' },
+  ];
+  let html = `
+    <div class="page-header">
+      <div class="page-title">Football · 足球</div>
+      <div class="scale-switcher">
+        <button class="scale-btn active" onclick="window.open('https://www.dongqiudi.com/schedule','_blank')">赛程</button>
+        <button class="scale-btn" onclick="window.open('https://www.sofascore.com','_blank')">实时比分</button>
+        <button class="scale-btn" onclick="window.open('https://www.transfermarkt.com','_blank')">转会</button>
+      </div>
+    </div>
+    <div class="res-grid">`;
+  links.forEach(l => {
+    html += `<a class="res-card" href="${l.url}" target="_blank" rel="noopener">
+      <div class="res-card-icon" style="background:rgba(90,139,173,0.12)">${l.icon}</div>
+      <div class="res-card-title">${l.title}</div>
+      <div class="res-card-desc">${l.desc}</div>
+      <div class="res-card-meta"><span class="res-card-tag">足球</span><span>外部链接</span></div>
+    </a>`;
+  });
+  html += `</div>
+    <div class="res-section-title">五大联赛</div>
+    <div class="res-grid">
+      <a class="res-card" href="https://www.premierleague.com" target="_blank" rel="noopener">
+        <div class="res-card-icon" style="background:rgba(201,49,49,0.12)">🏴</div>
+        <div class="res-card-title">英超 Premier League</div>
+        <div class="res-card-desc">英格兰超级联赛</div>
+      </a>
+      <a class="res-card" href="https://www.laliga.com" target="_blank" rel="noopener">
+        <div class="res-card-icon" style="background:rgba(230,126,34,0.12)">🇪🇸</div>
+        <div class="res-card-title">西甲 La Liga</div>
+        <div class="res-card-desc">西班牙甲级联赛</div>
+      </a>
+      <a class="res-card" href="https://www.bundesliga.com" target="_blank" rel="noopener">
+        <div class="res-card-icon" style="background:rgba(218,0,0,0.12)">🇩🇪</div>
+        <div class="res-card-title">德甲 Bundesliga</div>
+        <div class="res-card-desc">德国甲级联赛</div>
+      </a>
+      <a class="res-card" href="https://www.legaseriea.it" target="_blank" rel="noopener">
+        <div class="res-card-icon" style="background:rgba(0,146,59,0.12)">🇮🇹</div>
+        <div class="res-card-title">意甲 Serie A</div>
+        <div class="res-card-desc">意大利甲级联赛</div>
+      </a>
+      <a class="res-card" href="https://www.ligue1.com" target="_blank" rel="noopener">
+        <div class="res-card-icon" style="background:rgba(0,35,149,0.12)">🇫🇷</div>
+        <div class="res-card-title">法甲 Ligue 1</div>
+        <div class="res-card-desc">法国甲级联赛</div>
+      </a>
+    </div>`;
+  document.getElementById('content').innerHTML = html;
+}
+
+// === Resources: AI Tools ===
+function renderResourceAI() {
+  const links = [
+    { title:'ChatGPT', url:'https://chat.openai.com', icon:'💬', desc:'OpenAI GPT对话助手，写作、编程、分析' },
+    { title:'Claude', url:'https://claude.ai', icon:'🤖', desc:'Anthropic Claude AI助手，长文本分析' },
+    { title:'Midjourney', url:'https://www.midjourney.com', icon:'🎨', desc:'AI图像生成，高质量艺术创作' },
+    { title:'Stable Diffusion', url:'https://stability.ai', icon:'🖼️', desc:'开源AI图像生成框架' },
+    { title:'Cursor', url:'https://cursor.com', icon:'📝', desc:'AI代码编辑器，智能编程辅助' },
+    { title:'Perplexity', url:'https://www.perplexity.ai', icon:'🔍', desc:'AI搜索引擎，实时信息检索' },
+    { title:'Hugging Face', url:'https://huggingface.co', icon:'🤗', desc:'AI模型社区，开源模型库' },
+    { title:'Replicate', url:'https://replicate.com', icon:'⚙️', desc:'AI模型托管和API调用平台' },
+    { title:'Suno', url:'https://suno.com', icon:'🎵', desc:'AI音乐生成工具' },
+    { title:'Runway', url:'https://runwayml.com', icon:'🎬', desc:'AI视频生成和编辑工具' },
+    { title:'ElevenLabs', url:'https://elevenlabs.io', icon:'🔊', desc:'AI语音合成和克隆' },
+    { title:'Kimi', url:'https://kimi.moonshot.cn', icon:'🌙', desc:'月之暗面Kimi，中文AI助手' },
+  ];
+  let html = `
+    <div class="page-header">
+      <div class="page-title">AI Tools · AI工具</div>
+      <div class="scale-switcher">
+        <button class="scale-btn active" data-cat="all">全部</button>
+        <button class="scale-btn" data-cat="chat">对话</button>
+        <button class="scale-btn" data-cat="image">图像</button>
+        <button class="scale-btn" data-cat="code">编程</button>
+        <button class="scale-btn" data-cat="media">音视频</button>
+      </div>
+    </div>
+    <div class="res-grid">`;
+  links.forEach(l => {
+    html += `<a class="res-card" href="${l.url}" target="_blank" rel="noopener">
+      <div class="res-card-icon" style="background:rgba(139,115,85,0.12)">${l.icon}</div>
+      <div class="res-card-title">${l.title}</div>
+      <div class="res-card-desc">${l.desc}</div>
+      <div class="res-card-meta"><span class="res-card-tag">AI</span><span>外部链接</span></div>
+    </a>`;
+  });
+  html += `</div>`;
+  document.getElementById('content').innerHTML = html;
+}
+
+// === Resources: Quick Links ===
+function renderResourceLinks() {
+  const categories = [
+    {
+      title: '开发工具',
+      links: [
+        { title:'GitHub', url:'https://github.com', icon:'🐙' },
+        { title:'Stack Overflow', url:'https://stackoverflow.com', icon:'📚' },
+        { title:'MDN Web Docs', url:'https://developer.mozilla.org', icon:'📖' },
+        { title:'VS Code', url:'https://code.visualstudio.com', icon:'💻' },
+        { title:'Vercel', url:'https://vercel.com', icon:'▲' },
+        { title:'Cloudflare', url:'https://www.cloudflare.com', icon:'☁️' },
+      ]
+    },
+    {
+      title: '设计资源',
+      links: [
+        { title:'Figma', url:'https://www.figma.com', icon:'🎨' },
+        { title:'Dribbble', url:'https://dribbble.com', icon:'🏀' },
+        { title:'Unsplash', url:'https://unsplash.com', icon:'📷' },
+        { title:'Google Fonts', url:'https://fonts.google.com', icon:'🔤' },
+        { title:'Coolors', url:'https://coolors.co', icon:'🌈' },
+        { title:'Iconfont', url:'https://www.iconfont.cn', icon:'⚡' },
+      ]
+    },
+    {
+      title: '效率工具',
+      links: [
+        { title:'Notion', url:'https://www.notion.so', icon:'📝' },
+        { title:'Obsidian', url:'https://obsidian.md', icon:'🌑' },
+        { title:'Excalidraw', url:'https://excalidraw.com', icon:'✏️' },
+        { title:'Tldraw', url:'https://www.tldraw.com', icon:'🖌️' },
+        { title:'Pastebin', url:'https://pastebin.com', icon:'📋' },
+        { title:'TinyURL', url:'https://tinyurl.com', icon:'🔗' },
+      ]
+    },
+    {
+      title: '资讯阅读',
+      links: [
+        { title:'Hacker News', url:'https://news.ycombinator.com', icon:'📰' },
+        { title:'Reddit', url:'https://www.reddit.com', icon:'👽' },
+        { title:'V2EX', url:'https://www.v2ex.com', icon:'💬' },
+        { title:'少数派', url:'https://sspai.com', icon:'📱' },
+        { title:'Product Hunt', url:'https://www.producthunt.com', icon:'🚀' },
+        { title:'TechCrunch', url:'https://techcrunch.com', icon:'🔬' },
+      ]
+    }
+  ];
+  let html = `
+    <div class="page-header">
+      <div class="page-title">Quick Links · 常用资源</div>
+    </div>`;
+  categories.forEach(cat => {
+    html += `<div class="res-section-title">${cat.title}</div><div class="res-link-list">`;
+    cat.links.forEach(l => {
+      html += `<a class="res-link-item" href="${l.url}" target="_blank" rel="noopener">
+        <div class="res-link-favicon">${l.icon}</div>
+        <div class="res-link-info"><div class="res-link-title">${l.title}</div><div class="res-link-url">${l.url.replace('https://','')}</div></div>
+        <span class="res-link-arrow">→</span>
+      </a>`;
+    });
+    html += `</div>`;
+  });
+  document.getElementById('content').innerHTML = html;
+}
+
+// === Knowledge Base ===
+function renderKnowledge() {
+  document.getElementById('content').innerHTML = `
+    <div class="placeholder-page">
+      <div class="placeholder-icon">📚</div>
+      <div class="placeholder-title">Knowledge Base · 知识库</div>
+      <div class="placeholder-desc">个人知识管理系统。将笔记、书摘、技术文档、学习资料统一管理，构建你的第二大脑。</div>
+      <div class="placeholder-features">
+        <span class="placeholder-feature">📝 Markdown笔记</span>
+        <span class="placeholder-feature">🏷️ 标签分类</span>
+        <span class="placeholder-feature">🔗 双向链接</span>
+        <span class="placeholder-feature">🔍 全文搜索</span>
+        <span class="placeholder-feature">📊 知识图谱</span>
+        <span class="placeholder-feature">📖 书摘管理</span>
+        <span class="placeholder-feature">💾 本地存储</span>
+        <span class="placeholder-feature">🔄 导入/导出</span>
+      </div>
+      <button class="placeholder-cta" onclick="showToast('知识库模块开发中，敬请期待')">即将上线</button>
+    </div>`;
+}
+
+// === AI Assistant ===
+function renderAIAssistant() {
+  document.getElementById('content').innerHTML = `
+    <div class="placeholder-page">
+      <div class="placeholder-icon">🤖</div>
+      <div class="placeholder-title">AI Assistant · AI助手</div>
+      <div class="placeholder-desc">你的私人AI助手。基于你的记忆数据，提供个性化建议、智能问答和自动化整理。记住你的一切，比你更懂你。</div>
+      <div class="placeholder-features">
+        <span class="placeholder-feature">💬 智能对话</span>
+        <span class="placeholder-feature">🧠 记忆检索</span>
+        <span class="placeholder-feature">📝 自动整理</span>
+        <span class="placeholder-feature">📊 数据分析</span>
+        <span class="placeholder-feature">🎯 个性化推荐</span>
+        <span class="placeholder-feature">🌐 多模型支持</span>
+        <span class="placeholder-feature">🔒 隐私优先</span>
+        <span class="placeholder-feature">⚡ 快速访问</span>
+      </div>
+      <button class="placeholder-cta" onclick="showToast('AI助手模块开发中，敬请期待')">即将上线</button>
+    </div>`;
 }
 
 // === Entry Card ===
