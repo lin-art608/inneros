@@ -393,23 +393,46 @@ async function navigate(page) {
 
 // === Resources: CS Esports ===
 function renderResourceCS() {
+  const majorEvents = [
+    { name:'IEM Cologne 2026', teams:'NAVI vs G2', date:'2026.08.30', prize:'$1,000,000', status:'即将开始', url:'https://www.hltv.org/events' },
+  ];
   const links = [
     { title:'HLTV', url:'https://www.hltv.org', icon:'🏆', desc:'CS2赛事排名、比赛日程、选手数据' },
     { title:'Liquipedia CS', url:'https://liquipedia.net/counterstrike', icon:'📖', desc:'CS赛事百科、战队信息、选手资料' },
     { title:'FACEIT', url:'https://www.faceit.com', icon:'🎮', desc:'CS2竞技平台，排位赛和锦标赛' },
     { title:'ESL Play', url:'https://play.esl.com', icon:'⚡', desc:'ESL联赛报名和比赛管理' },
-    { title:'CS2 Demo', url:'https://www.hltv.org/matches', icon:'📊', desc:'比赛录像下载和观看' },
-    { title:'Steam CS2', url:'https://store.steampowered.com/app/730/CounterStrike_2', icon:'🛒', desc:'CS2 Steam商店页面' },
   ];
   let html = `
     <div class="page-header">
-      <div class="page-title">CS Esports · CS赛事</div>
+      <div class="page-title">CS赛事 · CS Esports</div>
       <div class="scale-switcher">
         <button class="scale-btn active" onclick="window.open('https://www.hltv.org/matches','_blank')">今日比赛</button>
         <button class="scale-btn" onclick="window.open('https://www.hltv.org/events','_blank')">赛事列表</button>
         <button class="scale-btn" onclick="window.open('https://www.hltv.org/ranking/teams','_blank')">战队排名</button>
       </div>
-    </div>
+    </div>`;
+  majorEvents.forEach(m => {
+    const [t1, t2] = m.teams.split(' vs ');
+    html += `
+    <div class="featured-match" onclick="window.open('${m.url}','_blank')">
+      <div class="featured-match-tag">🔥 ${m.status} · ${m.prize}</div>
+      <div class="featured-match-title">${m.name}</div>
+      <div class="featured-match-teams">
+        <div class="featured-team">
+          <div class="featured-team-logo">🇺🇦</div>
+          <div class="featured-team-name">${t1}</div>
+        </div>
+        <div class="featured-vs">VS</div>
+        <div class="featured-team">
+          <div class="featured-team-logo">🇩🇪</div>
+          <div class="featured-team-name">${t2}</div>
+        </div>
+      </div>
+      <div class="featured-match-info">${m.date} · 点击查看详情</div>
+    </div>`;
+  });
+  html += `
+    <div class="res-section-title">赛事资源</div>
     <div class="res-grid">`;
   links.forEach(l => {
     html += `<a class="res-card" href="${l.url}" target="_blank" rel="noopener">
@@ -443,23 +466,40 @@ function renderResourceCS() {
 
 // === Resources: Football ===
 function renderResourceFootball() {
+  const leagues = [
+    { name:'英超', nameEn:'Premier League', flag:'🏴', desc:'英格兰超级联赛', url:'https://www.premierleague.com', color:'rgba(201,49,49,0.08)' },
+    { name:'西甲', nameEn:'La Liga', flag:'🇪🇸', desc:'西班牙甲级联赛', url:'https://www.laliga.com', color:'rgba(230,126,34,0.08)' },
+    { name:'德甲', nameEn:'Bundesliga', flag:'🇩🇪', desc:'德国甲级联赛', url:'https://www.bundesliga.com', color:'rgba(218,0,0,0.08)' },
+    { name:'意甲', nameEn:'Serie A', flag:'🇮🇹', desc:'意大利甲级联赛', url:'https://www.legaseriea.it', color:'rgba(0,146,59,0.08)' },
+    { name:'法甲', nameEn:'Ligue 1', flag:'🇫🇷', desc:'法国甲级联赛', url:'https://www.ligue1.com', color:'rgba(0,35,149,0.08)' },
+    { name:'欧冠', nameEn:'Champions League', flag:'🏆', desc:'欧洲冠军联赛', url:'https://www.uefa.com/uefachampionsleague', color:'rgba(0,46,98,0.08)' },
+  ];
   const links = [
     { title:'懂球帝', url:'https://www.dongqiudi.com', icon:'⚽', desc:'足球新闻、比分、赛事数据' },
     { title:'Transfermarkt', url:'https://www.transfermarkt.com', icon:'💸', desc:'球员身价、转会信息、市场价值' },
     { title:'Sofascore', url:'https://www.sofascore.com', icon:'📊', desc:'实时比分、比赛详情、球员评分' },
     { title:'FIFA', url:'https://www.fifa.com', icon:'🏆', desc:'国际足联赛事、排名、规则' },
-    { title:'UEFA', url:'https://www.uefa.com', icon:'🇪🇺', desc:'欧冠、欧联、欧洲国家联赛' },
-    { title:'Premier League', url:'https://www.premierleague.com', icon:'🦁', desc:'英超联赛官方赛事和数据' },
   ];
   let html = `
     <div class="page-header">
-      <div class="page-title">Football · 足球</div>
+      <div class="page-title">足球 · Football</div>
       <div class="scale-switcher">
         <button class="scale-btn active" onclick="window.open('https://www.dongqiudi.com/schedule','_blank')">赛程</button>
         <button class="scale-btn" onclick="window.open('https://www.sofascore.com','_blank')">实时比分</button>
         <button class="scale-btn" onclick="window.open('https://www.transfermarkt.com','_blank')">转会</button>
       </div>
     </div>
+    <div class="league-grid">`;
+  leagues.forEach(l => {
+    html += `<a class="league-card" href="${l.url}" target="_blank" rel="noopener" style="background:${l.color}">
+      <div class="league-card-flag">${l.flag}</div>
+      <div class="league-card-name">${l.name}</div>
+      <div class="league-card-name-en">${l.nameEn}</div>
+      <div class="league-card-desc">${l.desc}</div>
+    </a>`;
+  });
+  html += `</div>
+    <div class="res-section-title">数据资源</div>
     <div class="res-grid">`;
   links.forEach(l => {
     html += `<a class="res-card" href="${l.url}" target="_blank" rel="noopener">
@@ -470,32 +510,22 @@ function renderResourceFootball() {
     </a>`;
   });
   html += `</div>
-    <div class="res-section-title">五大联赛</div>
-    <div class="res-grid">
-      <a class="res-card" href="https://www.premierleague.com" target="_blank" rel="noopener">
-        <div class="res-card-icon" style="background:rgba(201,49,49,0.12)">🏴</div>
-        <div class="res-card-title">英超 Premier League</div>
-        <div class="res-card-desc">英格兰超级联赛</div>
+    <div class="res-section-title">快速入口</div>
+    <div class="res-link-list">
+      <a class="res-link-item" href="https://www.dongqiudi.com/schedule" target="_blank" rel="noopener">
+        <div class="res-link-favicon">📅</div>
+        <div class="res-link-info"><div class="res-link-title">今日赛程</div><div class="res-link-url">dongqiudi.com/schedule</div></div>
+        <span class="res-link-arrow">→</span>
       </a>
-      <a class="res-card" href="https://www.laliga.com" target="_blank" rel="noopener">
-        <div class="res-card-icon" style="background:rgba(230,126,34,0.12)">🇪🇸</div>
-        <div class="res-card-title">西甲 La Liga</div>
-        <div class="res-card-desc">西班牙甲级联赛</div>
+      <a class="res-link-item" href="https://www.sofascore.com" target="_blank" rel="noopener">
+        <div class="res-link-favicon">⚡</div>
+        <div class="res-link-info"><div class="res-link-title">实时比分</div><div class="res-link-url">sofascore.com</div></div>
+        <span class="res-link-arrow">→</span>
       </a>
-      <a class="res-card" href="https://www.bundesliga.com" target="_blank" rel="noopener">
-        <div class="res-card-icon" style="background:rgba(218,0,0,0.12)">🇩🇪</div>
-        <div class="res-card-title">德甲 Bundesliga</div>
-        <div class="res-card-desc">德国甲级联赛</div>
-      </a>
-      <a class="res-card" href="https://www.legaseriea.it" target="_blank" rel="noopener">
-        <div class="res-card-icon" style="background:rgba(0,146,59,0.12)">🇮🇹</div>
-        <div class="res-card-title">意甲 Serie A</div>
-        <div class="res-card-desc">意大利甲级联赛</div>
-      </a>
-      <a class="res-card" href="https://www.ligue1.com" target="_blank" rel="noopener">
-        <div class="res-card-icon" style="background:rgba(0,35,149,0.12)">🇫🇷</div>
-        <div class="res-card-title">法甲 Ligue 1</div>
-        <div class="res-card-desc">法国甲级联赛</div>
+      <a class="res-link-item" href="https://www.dongqiudi.com/live" target="_blank" rel="noopener">
+        <div class="res-link-favicon">🎥</div>
+        <div class="res-link-info"><div class="res-link-title">直播大厅</div><div class="res-link-url">dongqiudi.com/live</div></div>
+        <span class="res-link-arrow">→</span>
       </a>
     </div>`;
   document.getElementById('content').innerHTML = html;
@@ -519,7 +549,7 @@ function renderResourceAI() {
   ];
   let html = `
     <div class="page-header">
-      <div class="page-title">AI Tools · AI工具</div>
+      <div class="page-title">AI工具 · AI Tools</div>
       <div class="scale-switcher">
         <button class="scale-btn active" data-cat="all">全部</button>
         <button class="scale-btn" data-cat="chat">对话</button>
@@ -591,7 +621,7 @@ function renderResourceLinks() {
   ];
   let html = `
     <div class="page-header">
-      <div class="page-title">Quick Links · 常用资源</div>
+      <div class="page-title">常用资源 · Quick Links</div>
     </div>`;
   categories.forEach(cat => {
     html += `<div class="res-section-title">${cat.title}</div><div class="res-link-list">`;
@@ -689,7 +719,7 @@ async function renderToday() {
 // === Timeline ===
 async function renderTimeline() {
   document.getElementById('content').innerHTML = `
-    <div class="page-header"><div class="page-title">Timeline · 时间线</div>
+    <div class="page-header"><div class="page-title">时间线 · Timeline</div>
       <div class="scale-switcher">
         <button class="scale-btn" onclick="setScale('day')">日</button>
         <button class="scale-btn active" onclick="setScale('month')">月</button>
@@ -766,7 +796,7 @@ async function renderLibrary(tab) {
   const all = await dbGetAll();
   const c = { movie:all.filter(e=>e.type==='movie').length, book:all.filter(e=>e.type==='book').length, music:all.filter(e=>e.type==='music').length, game:all.filter(e=>e.type==='game').length, place:all.filter(e=>e.type==='place').length };
   document.getElementById('content').innerHTML = `
-    <div class="page-header"><div class="page-title">Library · 收藏</div></div>
+    <div class="page-header"><div class="page-title">收藏 · Library</div></div>
     <div class="lib-tabs">
       <button class="lib-tab ${tab==='movie'?'active':''}" onclick="renderLibraryTab('movie')">🎬 电影 <span class="count">${c.movie}</span></button>
       <button class="lib-tab ${tab==='book'?'active':''}" onclick="renderLibraryTab('book')">📖 书籍 <span class="count">${c.book}</span></button>
@@ -835,7 +865,7 @@ async function renderLibraryTab(tab) {
 // === Search ===
 function renderSearch() {
   document.getElementById('content').innerHTML = `
-    <div class="page-header"><div class="page-title">Search · 搜索</div></div>
+    <div class="page-header"><div class="page-title">搜索 · Search</div></div>
     <div class="search-container">
       <div class="search-box">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -872,7 +902,7 @@ function quickSearch(q) { document.getElementById('search-input').value = q; doS
 async function renderOnThisDay() {
   const all = await dbGetAll();
   const past = sortEntries(all.filter(e => { const d = getEntryDate(e); return d.endsWith('-08-27') && d !== '2026-08-27'; }));
-  let html = `<div class="page-header"><div class="page-title">On This Day · 那年今日</div></div><div style="font-size:14px;color:var(--text-secondary);margin-bottom:32px;">8月27日 · 时间纵向切片</div>`;
+  let html = `<div class="page-header"><div class="page-title">那年今日 · On This Day</div></div><div style="font-size:14px;color:var(--text-secondary);margin-bottom:32px;">8月27日 · 时间纵向切片</div>`;
   if (past.length === 0) html += '<div class="search-empty">还没有这一天的历史记录</div>';
   else { html += '<div class="today-entries">'; past.forEach((e,i) => { html += `<div class="fade-in fade-in-delay-${Math.min(i+1,4)}" onclick="openDetail(${e.id})">${renderEntryCard(e, true)}</div>`; }); html += '</div>'; }
   document.getElementById('content').innerHTML = html;
@@ -883,7 +913,7 @@ async function renderRandom() {
   const all = await dbGetAll();
   if (all.length === 0) { document.getElementById('content').innerHTML = '<div class="search-empty">还没有记忆记录</div>'; return; }
   const r = all[Math.floor(Math.random() * all.length)];
-  document.getElementById('content').innerHTML = `<div class="page-header"><div class="page-title">Random Memory · 随机回忆</div><button class="btn btn-ghost" onclick="renderRandom()">换一个 →</button></div><div style="font-size:14px;color:var(--text-secondary);margin-bottom:32px;">给你看看一个你可能已经忘记的时刻</div><div onclick="openDetail(${r.id})">${renderEntryCard(r, true)}</div>`;
+  document.getElementById('content').innerHTML = `<div class="page-header"><div class="page-title">随机回忆 · Random Memory</div><button class="btn btn-ghost" onclick="renderRandom()">换一个 →</button></div><div style="font-size:14px;color:var(--text-secondary);margin-bottom:32px;">给你看看一个你可能已经忘记的时刻</div><div onclick="openDetail(${r.id})">${renderEntryCard(r, true)}</div>`;
 }
 
 // === Settings ===
@@ -892,7 +922,7 @@ async function renderSettings() {
   const counts = {};
   all.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
   let html = `
-    <div class="page-header"><div class="page-title">Settings · 设置</div></div>
+    <div class="page-header"><div class="page-title">设置 · Settings</div></div>
     <div class="settings-section">
       <div class="section-label">数据统计</div>
       <div class="settings-card">
@@ -1145,7 +1175,7 @@ function toggleTheme() {
   const body = document.body;
   const isDark = body.getAttribute('data-theme') === 'dark';
   body.setAttribute('data-theme', isDark ? 'light' : 'dark');
-  document.getElementById('theme-label').textContent = isDark ? 'Dark Mode' : 'Light Mode';
+  document.getElementById('theme-label').textContent = isDark ? '深色模式' : '浅色模式';
   document.getElementById('theme-icon').innerHTML = isDark
     ? '<path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>'
     : '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
@@ -1162,6 +1192,32 @@ document.addEventListener('keydown', (e) => {
 });
 document.getElementById('capture-modal').addEventListener('click', function(e) { if (e.target === this) closeCapture(); });
 document.getElementById('confirm-overlay').addEventListener('click', function(e) { if (e.target === this) closeConfirm(); });
+
+// === Mobile Touch Gestures ===
+let touchStartX = 0, touchStartY = 0, touchEndX = 0, touchEndY = 0;
+document.addEventListener('touchstart', function(e) {
+  touchStartX = e.changedTouches[0].screenX;
+  touchStartY = e.changedTouches[0].screenY;
+}, { passive: true });
+document.addEventListener('touchend', function(e) {
+  touchEndX = e.changedTouches[0].screenX;
+  touchEndY = e.changedTouches[0].screenY;
+  handleSwipeGesture();
+}, { passive: true });
+function handleSwipeGesture() {
+  const deltaX = touchEndX - touchStartX;
+  const deltaY = touchEndY - touchStartY;
+  if (Math.abs(deltaX) < 60 || Math.abs(deltaY) > 80) return;
+  const sidebar = document.getElementById('sidebar');
+  const isOpen = sidebar.classList.contains('open');
+  if (deltaX > 0 && !isOpen && touchStartX < 40) {
+    sidebar.classList.add('open');
+    document.getElementById('overlay').classList.add('show');
+  } else if (deltaX < 0 && isOpen) {
+    sidebar.classList.remove('open');
+    document.getElementById('overlay').classList.remove('show');
+  }
+}
 
 // === Init ===
 (async function init() {
