@@ -1,0 +1,10 @@
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+
+/img/*
+  Cache-Control: public, max-age=86400
+
+/api/*
+  Cache-Control: no-cache
