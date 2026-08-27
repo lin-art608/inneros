@@ -1,0 +1,15 @@
+{
+  "name": "inneros",
+  "version": "0.1.0",
+  "private": true,
+  "description": "InnerOS - Personal Digital OS",
+  "scripts": {
+    "dev": "python server.py",
+    "build": "echo Static site no build step needed"
+  },
+  "cloudflare": {
+    "project": "inneros",
+    "buildCommand": "echo No build needed",
+    "outputDirectory": "."
+  }
+}
