@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
+<title>Personal Memory OS · 个人专属长期记忆空间</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Personal Memory OS — Phase 1 Data System
+   Editorial + Minimal + Personal
+   ============================================================ */
+:root {
+  --bg: #F7F5F0;
+  --bg-elevated: #FFFFFF;
+  --bg-subtle: #F0EDE7;
+  --text: #1C1C1C;
+  --text-secondary: #77736D;
+  --text-tertiary: #A8A29A;
+  --border: #E6E1D8;
+  --border-strong: #D4CFC5;
+  --accent: #8B7355;
+  --accent-soft: #C4A882;
+  --shadow: 0 1px 3px rgba(28,28,28,0.06), 0 4px 12px rgba(28,28,28,0.04);
+  --shadow-lg: 0 8px 30px rgba(28,28,28,0.10);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 20px;
+  --c-movie: #6B5B95;
+  --c-book: #88A096;
+  --c-music: #C97B63;
+  --c-game: #5A8BAD;
+  --c-place: #C9A961;
+  --c-event: #B07555;
+  --c-photo: #8B8B8B;
+  --font-sans: 'Inter', 'Noto Sans SC', sans-serif;
+  --font-serif: 'Cormorant Garamond', 'Noto Serif SC', serif;
+  --font-cn: 'Noto Sans SC', 'Inter', sans-serif;
+  --font-cn-serif: 'Noto Serif SC', 'Cormorant Garamond', serif;
+  --danger: #C75450;
+  --success: #5A8C5A;
+}
+[data-theme="dark"] {
+  --bg: #111111;
+  --bg-elevated: #1C1C1C;
+  --bg-subtle: #1A1A1A;
+  --text: #F3F1EC;
+  --text-secondary: #99948C;
+  --text-tertiary: #6B665E;
+  --border: #2A2724;
+  --border-strong: #3A352F;
+  --accent: #C4A882;
+  --accent-soft: #8B7355;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,0.4);
+  --danger: #E07070;
+  --success: #7AB07A;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 0.4s ease, color 0.4s ease;
+  overflow-x: hidden;
+}
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:var(--text-tertiary); }
+
+/* ============================================================
+   Auth Screen
+   ============================================================ */
+.auth-screen {
+  position:fixed; inset:0;
+  background:var(--bg);
+  display:flex; align-items:center; justify-content:center;
+  z-index:999;
+  padding:20px;
+}
+.auth-card {
+  width:100%; max-width:400px;
+  background:var(--bg-elevated);
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  padding:48px 40px;
+  box-shadow:var(--shadow-lg);
+}
+.auth-brand { text-align:center; margin-bottom:40px; }
+.auth-brand-title {
+  font-family:var(--font-serif);
+  font-size:32px; font-weight:600; letter-spacing:-0.5px;
+}
+.auth-brand-sub {
+  font-size:12px; color:var(--text-secondary);
+  letter-spacing:2px; text-transform:uppercase; margin-top:6px;
+}
+.auth-tabs {
+  display:flex; gap:0; margin-bottom:28px;
+  border-bottom:1px solid var(--border);
+}
+.auth-tab {
+  flex:1; padding:12px; font-size:14px; font-weight:500;
+  color:var(--text-secondary); cursor:pointer; border:none; background:none;
+  font-family:var(--font-sans); border-bottom:2px solid transparent;
+  transition:all 0.2s ease;
+}
+.auth-tab.active { color:var(--text); border-bottom-color:var(--text); }
+.auth-field { margin-bottom:16px; }
+.auth-label { font-size:12px; color:var(--text-secondary); margin-bottom:6px; font-weight:500; }
+.auth-input {
+  width:100%; padding:12px 14px; font-size:14px;
+  border:1px solid var(--border); border-radius:var(--radius-sm);
+  background:var(--bg); color:var(--text); font-family:var(--font-sans); outline:none;
+  transition:all 0.2s ease;
+}
+.auth-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(139,115,85,0.1); }
+.auth-btn {
+  width:100%; padding:14px; font-size:15px; font-weight:600;
+  border-radius:var(--radius-sm); border:none; cursor:pointer;
+  font-family:var(--font-sans); transition:all 0.2s ease; margin-top:8px;
+}
+.auth-btn-primary { background:var(--text); color:var(--bg); }
+.auth-btn-primary:hover { opacity:0.85; }
+.auth-btn-ghost { background:none; color:var(--text-secondary); border:1px solid var(--border); }
+.auth-btn-ghost:hover { color:var(--text); border-color:var(--border-strong); }
+.auth-divider {
+  display:flex; align-items:center; gap:12px; margin:24px 0;
+  font-size:12px; color:var(--text-tertiary);
+}
+.auth-divider::before, .auth-divider::after {
+  content:''; flex:1; height:1px; background:var(--border);
+}
+.auth-error {
+  color:var(--danger); font-size:13px; margin-top:12px; display:none;
+}
+.auth-error.show { display:block; }
+
+/* ============================================================
+   App Layout
+   ============================================================ */
+.app { display:flex; min-height:100vh; }
+.sidebar {
+  width:240px; flex-shrink:0; border-right:1px solid var(--border);
+  display:flex; flex-direction:column; padding:32px 20px;
+  position:fixed; top:0; left:0; bottom:0; background:var(--bg);
+  z-index:100; transition:transform 0.3s ease;
+}
+.brand { margin-bottom:32px; padding:0 8px; }
+.brand-title { font-family:var(--font-serif); font-size:24px; font-weight:600; letter-spacing:-0.5px; line-height:1.2; }
+.brand-sub { font-size:11px; color:var(--text-secondary); letter-spacing:1.5px; text-transform:uppercase; margin-top:4px; }
+.nav { flex:1; display:flex; flex-direction:column; gap:2px; }
+.nav-item {
+  display:flex; align-items:center; gap:12px; padding:10px 12px;
+  border-radius:var(--radius-sm); font-size:14px; font-weight:500;
+  color:var(--text-secondary); cursor:pointer; transition:all 0.2s ease;
+  border:none; background:none; text-align:left; width:100%; font-family:var(--font-sans);
+}
+.nav-item:hover { background:var(--bg-subtle); color:var(--text); }
+.nav-item.active { background:var(--bg-subtle); color:var(--text); font-weight:600; }
+.nav-item svg { width:18px; height:18px; flex-shrink:0; }
+.nav-item .nav-label { flex:1; }
+.nav-item .nav-cn { font-size:11px; color:var(--text-tertiary); font-weight:400; }
+.nav-divider { height:1px; background:var(--border); margin:16px 0; }
+.sidebar-footer { padding:0 8px; }
+.user-card {
+  display:flex; align-items:center; gap:10px; padding:10px 12px;
+  border-radius:var(--radius-sm); background:var(--bg-subtle); margin-bottom:8px;
+}
+.user-avatar {
+  width:32px; height:32px; border-radius:50%; background:var(--accent);
+  color:var(--bg); display:flex; align-items:center; justify-content:center;
+  font-size:14px; font-weight:600; flex-shrink:0;
+}
+.user-info-text { flex:1; min-width:0; }
+.user-name { font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.user-email { font-size:11px; color:var(--text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.theme-toggle {
+  display:flex; align-items:center; gap:8px; padding:8px 12px;
+  border-radius:var(--radius-sm); font-size:13px; color:var(--text-secondary);
+  cursor:pointer; border:none; background:none; width:100%; font-family:var(--font-sans);
+  transition:all 0.2s ease;
+}
+.theme-toggle:hover { background:var(--bg-subtle); color:var(--text); }
+.main { flex:1; margin-left:240px; min-height:100vh; display:flex; flex-direction:column; }
+.content { flex:1; padding:48px 56px; max-width:1200px; width:100%; }
+
+/* Mobile */
+.menu-toggle {
+  display:none; position:fixed; top:16px; left:16px; z-index:101;
+  width:40px; height:40px; border-radius:10px; border:1px solid var(--border);
+  background:var(--bg-elevated); cursor:pointer; align-items:center; justify-content:center;
+}
+.overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:99; }
+.overlay.show { display:block; }
+
+/* ============================================================
+   Today Page
+   ============================================================ */
+.today-header { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:48px; flex-wrap:wrap; gap:16px; }
+.today-date { font-family:var(--font-serif); font-size:32px; font-weight:500; letter-spacing:-0.5px; }
+.today-date .day { font-family:var(--font-cn); font-size:14px; color:var(--text-secondary); margin-left:12px; font-weight:400; }
+.today-stats { display:flex; gap:24px; font-size:13px; color:var(--text-secondary); }
+.today-stat strong { color:var(--text); font-weight:600; font-size:15px; }
+.today-entries { display:flex; flex-direction:column; gap:16px; position:relative; }
+.today-empty { text-align:center; padding:80px 20px; color:var(--text-secondary); }
+.today-empty-icon { font-size:48px; margin-bottom:16px; opacity:0.3; }
+.today-empty-text { font-size:16px; line-height:1.6; }
+.on-this-day { margin-top:64px; padding-top:32px; border-top:1px solid var(--border); }
+.section-label {
+  font-size:11px; letter-spacing:2px; text-transform:uppercase;
+  color:var(--text-tertiary); margin-bottom:20px; display:flex; align-items:center; gap:8px;
+}
+.section-label::after { content:''; flex:1; height:1px; background:var(--border); }
+
+/* ============================================================
+   Entry Card
+   ============================================================ */
+.entry-card {
+  display:flex; align-items:flex-start; gap:16px; padding:20px 24px;
+  background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius);
+  cursor:pointer; transition:all 0.25s ease; position:relative; overflow:hidden;
+}
+.entry-card:hover { border-color:var(--border-strong); box-shadow:var(--shadow); transform:translateY(-1px); }
+.entry-time { font-size:13px; font-weight:600; color:var(--text-secondary); font-variant-numeric:tabular-nums; min-width:48px; padding-top:2px; }
+.entry-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+.entry-body { flex:1; min-width:0; }
+.entry-title { font-size:15px; font-weight:600; margin-bottom:4px; line-height:1.4; }
+.entry-content-preview { font-size:13px; color:var(--text-secondary); line-height:1.5; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.entry-meta { display:flex; align-items:center; gap:12px; margin-top:8px; font-size:12px; color:var(--text-tertiary); }
+.entry-rating { color:var(--c-movie); letter-spacing:1px; }
+.entry-poster { width:48px; height:68px; border-radius:6px; object-fit:cover; flex-shrink:0; background:var(--bg-subtle); }
+.type-movie  .entry-icon { background:rgba(107,91,149,0.12); color:var(--c-movie); }
+.type-book   .entry-icon { background:rgba(136,160,150,0.15); color:var(--c-book); }
+.type-music  .entry-icon { background:rgba(201,123,99,0.12); color:var(--c-music); }
+.type-game   .entry-icon { background:rgba(90,139,173,0.12); color:var(--c-game); }
+.type-place  .entry-icon { background:rgba(201,169,97,0.15); color:var(--c-place); }
+.type-event  .entry-icon { background:rgba(176,117,85,0.12); color:var(--c-event); }
+.type-photo  .entry-icon { background:rgba(139,139,139,0.12); color:var(--c-photo); }
+
+/* ============================================================
+   Timeline
+   ============================================================ */
+.page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:40px; flex-wrap:wrap; gap:16px; }
+.page-title { font-family:var(--font-serif); font-size:28px; font-weight:500; letter-spacing:-0.5px; }
+.scale-switcher { display:flex; gap:4px; padding:4px; background:var(--bg-subtle); border-radius:10px; }
+.scale-btn { padding:6px 14px; border-radius:7px; font-size:12px; font-weight:500; color:var(--text-secondary); cursor:pointer; border:none; background:none; font-family:var(--font-sans); transition:all 0.2s ease; }
+.scale-btn.active { background:var(--bg-elevated); color:var(--text); box-shadow:var(--shadow); }
+.scale-btn:hover:not(.active) { color:var(--text); }
+.filter-bar { display:flex; gap:8px; margin-bottom:32px; flex-wrap:wrap; }
+.filter-chip { padding:6px 14px; border-radius:20px; font-size:12px; font-weight:500; border:1px solid var(--border); background:var(--bg-elevated); color:var(--text-secondary); cursor:pointer; transition:all 0.2s ease; font-family:var(--font-sans); display:flex; align-items:center; gap:6px; }
+.filter-chip:hover { border-color:var(--border-strong); color:var(--text); }
+.filter-chip.active { background:var(--text); color:var(--bg); border-color:var(--text); }
+.filter-chip .dot { width:6px; height:6px; border-radius:50%; }
+.timeline { position:relative; }
+.timeline-group { margin-bottom:48px; }
+.timeline-group-header { display:flex; align-items:baseline; gap:12px; margin-bottom:20px; padding-bottom:12px; border-bottom:1px solid var(--border); }
+.timeline-group-date { font-family:var(--font-serif); font-size:22px; font-weight:500; }
+.timeline-group-meta { font-size:12px; color:var(--text-tertiary); }
+.timeline-line { position:relative; }
+.timeline-line::before { content:''; position:absolute; left:23px; top:0; bottom:0; width:2px; background:var(--border); }
+.timeline-item { position:relative; margin-bottom:16px; }
+.timeline-item-dot { position:absolute; left:16px; top:20px; width:16px; height:16px; border-radius:50%; background:var(--bg); border:2px solid var(--border-strong); z-index:1; }
+.timeline-item .entry-card { margin-left:48px; }
+
+/* ============================================================
+   Library
+   ============================================================ */
+.lib-tabs { display:flex; gap:0; margin-bottom:32px; border-bottom:1px solid var(--border); }
+.lib-tab { padding:12px 20px; font-size:14px; font-weight:500; color:var(--text-secondary); cursor:pointer; border:none; background:none; font-family:var(--font-sans); border-bottom:2px solid transparent; transition:all 0.2s ease; display:flex; align-items:center; gap:8px; }
+.lib-tab:hover { color:var(--text); }
+.lib-tab.active { color:var(--text); border-bottom-color:var(--text); }
+.lib-tab .count { font-size:12px; color:var(--text-tertiary); font-weight:400; }
+.poster-wall { display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:24px; }
+.poster-item { cursor:pointer; transition:all 0.3s ease; }
+.poster-item:hover { transform:translateY(-4px); }
+.poster-img { width:100%; aspect-ratio:2/3; border-radius:10px; overflow:hidden; background:var(--bg-subtle); margin-bottom:8px; position:relative; box-shadow:var(--shadow); transition:box-shadow 0.3s ease; }
+.poster-item:hover .poster-img { box-shadow:var(--shadow-lg); }
+.poster-img img { width:100%; height:100%; object-fit:cover; display:block; }
+.poster-rating { position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.7); color:#FFD700; font-size:11px; font-weight:600; padding:3px 7px; border-radius:6px; }
+.poster-title { font-size:13px; font-weight:600; line-height:1.3; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; }
+.poster-meta { font-size:11px; color:var(--text-tertiary); margin-top:2px; }
+.year-section { margin-bottom:48px; }
+.year-header { display:flex; align-items:baseline; gap:12px; margin-bottom:20px; }
+.year-number { font-family:var(--font-serif); font-size:28px; font-weight:600; }
+.year-count { font-size:12px; color:var(--text-tertiary); }
+.books-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:24px; }
+.book-card { display:flex; gap:16px; padding:20px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius); cursor:pointer; transition:all 0.25s ease; }
+.book-card:hover { border-color:var(--border-strong); box-shadow:var(--shadow); }
+.book-cover { width:64px; height:90px; border-radius:6px; object-fit:cover; background:var(--bg-subtle); flex-shrink:0; box-shadow:var(--shadow); }
+.book-info { flex:1; min-width:0; }
+.book-title { font-size:15px; font-weight:600; margin-bottom:4px; line-height:1.3; }
+.book-author { font-size:12px; color:var(--text-secondary); margin-bottom:8px; }
+.book-date { font-size:11px; color:var(--text-tertiary); }
+.book-rating { font-size:12px; color:var(--c-book); margin-top:4px; letter-spacing:1px; }
+
+/* ============================================================
+   Search
+   ============================================================ */
+.search-container { max-width:680px; margin:0 auto; }
+.search-box { position:relative; margin-bottom:32px; }
+.search-input { width:100%; padding:16px 20px 16px 48px; font-size:16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-elevated); color:var(--text); font-family:var(--font-sans); transition:all 0.2s ease; outline:none; }
+.search-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(139,115,85,0.1); }
+.search-input::placeholder { color:var(--text-tertiary); }
+.search-icon { position:absolute; left:16px; top:50%; transform:translateY(-50%); width:20px; height:20px; color:var(--text-tertiary); }
+.search-suggestions { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:32px; }
+.search-suggestion { padding:6px 14px; border-radius:20px; font-size:12px; color:var(--text-secondary); background:var(--bg-subtle); border:1px solid transparent; cursor:pointer; transition:all 0.2s ease; font-family:var(--font-sans); }
+.search-suggestion:hover { border-color:var(--border); color:var(--text); }
+.search-results { display:flex; flex-direction:column; gap:12px; }
+.search-empty { text-align:center; padding:60px 20px; color:var(--text-secondary); }
+
+/* ============================================================
+   Quick Capture & Edit Modal
+   ============================================================ */
+.capture-trigger { position:fixed; bottom:32px; right:32px; width:56px; height:56px; border-radius:50%; background:var(--text); color:var(--bg); border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:24px; box-shadow:var(--shadow-lg); z-index:50; transition:all 0.25s ease; }
+.capture-trigger:hover { transform:scale(1.08); }
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); z-index:200; display:none; align-items:center; justify-content:center; padding:20px; opacity:0; transition:opacity 0.25s ease; }
+.modal-overlay.show { display:flex; opacity:1; }
+.modal { background:var(--bg-elevated); border-radius:var(--radius-lg); width:100%; max-width:560px; max-height:85vh; overflow-y:auto; padding:32px; box-shadow:var(--shadow-lg); transform:translateY(20px) scale(0.97); transition:transform 0.25s ease; }
+.modal-overlay.show .modal { transform:translateY(0) scale(1); }
+.modal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; }
+.modal-title { font-family:var(--font-serif); font-size:22px; font-weight:500; }
+.modal-close { width:32px; height:32px; border-radius:8px; border:none; background:var(--bg-subtle); cursor:pointer; display:flex; align-items:center; justify-content:center; color:var(--text-secondary); font-size:18px; transition:all 0.2s ease; }
+.modal-close:hover { background:var(--border); color:var(--text); }
+.capture-textarea { width:100%; min-height:120px; padding:16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); color:var(--text); font-size:15px; font-family:var(--font-sans); resize:vertical; outline:none; transition:all 0.2s ease; }
+.capture-textarea:focus { border-color:var(--accent); }
+.capture-textarea::placeholder { color:var(--text-tertiary); }
+.type-selector { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin:20px 0; }
+.type-option { display:flex; flex-direction:column; align-items:center; gap:6px; padding:12px 8px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg); cursor:pointer; transition:all 0.2s ease; font-size:11px; color:var(--text-secondary); font-family:var(--font-sans); }
+.type-option:hover { border-color:var(--border-strong); color:var(--text); }
+.type-option.selected { border-color:var(--accent); background:rgba(139,115,85,0.06); color:var(--text); }
+.type-option .emoji { font-size:22px; }
+.capture-fields { margin-bottom:20px; display:none; }
+.capture-fields.show { display:block; }
+.field-row { margin-bottom:12px; }
+.field-label { font-size:12px; color:var(--text-secondary); margin-bottom:6px; font-weight:500; }
+.field-input { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg); color:var(--text); font-size:14px; font-family:var(--font-sans); outline:none; }
+.field-input:focus { border-color:var(--accent); }
+.field-textarea { width:100%; min-height:80px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg); color:var(--text); font-size:14px; font-family:var(--font-sans); outline:none; resize:vertical; }
+.field-textarea:focus { border-color:var(--accent); }
+.rating-select { display:flex; gap:4px; }
+.rating-star { font-size:20px; cursor:pointer; color:var(--border-strong); transition:color 0.15s ease; }
+.rating-star:hover, .rating-star.active { color:#E8B948; }
+.modal-actions { display:flex; justify-content:flex-end; gap:12px; margin-top:24px; }
+.btn { padding:10px 24px; border-radius:var(--radius-sm); font-size:14px; font-weight:500; cursor:pointer; border:none; font-family:var(--font-sans); transition:all 0.2s ease; }
+.btn-ghost { background:none; color:var(--text-secondary); }
+.btn-ghost:hover { color:var(--text); }
+.btn-primary { background:var(--text); color:var(--bg); }
+.btn-primary:hover { opacity:0.85; }
+.btn-danger { background:var(--danger); color:#fff; }
+.btn-danger:hover { opacity:0.85; }
+
+/* Douban Search */
+.douban-search { margin:16px 0; }
+.douban-search-box { display:flex; gap:8px; }
+.douban-search-box .field-input { flex:1; }
+.douban-results { margin-top:12px; max-height:280px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
+.douban-loading { text-align:center; padding:20px; color:var(--text-tertiary); font-size:13px; }
+.douban-result-item { display:flex; gap:12px; padding:8px; border-radius:var(--radius-sm); border:1px solid var(--border); cursor:pointer; transition:all 0.2s ease; background:var(--bg); }
+.douban-result-item:hover { border-color:var(--accent); background:rgba(139,115,85,0.04); }
+.douban-result-item.selected { border-color:var(--accent); background:rgba(139,115,85,0.08); }
+.douban-result-item img { width:48px; height:68px; border-radius:4px; object-fit:cover; flex-shrink:0; background:var(--bg-subtle); }
+.douban-result-info { flex:1; display:flex; flex-direction:column; justify-content:center; }
+.douban-result-title { font-size:14px; font-weight:500; color:var(--text); }
+.douban-result-year { font-size:12px; color:var(--text-tertiary); margin-top:2px; }
+.douban-source-badge { font-size:10px; color:var(--text-tertiary); margin-top:4px; letter-spacing:0.5px; }
+
+/* ============================================================
+   Entry Detail
+   ============================================================ */
+.detail-back { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--text-secondary); cursor:pointer; margin-bottom:24px; border:none; background:none; font-family:var(--font-sans); transition:color 0.2s ease; }
+.detail-back:hover { color:var(--text); }
+.detail-actions { display:flex; gap:8px; margin-bottom:24px; }
+.detail-action-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 16px; border-radius:var(--radius-sm); font-size:13px; font-weight:500; cursor:pointer; border:1px solid var(--border); background:var(--bg-elevated); color:var(--text-secondary); font-family:var(--font-sans); transition:all 0.2s ease; }
+.detail-action-btn:hover { border-color:var(--border-strong); color:var(--text); }
+.detail-action-btn.danger:hover { border-color:var(--danger); color:var(--danger); }
+.detail-hero { display:flex; gap:32px; margin-bottom:32px; }
+.detail-poster { width:200px; aspect-ratio:2/3; border-radius:12px; object-fit:cover; background:var(--bg-subtle); flex-shrink:0; box-shadow:var(--shadow-lg); }
+.detail-info { flex:1; }
+.detail-type-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; }
+.detail-title { font-family:var(--font-serif); font-size:36px; font-weight:500; line-height:1.15; margin-bottom:8px; }
+.detail-subtitle { font-size:15px; color:var(--text-secondary); margin-bottom:20px; }
+.detail-meta { display:flex; flex-wrap:wrap; gap:24px; font-size:13px; color:var(--text-secondary); }
+.detail-meta-item { display:flex; flex-direction:column; gap:2px; }
+.detail-meta-label { font-size:11px; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px; }
+.detail-meta-value { font-size:14px; color:var(--text); font-weight:500; }
+.detail-section { margin-bottom:32px; }
+.detail-section-title { font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-tertiary); margin-bottom:12px; }
+.detail-review { font-family:var(--font-cn-serif); font-size:16px; line-height:1.8; color:var(--text); }
+.detail-tags { display:flex; flex-wrap:wrap; gap:8px; }
+.detail-tag { padding:4px 12px; border-radius:20px; font-size:12px; background:var(--bg-subtle); color:var(--text-secondary); }
+
+/* ============================================================
+   Settings Page
+   ============================================================ */
+.settings-section { margin-bottom:40px; }
+.settings-card { background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius); padding:24px; }
+.settings-row { display:flex; align-items:center; justify-content:space-between; padding:16px 0; border-bottom:1px solid var(--border); }
+.settings-row:last-child { border-bottom:none; }
+.settings-row-label { font-size:14px; font-weight:500; }
+.settings-row-desc { font-size:12px; color:var(--text-secondary); margin-top:2px; }
+.settings-row-value { font-size:13px; color:var(--text-secondary); }
+
+/* ============================================================
+   Confirm Dialog
+   ============================================================ */
+.confirm-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); backdrop-filter:blur(4px); z-index:300; display:none; align-items:center; justify-content:center; padding:20px; }
+.confirm-overlay.show { display:flex; }
+.confirm-dialog { background:var(--bg-elevated); border-radius:var(--radius-lg); padding:32px; max-width:400px; width:100%; text-align:center; box-shadow:var(--shadow-lg); }
+.confirm-icon { font-size:40px; margin-bottom:16px; }
+.confirm-title { font-size:18px; font-weight:600; margin-bottom:8px; }
+confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; line-height:1.5; }
+.confirm-actions { display:flex; gap:12px; justify-content:center; }
+
+/* ============================================================
+   Toast
+   ============================================================ */
+.toast-container { position:fixed; bottom:100px; right:32px; z-index:400; display:flex; flex-direction:column; gap:8px; }
+.toast { padding:12px 20px; border-radius:var(--radius-sm); background:var(--text); color:var(--bg); font-size:14px; font-weight:500; box-shadow:var(--shadow-lg); animation:toastIn 0.3s ease; display:flex; align-items:center; gap:8px; }
+@keyframes toastIn { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }
+@keyframes toastOut { to { opacity:0; transform:translateX(40px); } }
+.toast.out { animation:toastOut 0.3s ease forwards; }
+.toast.success { background:var(--success); }
+.toast.error { background:var(--danger); }
+
+/* ============================================================
+   Animations
+   ============================================================ */
+@keyframes fadeInUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+.fade-in { animation:fadeInUp 0.4s ease both; }
+.fade-in-delay-1 { animation:fadeInUp 0.4s ease 0.05s both; }
+.fade-in-delay-2 { animation:fadeInUp 0.4s ease 0.1s both; }
+.fade-in-delay-3 { animation:fadeInUp 0.4s ease 0.15s both; }
+.fade-in-delay-4 { animation:fadeInUp 0.4s ease 0.2s both; }
+
+/* Poster Fallback */
+.poster-fallback {
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; padding:12px; text-align:center; z-index:0;
+}
+.poster-fallback .pp-icon { font-size:28px; margin-bottom:8px; opacity:0.85; }
+.poster-fallback .pp-title { font-size:13px; font-weight:600; line-height:1.3; color:rgba(255,255,255,0.92); }
+.poster-fallback .pp-meta { font-size:10px; margin-top:4px; color:rgba(255,255,255,0.55); }
+.poster-img > img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:1; }
+
+.entry-poster-wrap { width:48px; height:68px; border-radius:6px; flex-shrink:0; position:relative; overflow:hidden; }
+.entry-poster-wrap > img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:1; }
+.entry-poster-fallback { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:20px; z-index:0; opacity:0.8; }
+
+.detail-poster-wrap { width:200px; aspect-ratio:2/3; border-radius:12px; flex-shrink:0; box-shadow:var(--shadow-lg); position:relative; overflow:hidden; }
+.detail-poster-wrap > img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:1; }
+.detail-poster-fallback { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:0; color:rgba(255,255,255,0.8); }
+.detail-poster-fallback .dpf-icon { font-size:48px; margin-bottom:12px; opacity:0.85; }
+.detail-poster-fallback .dpf-title { font-size:14px; font-weight:600; text-align:center; padding:0 16px; }
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 1024px) {
+  .content { padding:40px 32px; }
+  .poster-wall { grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); }
+}
+@media (max-width: 768px) {
+  .sidebar { transform:translateX(-100%); width:280px; }
+  .sidebar.open { transform:translateX(0); }
+  .main { margin-left:0; }
+  .menu-toggle { display:flex; }
+  .content { padding:64px 20px 100px; }
+  .today-header { flex-direction:column; }
+  .page-header { flex-direction:column; align-items:flex-start; }
+  .detail-hero { flex-direction:column; }
+  .detail-poster { width:140px; }
+  .poster-wall { grid-template-columns:repeat(auto-fill, minmax(110px, 1fr)); gap:16px; }
+  .capture-trigger { bottom:20px; right:20px; }
+  .type-selector { grid-template-columns:repeat(4, 1fr); }
+  .books-grid { grid-template-columns:1fr; }
+  .timeline-line::before { left:15px; }
+  .timeline-item-dot { left:8px; }
+  .timeline-item .entry-card { margin-left:36px; }
+  .auth-card { padding:32px 24px; }
+}
+</style>
+</head>
+<body data-theme="light">
+
+<!-- Auth Screen -->
+<div class="auth-screen" id="auth-screen" style="display:none;">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="auth-brand-title">Memory OS</div>
+      <div class="auth-brand-sub">Personal Archive</div>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">登录</button>
+      <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">注册</button>
+    </div>
+    <div id="login-form">
+      <div class="auth-field">
+        <div class="auth-label">邮箱</div>
+        <input type="email" class="auth-input" id="login-email" placeholder="you@example.com">
+      </div>
+      <div class="auth-field">
+        <div class="auth-label">密码</div>
+        <input type="password" class="auth-input" id="login-password" placeholder="••••••••">
+      </div>
+      <div class="auth-error" id="login-error"></div>
+      <button class="auth-btn auth-btn-primary" onclick="handleLogin()">登录</button>
+      <div class="auth-divider">或</div>
+      <button class="auth-btn auth-btn-ghost" onclick="enterGuest()">游客模式浏览</button>
+    </div>
+    <div id="register-form" style="display:none;">
+      <div class="auth-field">
+        <div class="auth-label">昵称</div>
+        <input type="text" class="auth-input" id="reg-name" placeholder="你的名字">
+      </div>
+      <div class="auth-field">
+        <div class="auth-label">邮箱</div>
+        <input type="email" class="auth-input" id="reg-email" placeholder="you@example.com">
+      </div>
+      <div class="auth-field">
+        <div class="auth-label">密码</div>
+        <input type="password" class="auth-input" id="reg-password" placeholder="至少 6 位">
+      </div>
+      <div class="auth-error" id="reg-error"></div>
+      <button class="auth-btn auth-btn-primary" onclick="handleRegister()">创建账户</button>
+    </div>
+  </div>
+</div>
+
+<!-- App -->
+<div class="app" id="app">
+  <button class="menu-toggle" onclick="toggleSidebar()">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-title">Memory OS</div>
+      <div class="brand-sub">Personal Archive</div>
+    </div>
+    <nav class="nav">
+      <button class="nav-item active" data-page="today" onclick="navigate('today')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span class="nav-label">Today</span><span class="nav-cn">今天</span>
+      </button>
+      <button class="nav-item" data-page="timeline" onclick="navigate('timeline')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+        <span class="nav-label">Timeline</span><span class="nav-cn">时间线</span>
+      </button>
+      <button class="nav-item" data-page="library" onclick="navigate('library')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+        <span class="nav-label">Library</span><span class="nav-cn">收藏</span>
+      </button>
+      <button class="nav-item" data-page="search" onclick="navigate('search')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span class="nav-label">Search</span><span class="nav-cn">搜索</span>
+      </button>
+      <div class="nav-divider"></div>
+      <button class="nav-item" data-page="onthisday" onclick="navigate('onthisday')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span class="nav-label">On This Day</span><span class="nav-cn">那年今日</span>
+      </button>
+      <button class="nav-item" data-page="random" onclick="navigate('random')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+        <span class="nav-label">Random</span><span class="nav-cn">随机回忆</span>
+      </button>
+      <button class="nav-item" data-page="settings" onclick="navigate('settings')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span class="nav-label">Settings</span><span class="nav-cn">设置</span>
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <div style="font-size:11px;color:var(--text-tertiary);padding:8px 12px;text-align:center;line-height:1.5;">本地存储<br>数据不会离开你的设备</div>
+      <button class="theme-toggle" onclick="toggleTheme()">
+        <svg id="theme-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        <span id="theme-label">Dark Mode</span>
+      </button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="content" id="content"></div>
+  </main>
+</div>
+
+<!-- Quick Capture Button -->
+<button class="capture-trigger" onclick="openCapture(null)" title="快速记录 (Ctrl+K)">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+</button>
+
+<!-- Capture/Edit Modal -->
+<div class="modal-overlay" id="capture-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Quick Capture</div>
+      <button class="modal-close" onclick="closeCapture()">&times;</button>
+    </div>
+    <div class="douban-search" id="douban-search">
+      <div class="field-label" style="margin-bottom:8px;">🔍 从豆瓣搜索电影，一键导入</div>
+      <div class="douban-search-box">
+        <input type="text" class="field-input" id="douban-input" placeholder="输入电影名，如：奥本海默..." oninput="debouncedDoubanSearch(this.value)">
+      </div>
+      <div id="douban-results" class="douban-results"></div>
+    </div>
+    <textarea class="capture-textarea" id="capture-input" placeholder="今天发生了什么？写点什么......" oninput="detectType()"></textarea>
+    <div class="type-selector" id="type-selector">
+      <div class="type-option" data-type="movie" onclick="selectType('movie')"><span class="emoji">🎬</span><span>电影</span></div>
+      <div class="type-option" data-type="book" onclick="selectType('book')"><span class="emoji">📖</span><span>书籍</span></div>
+      <div class="type-option" data-type="music" onclick="selectType('music')"><span class="emoji">🎵</span><span>音乐</span></div>
+      <div class="type-option" data-type="game" onclick="selectType('game')"><span class="emoji">🎮</span><span>游戏</span></div>
+      <div class="type-option" data-type="place" onclick="selectType('place')"><span class="emoji">📍</span><span>地点</span></div>
+      <div class="type-option" data-type="event" onclick="selectType('event')"><span class="emoji">✦</span><span>事件</span></div>
+      <div class="type-option" data-type="photo" onclick="selectType('photo')"><span class="emoji">📷</span><span>照片</span></div>
+      <div class="type-option" data-type="diary" onclick="selectType('diary')"><span class="emoji">📝</span><span>日记</span></div>
+    </div>
+    <div class="capture-fields" id="capture-fields">
+      <div class="field-row">
+        <div class="field-label">标题</div>
+        <input type="text" class="field-input" id="capture-title" placeholder="记录标题">
+      </div>
+      <div class="field-row">
+        <div class="field-label">日期</div>
+        <input type="date" class="field-input" id="capture-date">
+      </div>
+      <div class="field-row">
+        <div class="field-label">时间</div>
+        <input type="time" class="field-input" id="capture-time">
+      </div>
+      <div class="field-row" id="rating-row" style="display:none">
+        <div class="field-label">评分</div>
+        <div class="rating-select" id="rating-select">
+          <span class="rating-star" data-val="1" onclick="setRating(1)">☆</span>
+          <span class="rating-star" data-val="2" onclick="setRating(2)">☆</span>
+          <span class="rating-star" data-val="3" onclick="setRating(3)">☆</span>
+          <span class="rating-star" data-val="4" onclick="setRating(4)">☆</span>
+          <span class="rating-star" data-val="5" onclick="setRating(5)">☆</span>
+        </div>
+      </div>
+      <div class="field-row" id="extra-fields" style="display:none">
+        <div class="field-label" id="extra-label">补充信息</div>
+        <input type="text" class="field-input" id="capture-extra" placeholder="导演 / 作者 / 艺人 / 平台 / 地点">
+      </div>
+      <div class="field-row">
+        <div class="field-label">感想 / 正文</div>
+        <textarea class="field-textarea" id="capture-review" placeholder="写一些你的想法..."></textarea>
+      </div>
+      <div class="field-row">
+        <div class="field-label">标签（逗号分隔）</div>
+        <input type="text" class="field-input" id="capture-tags" placeholder="科幻, 哲学, 周末">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeCapture()">取消</button>
+      <button class="btn btn-primary" id="save-btn" onclick="saveCapture()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Dialog -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-dialog">
+    <div class="confirm-icon" id="confirm-icon">⚠️</div>
+    <div class="confirm-title" id="confirm-title">确认操作</div>
+    <div class="confirm-msg" id="confirm-msg" style="font-size:14px;color:var(--text-secondary);margin-bottom:24px;line-height:1.5;">确定要执行此操作吗？</div>
+    <div class="confirm-actions">
+      <button class="btn btn-ghost" onclick="closeConfirm()">取消</button>
+      <button class="btn btn-danger" id="confirm-ok">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
