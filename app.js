@@ -135,9 +135,7 @@ async function selectDoubanMovie(idx) {
   const r = window._doubanResults && window._doubanResults[idx];
   if (!r) return;
   doubanSelectedMovie = { ...r };
-  selectType('movie');
   document.getElementById('capture-title').value = r.title;
-  document.getElementById('capture-date').value = new Date().toISOString().slice(0,10);
   document.querySelectorAll('.douban-result-item').forEach((el, i) => {
     el.classList.toggle('selected', i === idx);
   });
@@ -360,7 +358,7 @@ async function navigate(page) {
   // Auto-expand the parent group when navigating to a sub-item
   const groupMap = {
     today:'memory', timeline:'memory', library:'memory', search:'memory',
-    onthisday:'memory', random:'memory',
+    onthisday:'memory', random:'memory', 'year-review':'memory',
     'res-cs':'resources', 'res-football':'resources', 'res-ai':'resources', 'res-links':'resources'
   };
   if (groupMap[page]) {
@@ -369,32 +367,45 @@ async function navigate(page) {
   }
 
   const content = document.getElementById('content');
-  content.innerHTML = '<div style="text-align:center;padding:60px;color:var(--text-tertiary);">加载中...</div>';
+  content.innerHTML = `<div class="loading-container"><div class="loading-spinner"></div><div class="loading-text">加载中...</div></div>`;
   content.classList.remove('fade-in');
   void content.offsetWidth;
   content.classList.add('fade-in');
-  switch(page) {
-    case 'today': await renderToday(); break;
-    case 'timeline': await renderTimeline(); break;
-    case 'library': await renderLibrary('movie'); break;
-    case 'search': renderSearch(); break;
-    case 'onthisday': await renderOnThisDay(); break;
-    case 'random': await renderRandom(); break;
-    case 'settings': await renderSettings(); break;
-    case 'res-cs': renderResourceCS(); break;
-    case 'res-football': renderResourceFootball(); break;
-    case 'res-ai': renderResourceAI(); break;
-    case 'res-links': renderResourceLinks(); break;
-    case 'knowledge': renderKnowledge(); break;
-    case 'ai-assistant': renderAIAssistant(); break;
+  try {
+    switch(page) {
+      case 'today': await renderToday(); break;
+      case 'timeline': await renderTimeline(); break;
+      case 'library': await renderLibrary('movie'); break;
+      case 'search': renderSearch(); break;
+      case 'onthisday': await renderOnThisDay(); break;
+      case 'random': await renderRandom(); break;
+      case 'year-review': await renderYearReview(); break;
+      case 'settings': await renderSettings(); break;
+      case 'res-cs': renderResourceCS(); break;
+      case 'res-football': renderResourceFootball(); break;
+      case 'res-ai': renderResourceAI(); break;
+      case 'res-links': renderResourceLinks(); break;
+      case 'knowledge': renderKnowledge(); break;
+      case 'ai-assistant': renderAIAssistant(); break;
+    }
+  } catch(err) {
+    console.error('Page render error:', err);
+    content.innerHTML = `<div class="error-state"><div class="error-state-icon">⚠</div><div class="error-state-title">页面加载失败</div><div class="error-state-desc">请刷新页面重试</div><button class="error-state-retry" onclick="navigate('${page}')">重试</button></div>`;
   }
   closeSidebar();
 }
 
 // === Resources: CS Esports ===
 function renderResourceCS() {
-  const majorEvents = [
-    { name:'IEM Cologne 2026', teams:'NAVI vs G2', date:'2026.08.30', prize:'$1,000,000', status:'即将开始', url:'https://www.hltv.org/events' },
+  const featuredMatch = { name:'IEM Cologne 2026', t1:'NAVI', t1Flag:'🇺🇦', t2:'G2', t2Flag:'🇩🇪', date:'8月30日 22:00', prize:'$1,000,000', status:'即将开始', url:'https://www.hltv.org/events' };
+  const upcomingMatches = [
+    { t1:'FaZe', t1Flag:'🇪🇺', t2:'Vitality', t2Flag:'🇫🇷', event:'ESL Pro League', time:'明日 18:00', status:'预告' },
+    { t1:'Spirit', t1Flag:'🇷🇺', t2:'MOUZ', t2Flag:'🇪🇪', event:'BLAST Premier', time:'明日 21:00', status:'预告' },
+    { t1:'Liquid', t1Flag:'🇺🇸', t2:'FURIA', t2Flag:'🇧🇷', event:'IEM Qualifier', time:'后天 20:00', status:'预告' },
+  ];
+  const recentResults = [
+    { t1:'NAVI', t1Flag:'🇺🇦', score1:2, t2:'FaZe', t2Flag:'🇪🇺', score2:0, event:'IEM Cologne' },
+    { t1:'G2', t1Flag:'🇩🇪', score1:16, t2:'Liquid', t2Flag:'🇺🇸', score2:14, event:'ESL Pro League' },
   ];
   const links = [
     { title:'HLTV', url:'https://www.hltv.org', icon:'🏆', desc:'CS2赛事排名、比赛日程、选手数据' },
@@ -411,29 +422,68 @@ function renderResourceCS() {
         <button class="scale-btn" onclick="window.open('https://www.hltv.org/ranking/teams','_blank')">战队排名</button>
       </div>
     </div>`;
-  majorEvents.forEach(m => {
-    const [t1, t2] = m.teams.split(' vs ');
-    html += `
-    <div class="featured-match" onclick="window.open('${m.url}','_blank')">
-      <div class="featured-match-tag">🔥 ${m.status} · ${m.prize}</div>
-      <div class="featured-match-title">${m.name}</div>
+  // Featured match — hero card
+  html += `
+    <div class="featured-match" onclick="window.open('${featuredMatch.url}','_blank')">
+      <div class="featured-match-tag">
+        <span class="featured-match-live">🔥 焦点</span>
+        <span>${featuredMatch.status} · ${featuredMatch.prize}</span>
+      </div>
+      <div class="featured-match-title">${featuredMatch.name}</div>
       <div class="featured-match-teams">
         <div class="featured-team">
-          <div class="featured-team-logo">🇺🇦</div>
-          <div class="featured-team-name">${t1}</div>
+          <div class="featured-team-logo">${featuredMatch.t1Flag}</div>
+          <div class="featured-team-name">${featuredMatch.t1}</div>
         </div>
         <div class="featured-vs">VS</div>
         <div class="featured-team">
-          <div class="featured-team-logo">🇩🇪</div>
-          <div class="featured-team-name">${t2}</div>
+          <div class="featured-team-logo">${featuredMatch.t2Flag}</div>
+          <div class="featured-team-name">${featuredMatch.t2}</div>
         </div>
       </div>
-      <div class="featured-match-info">${m.date} · 点击查看详情</div>
+      <div class="featured-match-info">${featuredMatch.date} · 点击查看详情</div>
     </div>`;
+  // Upcoming matches
+  html += `<div class="res-section-title">即将开始 · Upcoming</div><div class="res-grid" style="grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));">`;
+  upcomingMatches.forEach(m => {
+    html += `<a class="res-card" href="https://www.hltv.org/matches" target="_blank" rel="noopener" style="padding:16px 20px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+        <span style="font-size:11px; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px;">${m.event}</span>
+        <span style="font-size:11px; padding:2px 6px; border-radius:4px; background:var(--bg-subtle); color:var(--accent);">${m.status}</span>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+        <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:20px;">${m.t1Flag}</span><span style="font-size:14px; font-weight:600;">${m.t1}</span></div>
+        <span style="font-size:12px; color:var(--text-tertiary);">vs</span>
+        <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:14px; font-weight:600;">${m.t2}</span><span style="font-size:20px;">${m.t2Flag}</span></div>
+      </div>
+      <div style="font-size:12px; color:var(--text-tertiary); margin-top:8px; text-align:center;">${m.time}</div>
+    </a>`;
   });
-  html += `
-    <div class="res-section-title">赛事资源</div>
-    <div class="res-grid">`;
+  html += `</div>`;
+  // Recent results
+  html += `<div class="res-section-title">最近结果 · Results</div><div class="res-link-list">`;
+  recentResults.forEach(r => {
+    const win1 = r.score1 > r.score2;
+    html += `<a class="res-link-item" href="https://www.hltv.org/results" target="_blank" rel="noopener">
+      <div class="res-link-favicon">📊</div>
+      <div class="res-link-info" style="display:flex; align-items:center; justify-content:space-between;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:18px;">${r.t1Flag}</span>
+          <span style="font-size:14px; font-weight:${win1?'700':'400'}; color:${win1?'var(--text)':'var(--text-secondary)'};">${r.t1}</span>
+          <span style="font-size:16px; font-weight:700; color:${win1?'var(--success)':'var(--text-tertiary)'}; margin:0 8px;">${r.score1}</span>
+          <span style="font-size:12px; color:var(--text-tertiary);">:</span>
+          <span style="font-size:16px; font-weight:700; color:${!win1?'var(--success)':'var(--text-tertiary)'}; margin:0 8px;">${r.score2}</span>
+          <span style="font-size:14px; font-weight:${!win1?'700':'400'}; color:${!win1?'var(--text)':'var(--text-secondary)'};">${r.t2}</span>
+          <span style="font-size:18px;">${r.t2Flag}</span>
+        </div>
+        <span style="font-size:11px; color:var(--text-tertiary);">${r.event}</span>
+      </div>
+      <span class="res-link-arrow">→</span>
+    </a>`;
+  });
+  html += `</div>`;
+  // Resource links
+  html += `<div class="res-section-title">赛事资源</div><div class="res-grid">`;
   links.forEach(l => {
     html += `<a class="res-card" href="${l.url}" target="_blank" rel="noopener">
       <div class="res-card-icon" style="background:rgba(107,91,149,0.12)">${l.icon}</div>
@@ -442,37 +492,26 @@ function renderResourceCS() {
       <div class="res-card-meta"><span class="res-card-tag">CS2</span><span>外部链接</span></div>
     </a>`;
   });
-  html += `</div>
-    <div class="res-section-title">快速入口</div>
-    <div class="res-link-list">
-      <a class="res-link-item" href="https://www.hltv.org/matches" target="_blank" rel="noopener">
-        <div class="res-link-favicon">📺</div>
-        <div class="res-link-info"><div class="res-link-title">今日比赛日程</div><div class="res-link-url">hltv.org/matches</div></div>
-        <span class="res-link-arrow">→</span>
-      </a>
-      <a class="res-link-item" href="https://www.hltv.org/events" target="_blank" rel="noopener">
-        <div class="res-link-favicon">🏅</div>
-        <div class="res-link-info"><div class="res-link-title">正在进行的大赛</div><div class="res-link-url">hltv.org/events</div></div>
-        <span class="res-link-arrow">→</span>
-      </a>
-      <a class="res-link-item" href="https://www.hltv.org/stats" target="_blank" rel="noopener">
-        <div class="res-link-favicon">📈</div>
-        <div class="res-link-info"><div class="res-link-title">选手数据统计</div><div class="res-link-url">hltv.org/stats</div></div>
-        <span class="res-link-arrow">→</span>
-      </a>
-    </div>`;
+  html += `</div>`;
   document.getElementById('content').innerHTML = html;
 }
 
 // === Resources: Football ===
 function renderResourceFootball() {
   const leagues = [
-    { name:'英超', nameEn:'Premier League', flag:'🏴', desc:'英格兰超级联赛', url:'https://www.premierleague.com', color:'rgba(201,49,49,0.08)' },
-    { name:'西甲', nameEn:'La Liga', flag:'🇪🇸', desc:'西班牙甲级联赛', url:'https://www.laliga.com', color:'rgba(230,126,34,0.08)' },
-    { name:'德甲', nameEn:'Bundesliga', flag:'🇩🇪', desc:'德国甲级联赛', url:'https://www.bundesliga.com', color:'rgba(218,0,0,0.08)' },
-    { name:'意甲', nameEn:'Serie A', flag:'🇮🇹', desc:'意大利甲级联赛', url:'https://www.legaseriea.it', color:'rgba(0,146,59,0.08)' },
-    { name:'法甲', nameEn:'Ligue 1', flag:'🇫🇷', desc:'法国甲级联赛', url:'https://www.ligue1.com', color:'rgba(0,35,149,0.08)' },
-    { name:'欧冠', nameEn:'Champions League', flag:'🏆', desc:'欧洲冠军联赛', url:'https://www.uefa.com/uefachampionsleague', color:'rgba(0,46,98,0.08)' },
+    { name:'英超', nameEn:'Premier League', flag:'🏴', desc:'英格兰超级联赛', url:'https://www.premierleague.com', accent:'#3D195B' },
+    { name:'西甲', nameEn:'La Liga', flag:'🇪🇸', desc:'西班牙甲级联赛', url:'https://www.laliga.com', accent:'#E8782C' },
+    { name:'德甲', nameEn:'Bundesliga', flag:'🇩🇪', desc:'德国甲级联赛', url:'https://www.bundesliga.com', accent:'#D20515' },
+    { name:'意甲', nameEn:'Serie A', flag:'🇮🇹', desc:'意大利甲级联赛', url:'https://www.legaseriea.it', accent:'#0066CC' },
+    { name:'法甲', nameEn:'Ligue 1', flag:'🇫🇷', desc:'法国甲级联赛', url:'https://www.ligue1.com', accent:'#091C3E' },
+    { name:'欧冠', nameEn:'Champions League', flag:'🏆', desc:'欧洲冠军联赛', url:'https://www.uefa.com/uefachampionsleague', accent:'#0B1F4A' },
+    { name:'欧联', nameEn:'Europa League', flag:'🇪🇺', desc:'欧洲联赛', url:'https://www.uefa.com/uefaeuropaleague', accent:'#FF6B00' },
+    { name:'中超', nameEn:'CSL', flag:'🇨🇳', desc:'中国超级联赛', url:'https://www.dongqiudi.com/league/36', accent:'#C8102E' },
+  ];
+  const todayMatches = [
+    { home:'曼城', homeFlag:'🔵', away:'阿森纳', awayFlag:'🔴', time:'23:30', league:'英超', status:'未开始' },
+    { home:'皇马', homeFlag:'⚪', away:'巴萨', awayFlag:'🔴🔵', time:'04:00', league:'西甲', status:'未开始' },
+    { home:'拜仁', homeFlag:'🔴', away:'多特', awayFlag:'🟡', time:'00:30', league:'德甲', status:'未开始' },
   ];
   const links = [
     { title:'懂球帝', url:'https://www.dongqiudi.com', icon:'⚽', desc:'足球新闻、比分、赛事数据' },
@@ -488,19 +527,40 @@ function renderResourceFootball() {
         <button class="scale-btn" onclick="window.open('https://www.sofascore.com','_blank')">实时比分</button>
         <button class="scale-btn" onclick="window.open('https://www.transfermarkt.com','_blank')">转会</button>
       </div>
-    </div>
-    <div class="league-grid">`;
+    </div>`;
+  // Today's featured matches
+  html += `<div class="res-section-title">今日焦点 · Today's Matches</div><div class="res-link-list">`;
+  todayMatches.forEach(m => {
+    html += `<a class="res-link-item" href="https://www.dongqiudi.com/schedule" target="_blank" rel="noopener">
+      <div class="res-link-favicon" style="background:${leagues.find(l=>l.name===m.league)?.accent||'var(--bg-subtle)'}22; font-size:14px;">⚽</div>
+      <div class="res-link-info" style="display:flex; align-items:center; justify-content:space-between;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:14px; font-weight:600;">${m.home}</span>
+          <span style="font-size:11px; color:var(--text-tertiary);">vs</span>
+          <span style="font-size:14px; font-weight:600;">${m.away}</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:11px; padding:2px 8px; border-radius:4px; background:var(--bg-subtle); color:var(--accent);">${m.league}</span>
+          <span style="font-size:13px; font-weight:600; color:var(--text); font-variant-numeric:tabular-nums;">${m.time}</span>
+        </div>
+      </div>
+      <span class="res-link-arrow">→</span>
+    </a>`;
+  });
+  html += `</div>`;
+  // League grid — prominent
+  html += `<div class="res-section-title">热门联赛 · Leagues</div><div class="league-grid">`;
   leagues.forEach(l => {
-    html += `<a class="league-card" href="${l.url}" target="_blank" rel="noopener" style="background:${l.color}">
+    html += `<a class="league-card" href="${l.url}" target="_blank" rel="noopener" style="border-color:${l.accent}22;">
       <div class="league-card-flag">${l.flag}</div>
-      <div class="league-card-name">${l.name}</div>
+      <div class="league-card-name" style="color:${l.accent};">${l.name}</div>
       <div class="league-card-name-en">${l.nameEn}</div>
       <div class="league-card-desc">${l.desc}</div>
     </a>`;
   });
-  html += `</div>
-    <div class="res-section-title">数据资源</div>
-    <div class="res-grid">`;
+  html += `</div>`;
+  // Data resources
+  html += `<div class="res-section-title">数据资源 · Data</div><div class="res-grid">`;
   links.forEach(l => {
     html += `<a class="res-card" href="${l.url}" target="_blank" rel="noopener">
       <div class="res-card-icon" style="background:rgba(90,139,173,0.12)">${l.icon}</div>
@@ -509,25 +569,7 @@ function renderResourceFootball() {
       <div class="res-card-meta"><span class="res-card-tag">足球</span><span>外部链接</span></div>
     </a>`;
   });
-  html += `</div>
-    <div class="res-section-title">快速入口</div>
-    <div class="res-link-list">
-      <a class="res-link-item" href="https://www.dongqiudi.com/schedule" target="_blank" rel="noopener">
-        <div class="res-link-favicon">📅</div>
-        <div class="res-link-info"><div class="res-link-title">今日赛程</div><div class="res-link-url">dongqiudi.com/schedule</div></div>
-        <span class="res-link-arrow">→</span>
-      </a>
-      <a class="res-link-item" href="https://www.sofascore.com" target="_blank" rel="noopener">
-        <div class="res-link-favicon">⚡</div>
-        <div class="res-link-info"><div class="res-link-title">实时比分</div><div class="res-link-url">sofascore.com</div></div>
-        <span class="res-link-arrow">→</span>
-      </a>
-      <a class="res-link-item" href="https://www.dongqiudi.com/live" target="_blank" rel="noopener">
-        <div class="res-link-favicon">🎥</div>
-        <div class="res-link-info"><div class="res-link-title">直播大厅</div><div class="res-link-url">dongqiudi.com/live</div></div>
-        <span class="res-link-arrow">→</span>
-      </a>
-    </div>`;
+  html += `</div>`;
   document.getElementById('content').innerHTML = html;
 }
 
@@ -696,21 +738,26 @@ function renderEntryCard(e, showYear = false) {
 async function renderToday() {
   const all = await dbGetAll();
   const sorted = sortEntries(all);
-  const todayEntries = sorted.filter(e => getEntryDate(e) === '2026-08-27');
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0,10);
+  const todayEntries = sorted.filter(e => getEntryDate(e) === todayStr);
   const totalMovies = all.filter(e=>e.type==='movie').length;
   const totalBooks = all.filter(e=>e.type==='book').length;
-  let html = `<div class="today-header"><div class="today-date">2026年8月27日<span class="day">星期四 · 今天</span></div><div class="today-stats"><div class="today-stat">今日 <strong>${todayEntries.length}</strong> 条</div><div class="today-stat">共 <strong>${all.length}</strong> 条记忆</div><div class="today-stat">电影 <strong>${totalMovies}</strong> · 书籍 <strong>${totalBooks}</strong></div></div></div>`;
+  const weekdays = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+  const todayDisplay = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日`;
+  let html = `<div class="today-header"><div class="today-date">${todayDisplay}<span class="day">${weekdays[now.getDay()]} · 今天</span></div><div class="today-stats"><div class="today-stat">今日 <strong>${todayEntries.length}</strong> 条</div><div class="today-stat">共 <strong>${all.length}</strong> 条记忆</div><div class="today-stat">电影 <strong>${totalMovies}</strong> · 书籍 <strong>${totalBooks}</strong></div></div></div>`;
   if (todayEntries.length > 0) {
     html += '<div class="today-entries">';
-    todayEntries.forEach((e,i) => { html += `<div class="fade-in fade-in-delay-${Math.min(i+1,4)}" onclick="openDetail(${e.id})">${renderEntryCard(e)}</div>`; });
+    todayEntries.forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.06}s" onclick="openDetail(${e.id})">${renderEntryCard(e)}</div>`; });
     html += '</div>';
   } else {
-    html += `<div class="today-empty"><div class="today-empty-icon">✦</div><div class="today-empty-text">今天还没有记录<br>点击右下角的 + 开始</div></div>`;
+    html += `<div class="empty-state"><div class="empty-state-icon">✦</div><div class="empty-state-title">今天还没有记录</div><div class="empty-state-desc">点击右下角的 + 按钮，开始记录你的第一个记忆</div></div>`;
   }
-  const pastEntries = all.filter(e => { const d = getEntryDate(e); return d.endsWith('-08-27') && d !== '2026-08-27'; });
+  const monthDay = todayStr.slice(5);
+  const pastEntries = all.filter(e => { const d = getEntryDate(e); return d.endsWith(monthDay) && d !== todayStr; });
   if (pastEntries.length > 0) {
-    html += `<div class="on-this-day"><div class="section-label">On This Day · 那年今日</div><div class="today-entries">`;
-    sortEntries(pastEntries).forEach(e => { html += `<div onclick="openDetail(${e.id})">${renderEntryCard(e, true)}</div>`; });
+    html += `<div class="on-this-day"><div class="section-label">那年今日 · On This Day</div><div class="today-entries">`;
+    sortEntries(pastEntries).forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.06}s" onclick="openDetail(${e.id})">${renderEntryCard(e, true)}</div>`; });
     html += '</div></div>';
   }
   document.getElementById('content').innerHTML = html;
@@ -737,7 +784,7 @@ async function renderTimeline() {
       <button class="filter-chip" onclick="setFilter('place',this)"><span class="dot" style="background:var(--c-place)"></span>地点</button>
       <button class="filter-chip" onclick="setFilter('event',this)"><span class="dot" style="background:var(--c-event)"></span>事件</button>
     </div>
-    <div id="timeline-content"><div style="text-align:center;padding:40px;color:var(--text-tertiary);">加载中...</div></div>`;
+    <div id="timeline-content"><div class="loading-container"><div class="loading-spinner"></div><div class="loading-text">加载中...</div></div></div>`;
   await renderTimelineContent();
 }
 
@@ -767,7 +814,7 @@ async function renderTimelineContent() {
     });
     html += '</div></div>';
   });
-  if (sortedKeys.length === 0) html += '<div class="search-empty">没有符合条件的记录</div>';
+  if (sortedKeys.length === 0) html += '<div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-title">没有符合条件的记录</div><div class="empty-state-desc">尝试更换筛选条件，或点击 + 添加新记录</div></div>';
   html += '</div>';
   document.getElementById('timeline-content').innerHTML = html;
 }
@@ -817,33 +864,51 @@ async function renderLibraryTab(tab) {
   const items = sortEntries((await dbGetAll()).filter(e => e.type === tab));
 
   if (tab === 'movie') {
-    const byYear = {};
-    items.forEach(m => { const y = getEntryDate(m).slice(0,4) || '未知'; if (!byYear[y]) byYear[y] = []; byYear[y].push(m); });
-    let html = '';
-    Object.keys(byYear).sort().reverse().forEach(y => {
-      html += `<div class="year-section"><div class="year-header"><div class="year-number">${y}</div><div class="year-count">${byYear[y].length} 部</div></div><div class="poster-wall">`;
-      byYear[y].forEach(m => {
-        html += `<div class="poster-item" onclick="openDetail(${m.id})">${renderPosterWall(m)}<div class="poster-title">${m.title}</div><div class="poster-meta">${m.director || ''} · ${m.runtime || ''}min</div></div>`;
-      });
-      html += '</div></div>';
-    });
-    content.innerHTML = html || '<div class="search-empty">还没有电影记录</div>';
+    window._movieItems = items;
+    const avgRating = items.length ? (items.reduce((s,m)=>s+(m.rating||0),0)/items.length).toFixed(1) : '0.0';
+    const thisYear = items.filter(m => (getEntryDate(m)||'').slice(0,4) === String(new Date().getFullYear())).length;
+    let html = `
+      <div class="lib-toolbar">
+        <div class="lib-search-box">
+          <svg class="lib-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" class="lib-search-input" id="movie-search" placeholder="搜索电影名、导演..." oninput="filterMovieWall()">
+        </div>
+        <div class="lib-filter-chips">
+          <button class="lib-filter-chip active" data-min-rating="0" onclick="setMovieRatingFilter(0,this)">全部</button>
+          <button class="lib-filter-chip" data-min-rating="5" onclick="setMovieRatingFilter(5,this)">★ 5</button>
+          <button class="lib-filter-chip" data-min-rating="4" onclick="setMovieRatingFilter(4,this)">★ 4+</button>
+          <button class="lib-filter-chip" data-min-rating="3" onclick="setMovieRatingFilter(3,this)">★ 3+</button>
+        </div>
+      </div>
+      <div class="lib-stats-bar">
+        <div class="lib-stat"><span class="lib-stat-num">${items.length}</span><span class="lib-stat-label">部</span></div>
+        <div class="lib-stat"><span class="lib-stat-num">${avgRating}</span><span class="lib-stat-label">平均评分</span></div>
+        <div class="lib-stat"><span class="lib-stat-num">${thisYear}</span><span class="lib-stat-label">今年看过</span></div>
+      </div>`;
+    content.innerHTML = html + '<div id="movie-wall-content"></div>';
+    renderMovieWallContent(items);
   } else if (tab === 'book') {
-    let html = '<div class="books-grid">';
-    items.forEach(b => {
-      const [c1,c2] = getPosterColors(b);
-      const coverHtml = b.cover
-        ? `<div class="book-cover" style="background:linear-gradient(135deg,${c1},${c2});position:relative;overflow:hidden;"><div class="poster-fallback"><span class="pp-icon" style="font-size:20px;">📖</span><span class="pp-title" style="font-size:9px;">${b.title}</span></div><img src="${proxyImage(b.cover)}" alt="${b.title}" loading="lazy" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;"></div>`
-        : `<div class="book-cover" style="background:linear-gradient(135deg,${c1},${c2});display:flex;align-items:center;justify-content:center;font-size:20px;">📖</div>`;
-      html += `<div class="book-card" onclick="openDetail(${b.id})">${coverHtml}<div class="book-info"><div class="book-title">${b.title}</div><div class="book-author">${b.author||''}</div><div class="book-date">读完于 ${(b.finish_date||'').replace(/-/g,'/')||'阅读中'}</div>${b.rating?`<div class="book-rating">${'★'.repeat(b.rating)}${'☆'.repeat(5-b.rating)}</div>`:''}</div></div>`;
-    });
-    content.innerHTML = html + '</div>' || '<div class="search-empty">还没有书籍记录</div>';
+    window._bookItems = items;
+    const wantRead = items.filter(b => !b.finish_date && !b.start_date).length;
+    const reading = items.filter(b => b.start_date && !b.finish_date).length;
+    const done = items.filter(b => b.finish_date).length;
+    let html = `
+      <div class="lib-toolbar">
+        <div class="book-status-tabs">
+          <button class="book-status-tab active" data-status="all" onclick="filterBookWall('all',this)">全部 <span class="count">${items.length}</span></button>
+          <button class="book-status-tab" data-status="want" onclick="filterBookWall('want',this)">想读 <span class="count">${wantRead}</span></button>
+          <button class="book-status-tab" data-status="reading" onclick="filterBookWall('reading',this)">在读 <span class="count">${reading}</span></button>
+          <button class="book-status-tab" data-status="done" onclick="filterBookWall('done',this)">已读 <span class="count">${done}</span></button>
+        </div>
+      </div>`;
+    content.innerHTML = html + '<div id="book-wall-content"></div>';
+    renderBookWallContent(items, 'all');
   } else if (tab === 'music') {
     let html = '<div class="books-grid">';
     items.forEach(m => {
       html += `<div class="book-card" onclick="openDetail(${m.id})"><div class="entry-icon" style="width:64px;height:64px;border-radius:8px;background:rgba(201,123,99,0.12);color:var(--c-music);font-size:28px;">🎵</div><div class="book-info"><div class="book-title">${m.title}</div><div class="book-author">${m.artist||''}</div><div class="book-date">${(m.date||'').replace(/-/g,'/')}</div>${m.rating?`<div class="book-rating" style="color:var(--c-music)">${'★'.repeat(m.rating)}${'☆'.repeat(5-m.rating)}</div>`:''}</div></div>`;
     });
-    content.innerHTML = html + '</div>' || '<div class="search-empty">还没有音乐记录</div>';
+    content.innerHTML = html ? html + '</div>' : '<div class="empty-state"><div class="empty-state-icon">🎵</div><div class="empty-state-title">还没有音乐记录</div><div class="empty-state-desc">点击 + 按钮，记录你听过的音乐</div></div>';
   } else if (tab === 'game') {
     let html = '<div class="books-grid">';
     items.forEach(g => {
@@ -858,8 +923,111 @@ async function renderLibraryTab(tab) {
     items.forEach(p => {
       html += `<div class="book-card type-place" onclick="openDetail(${p.id})"><div class="entry-icon" style="width:64px;height:90px;border-radius:6px;background:rgba(201,169,97,0.15);color:var(--c-place);font-size:28px;display:flex;align-items:center;justify-content:center;">📍</div><div class="book-info"><div class="book-title">${p.title}</div><div class="book-author">${p.location||''}</div><div class="book-date">${(p.date||'').replace(/-/g,'/')}</div>${p.rating?`<div class="book-rating" style="color:var(--c-place)">${'★'.repeat(p.rating)}${'☆'.repeat(5-p.rating)}</div>`:''}</div></div>`;
     });
-    content.innerHTML = html + '</div>' || '<div class="search-empty">还没有地点记录</div>';
+    content.innerHTML = html ? html + '</div>' : '<div class="empty-state"><div class="empty-state-icon">📍</div><div class="empty-state-title">还没有地点记录</div><div class="empty-state-desc">点击 + 按钮，记录你去过的地方</div></div>';
   }
+}
+
+// === Movie Wall Content Renderer ===
+function renderMovieWallContent(items) {
+  const container = document.getElementById('movie-wall-content');
+  if (!container) return;
+  if (items.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎬</div><div class="empty-state-title">没有符合条件的电影</div><div class="empty-state-desc">试试调整搜索或筛选条件</div></div>';
+    return;
+  }
+  const byYear = {};
+  items.forEach(m => { const y = (getEntryDate(m)||'').slice(0,4) || '未知'; if (!byYear[y]) byYear[y] = []; byYear[y].push(m); });
+  let html = '';
+  Object.keys(byYear).sort().reverse().forEach((y, yi) => {
+    html += `<div class="year-section card-enter" style="animation-delay:${yi*0.08}s"><div class="year-header"><div class="year-number">${y}</div><div class="year-count">${byYear[y].length} 部</div></div><div class="poster-wall">`;
+    byYear[y].forEach((m, mi) => {
+      const delay = (yi*0.08 + mi*0.03).toFixed(2);
+      html += `<div class="poster-item card-enter" style="animation-delay:${delay}s" onclick="openDetail(${m.id})">${renderPosterWall(m)}<div class="poster-title">${m.title}</div><div class="poster-meta">${m.director || ''}${m.release_date ? ' · ' + m.release_date : ''}</div></div>`;
+    });
+    html += '</div></div>';
+  });
+  container.innerHTML = html;
+}
+
+function filterMovieWall() {
+  const q = (document.getElementById('movie-search')?.value || '').toLowerCase().trim();
+  const activeChip = document.querySelector('.lib-filter-chip.active');
+  const minRating = activeChip ? parseInt(activeChip.dataset.minRating) : 0;
+  let filtered = window._movieItems || [];
+  if (q) filtered = filtered.filter(m => {
+    return (m.title||'').toLowerCase().includes(q) ||
+           (m.original_title||'').toLowerCase().includes(q) ||
+           (m.director||'').toLowerCase().includes(q) ||
+           (m.genres||[]).some(g => g.toLowerCase().includes(q));
+  });
+  if (minRating > 0) filtered = filtered.filter(m => (m.rating || 0) >= minRating);
+  renderMovieWallContent(filtered);
+}
+
+function setMovieRatingFilter(rating, btn) {
+  document.querySelectorAll('.lib-filter-chip').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  filterMovieWall();
+}
+
+// === Book Wall Content Renderer ===
+function renderBookWallContent(items, status) {
+  const container = document.getElementById('book-wall-content');
+  if (!container) return;
+  let filtered = items;
+  if (status === 'want') filtered = items.filter(b => !b.finish_date && !b.start_date);
+  else if (status === 'reading') filtered = items.filter(b => b.start_date && !b.finish_date);
+  else if (status === 'done') filtered = items.filter(b => b.finish_date);
+
+  if (filtered.length === 0) {
+    const msgs = { all:'还没有书籍记录', want:'没有想读的书籍', reading:'没有在读的书籍', done:'没有已读的书籍' };
+    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📖</div><div class="empty-state-title">${msgs[status]||'没有书籍'}</div><div class="empty-state-desc">点击 + 按钮，搜索书籍并记录你的阅读体验</div></div>`;
+    return;
+  }
+
+  if (status === 'done' || status === 'all') {
+    const byYear = {};
+    filtered.forEach(b => {
+      const y = b.finish_date ? b.finish_date.slice(0,4) : (b.start_date ? b.start_date.slice(0,4) : '未开始');
+      if (!byYear[y]) byYear[y] = []; byYear[y].push(b);
+    });
+    let html = '';
+    Object.keys(byYear).sort().reverse().forEach((y, yi) => {
+      html += `<div class="year-section card-enter" style="animation-delay:${yi*0.08}s"><div class="year-header"><div class="year-number">${y}</div><div class="year-count">${byYear[y].length} 本</div></div><div class="books-grid">`;
+      byYear[y].forEach((b, bi) => {
+        const delay = (yi*0.08 + bi*0.03).toFixed(2);
+        html += renderBookCard(b, delay);
+      });
+      html += '</div></div>';
+    });
+    container.innerHTML = html;
+  } else {
+    let html = '<div class="books-grid">';
+    filtered.forEach((b, bi) => {
+      html += renderBookCard(b, (bi*0.04).toFixed(2));
+    });
+    container.innerHTML = html + '</div>';
+  }
+}
+
+function renderBookCard(b, delay) {
+  const [c1,c2] = getPosterColors(b);
+  const coverHtml = b.cover
+    ? `<div class="book-cover" style="background:linear-gradient(135deg,${c1},${c2});position:relative;overflow:hidden;"><div class="poster-fallback"><span class="pp-icon" style="font-size:20px;">📖</span><span class="pp-title" style="font-size:9px;">${b.title}</span></div><img src="${proxyImage(b.cover)}" alt="${b.title}" loading="lazy" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;"></div>`
+    : `<div class="book-cover" style="background:linear-gradient(135deg,${c1},${c2});display:flex;align-items:center;justify-content:center;font-size:20px;">📖</div>`;
+  const statusBadge = b.finish_date
+    ? '<span class="book-status-badge done">已读</span>'
+    : b.start_date
+      ? '<span class="book-status-badge reading">在读</span>'
+      : '<span class="book-status-badge want">想读</span>';
+  const dateStr = b.finish_date ? '读完于 ' + b.finish_date.replace(/-/g,'/') : b.start_date ? '开始于 ' + b.start_date.replace(/-/g,'/') : '未开始';
+  return `<div class="book-card card-enter" style="animation-delay:${delay||'0'}s" onclick="openDetail(${b.id})">${coverHtml}<div class="book-info">${statusBadge}<div class="book-title">${b.title}</div><div class="book-author">${b.author||''}</div><div class="book-date">${dateStr}</div>${b.rating?`<div class="book-rating">${'★'.repeat(b.rating)}${'☆'.repeat(5-b.rating)}</div>`:''}</div></div>`;
+}
+
+function filterBookWall(status, btn) {
+  document.querySelectorAll('.book-status-tab').forEach(t => t.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderBookWallContent(window._bookItems || [], status);
 }
 
 // === Search ===
@@ -890,9 +1058,9 @@ async function doSearch(query) {
     const f = [e.title,e.original_title,e.author,e.director,e.artist,e.review,e.notes,e.content,e.note,e.location,...(e.tags||[]),...(e.genres||[])];
     return f.some(x => x && String(x).toLowerCase().includes(q));
   });
-  if (matches.length === 0) { results.innerHTML = '<div class="search-empty">没有找到相关记忆</div>'; return; }
+  if (matches.length === 0) { results.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-title">没有找到相关记忆</div><div class="empty-state-desc">试试其他关键词，或者添加新的记录</div></div>'; return; }
   let html = '<div class="search-results">';
-  sortEntries(matches).forEach(e => { html += `<div onclick="openDetail(${e.id})">${renderEntryCard(e, true)}</div>`; });
+  sortEntries(matches).forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.04}s" onclick="openDetail(${e.id})">${renderEntryCard(e, true)}</div>`; });
   html += '</div>';
   results.innerHTML = html;
 }
@@ -903,17 +1071,127 @@ async function renderOnThisDay() {
   const all = await dbGetAll();
   const past = sortEntries(all.filter(e => { const d = getEntryDate(e); return d.endsWith('-08-27') && d !== '2026-08-27'; }));
   let html = `<div class="page-header"><div class="page-title">那年今日 · On This Day</div></div><div style="font-size:14px;color:var(--text-secondary);margin-bottom:32px;">8月27日 · 时间纵向切片</div>`;
-  if (past.length === 0) html += '<div class="search-empty">还没有这一天的历史记录</div>';
-  else { html += '<div class="today-entries">'; past.forEach((e,i) => { html += `<div class="fade-in fade-in-delay-${Math.min(i+1,4)}" onclick="openDetail(${e.id})">${renderEntryCard(e, true)}</div>`; }); html += '</div>'; }
+  if (past.length === 0) html += '<div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-title">还没有这一天的历史记录</div><div class="empty-state-desc">随着你记录更多内容，这里会展示同一天的历史记忆</div></div>';
+  else { html += '<div class="today-entries">'; past.forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.06}s" onclick="openDetail(${e.id})">${renderEntryCard(e, true)}</div>`; }); html += '</div>'; }
   document.getElementById('content').innerHTML = html;
 }
 
 // === Random ===
 async function renderRandom() {
   const all = await dbGetAll();
-  if (all.length === 0) { document.getElementById('content').innerHTML = '<div class="search-empty">还没有记忆记录</div>'; return; }
+  if (all.length === 0) { document.getElementById('content').innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎲</div><div class="empty-state-title">还没有记忆记录</div><div class="empty-state-desc">添加一些记录后，这里会随机展示一条回忆</div></div>'; return; }
   const r = all[Math.floor(Math.random() * all.length)];
-  document.getElementById('content').innerHTML = `<div class="page-header"><div class="page-title">随机回忆 · Random Memory</div><button class="btn btn-ghost" onclick="renderRandom()">换一个 →</button></div><div style="font-size:14px;color:var(--text-secondary);margin-bottom:32px;">给你看看一个你可能已经忘记的时刻</div><div onclick="openDetail(${r.id})">${renderEntryCard(r, true)}</div>`;
+  document.getElementById('content').innerHTML = `<div class="page-header"><div class="page-title">随机回忆 · Random Memory</div><button class="btn btn-ghost" onclick="renderRandom()">换一个 →</button></div><div style="font-size:14px;color:var(--text-secondary);margin-bottom:32px;">给你看看一个你可能已经忘记的时刻</div><div class="card-enter" onclick="openDetail(${r.id})">${renderEntryCard(r, true)}</div>`;
+}
+
+// === Year Review ===
+async function renderYearReview(yearOverride) {
+  const all = await dbGetAll();
+  const now = new Date();
+  const year = yearOverride || window._reviewYear || now.getFullYear();
+  window._reviewYear = year;
+  const yearEntries = all.filter(e => (getEntryDate(e)||'').slice(0,4) === String(year));
+  const movies = yearEntries.filter(e => e.type === 'movie');
+  const books = yearEntries.filter(e => e.type === 'book' && e.finish_date);
+  const games = yearEntries.filter(e => e.type === 'game');
+  const events = yearEntries.filter(e => e.type === 'event' || e.type === 'diary');
+  const typeCounts = {};
+  yearEntries.forEach(e => { typeCounts[e.type] = (typeCounts[e.type] || 0) + 1; });
+
+  // Rating stats
+  const ratedItems = yearEntries.filter(e => e.rating);
+  const avgRating = ratedItems.length ? (ratedItems.reduce((s,e) => s + e.rating, 0) / ratedItems.length).toFixed(1) : '—';
+  const topRated = sortEntries(ratedItems).slice(0, 5);
+
+  // Monthly activity
+  const monthMap = {};
+  for (let i = 0; i < 12; i++) monthMap[i] = 0;
+  yearEntries.forEach(e => { const m = parseInt((getEntryDate(e)||'').slice(5,7)); if (m >= 1 && m <= 12) monthMap[m-1]++; });
+  const maxMonth = Math.max(...Object.values(monthMap), 1);
+
+  let html = `
+    <div class="page-header">
+      <div class="page-title">${year} 年度回顾</div>
+      <div class="scale-switcher" id="year-switcher">
+        <button class="scale-btn" onclick="changeReviewYear(${year-1})">${year-1}</button>
+        <button class="scale-btn active">${year}</button>
+        ${year < now.getFullYear() ? `<button class="scale-btn" onclick="changeReviewYear(${year+1})">${year+1}</button>` : ''}
+      </div>
+    </div>`;
+
+  // Hero stats card
+  html += `
+    <div class="yr-hero card-enter">
+      <div class="yr-hero-bg" style="background:linear-gradient(135deg, var(--accent), var(--accent-soft));"></div>
+      <div class="yr-hero-content">
+        <div class="yr-hero-year">${year}</div>
+        <div class="yr-hero-summary">${yearEntries.length} 条记忆 · ${movies.length} 部电影 · ${books.length} 本书 · ${events.length} 条记录</div>
+        <div class="yr-hero-rating">平均评分 ${avgRating} ★</div>
+      </div>
+    </div>`;
+
+  // Stats grid
+  html += `<div class="yr-stats-grid">`;
+  const statItems = [
+    { label:'电影', num:movies.length, emoji:'🎬', color:'var(--c-movie)' },
+    { label:'书籍', num:books.length, emoji:'📖', color:'var(--c-book)' },
+    { label:'游戏', num:games.length, emoji:'🎮', color:'var(--c-game)' },
+    { label:'记录', num:events.length, emoji:'✦', color:'var(--c-event)' },
+  ];
+  statItems.forEach((s, i) => {
+    html += `<div class="yr-stat-card card-enter" style="animation-delay:${i*0.06}s;border-top:3px solid ${s.color}">
+      <div class="yr-stat-emoji">${s.emoji}</div>
+      <div class="yr-stat-num">${s.num}</div>
+      <div class="yr-stat-label">${s.label}</div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  // Monthly activity chart
+  const monthNames = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  html += `<div class="yr-section card-enter"><div class="detail-section-title">月度活跃 · Monthly Activity</div><div class="yr-chart">`;
+  monthNames.forEach((mn, i) => {
+    const h = Math.round((monthMap[i] / maxMonth) * 100);
+    html += `<div class="yr-chart-bar" title="${mn}: ${monthMap[i]} 条"><div class="yr-chart-fill" style="height:${Math.max(h,3)}%;animation-delay:${i*0.04}s"></div><div class="yr-chart-label">${mn.replace('月','')}</div></div>`;
+  });
+  html += `</div></div>`;
+
+  // Top rated
+  if (topRated.length > 0) {
+    html += `<div class="yr-section card-enter"><div class="detail-section-title">评分最高 · Top Rated</div><div class="yr-top-list">`;
+    topRated.forEach((e, i) => {
+      const meta = TYPE_META[e.type] || TYPE_META.event;
+      html += `<div class="yr-top-item" onclick="openDetail(${e.id})">
+        <div class="yr-top-rank">${i+1}</div>
+        ${e.poster ? `<img class="yr-top-poster" src="${proxyImage(e.poster)}" alt="${e.title}" loading="lazy" onerror="this.style.display='none'">` : `<div class="yr-top-poster" style="background:${meta.color}22;display:flex;align-items:center;justify-content:center;font-size:20px;">${meta.emoji}</div>`}
+        <div class="yr-top-info"><div class="yr-top-title">${e.title}</div><div class="yr-top-meta">${meta.label} · ${(getEntryDate(e)||'').replace(/-/g,'/')}</div></div>
+        <div class="yr-top-rating">${'★'.repeat(e.rating)}</div>
+      </div>`;
+    });
+    html += `</div></div>`;
+  }
+
+  // Type breakdown
+  const typeEntries = Object.entries(typeCounts).sort((a,b) => b[1] - a[1]);
+  if (typeEntries.length > 0) {
+    const total = typeEntries.reduce((s,[,n]) => s+n, 0);
+    html += `<div class="yr-section card-enter"><div class="detail-section-title">类型分布 · Type Breakdown</div><div class="yr-breakdown">`;
+    typeEntries.forEach(([type, count]) => {
+      const meta = TYPE_META[type] || {emoji:'•',label:type,color:'var(--text-tertiary)'};
+      const pct = Math.round((count/total)*100);
+      html += `<div class="yr-breakdown-row"><div class="yr-breakdown-label">${meta.emoji} ${meta.label}</div><div class="yr-breakdown-bar"><div class="yr-breakdown-fill" style="width:${pct}%;background:${meta.color}"></div></div><div class="yr-breakdown-num">${count}</div></div>`;
+    });
+    html += `</div></div>`;
+  }
+
+  if (yearEntries.length === 0) {
+    html = `<div class="page-header"><div class="page-title">${year} 年度回顾</div></div><div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-title">${year}年还没有记录</div><div class="empty-state-desc">开始记录你的记忆，年底就能看到精彩回顾了</div></div>`;
+  }
+
+  document.getElementById('content').innerHTML = html;
+}
+function changeReviewYear(yr) {
+  renderYearReview(yr);
 }
 
 // === Settings ===
@@ -983,42 +1261,49 @@ async function openDetail(id) {
   let html = `<button class="detail-back" onclick="navigate('${currentPage}')">← 返回</button>`;
   html += `<div class="detail-actions"><button class="detail-action-btn" onclick="openCapture(${e.id})">✎ 编辑</button><button class="detail-action-btn danger" onclick="confirmDelete(${e.id})">🗑 删除</button></div>`;
 
+  // Hero: poster + title + type badge
   if (e.poster || e.cover) {
     html += `<div class="detail-hero fade-in">${renderDetailPoster(e)}<div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${meta.emoji} ${meta.label}</div><div class="detail-title">${e.title}</div>`;
     if (e.original_title) html += `<div class="detail-subtitle">${e.original_title}</div>`;
-    if (e.author) html += `<div class="detail-subtitle">${e.author}</div>`;
-    if (e.director) html += `<div class="detail-subtitle">导演：${e.director}</div>`;
-    if (e.artist) html += `<div class="detail-subtitle">${e.artist} · ${e.album||''}</div>`;
-    html += '<div class="detail-meta">';
-    if (date) html += `<div class="detail-meta-item"><span class="detail-meta-label">${e.type==='movie'?'观看日期':e.type==='book'?'读完日期':e.type==='game'?'通关日期':'日期'}</span><span class="detail-meta-value">${date.replace(/-/g,'/')}</span></div>`;
-    if (time) html += `<div class="detail-meta-item"><span class="detail-meta-label">时间</span><span class="detail-meta-value">${time}</span></div>`;
-    if (e.rating) html += `<div class="detail-meta-item"><span class="detail-meta-label">评分</span><span class="detail-meta-value" style="color:#E8B948">${'★'.repeat(e.rating)}${'☆'.repeat(5-e.rating)}</span></div>`;
-    if (e.runtime) html += `<div class="detail-meta-item"><span class="detail-meta-label">片长</span><span class="detail-meta-value">${e.runtime} 分钟</span></div>`;
-    if (e.genres) html += `<div class="detail-meta-item"><span class="detail-meta-label">类型</span><span class="detail-meta-value">${e.genres.join(' / ')}</span></div>`;
-    if (e.location) html += `<div class="detail-meta-item"><span class="detail-meta-label">地点</span><span class="detail-meta-value">${e.location}</span></div>`;
-    if (e.watched_with) html += `<div class="detail-meta-item"><span class="detail-meta-label">同行</span><span class="detail-meta-value">${e.watched_with}</span></div>`;
-    if (e.mood) html += `<div class="detail-meta-item"><span class="detail-meta-label">心情</span><span class="detail-meta-value">${e.mood}</span></div>`;
-    if (e.platform) html += `<div class="detail-meta-item"><span class="detail-meta-label">平台</span><span class="detail-meta-value">${e.platform}</span></div>`;
-    if (e.hours) html += `<div class="detail-meta-item"><span class="detail-meta-label">游戏时长</span><span class="detail-meta-value">${e.hours} 小时</span></div>`;
-    if (e.rewatch_count) html += `<div class="detail-meta-item"><span class="detail-meta-label">重看次数</span><span class="detail-meta-value">${e.rewatch_count}</span></div>`;
-    if (e.importance) html += `<div class="detail-meta-item"><span class="detail-meta-label">重要程度</span><span class="detail-meta-value">${'●'.repeat(e.importance)}${'○'.repeat(5-e.importance)}</span></div>`;
-    html += '</div></div></div>';
+    html += '</div></div>';
   } else {
     html += `<div class="detail-hero fade-in" style="gap:0"><div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${meta.emoji} ${meta.label}</div><div class="detail-title">${e.title}</div>`;
     if (e.location) html += `<div class="detail-subtitle">${e.location}</div>`;
-    html += '<div class="detail-meta">';
-    if (date) html += `<div class="detail-meta-item"><span class="detail-meta-label">日期</span><span class="detail-meta-value">${date.replace(/-/g,'/')}</span></div>`;
-    if (time) html += `<div class="detail-meta-item"><span class="detail-meta-label">时间</span><span class="detail-meta-value">${time}</span></div>`;
-    if (e.mood) html += `<div class="detail-meta-item"><span class="detail-meta-label">心情</span><span class="detail-meta-value">${e.mood}</span></div>`;
-    if (e.importance) html += `<div class="detail-meta-item"><span class="detail-meta-label">重要程度</span><span class="detail-meta-value">${'●'.repeat(e.importance)}${'○'.repeat(5-e.importance)}</span></div>`;
-    if (e.rating) html += `<div class="detail-meta-item"><span class="detail-meta-label">评分</span><span class="detail-meta-value" style="color:#E8B948">${'★'.repeat(e.rating)}${'☆'.repeat(5-e.rating)}</span></div>`;
-    if (e.people) html += `<div class="detail-meta-item"><span class="detail-meta-label">同行</span><span class="detail-meta-value">${e.people.join('、')}</span></div>`;
-    html += '</div></div></div>';
+    html += '</div></div>';
   }
+
+  // 作品资料 (Objective data — external info about the work itself)
+  let objHtml = '';
+  if (e.director) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">导演</span><span class="detail-meta-value">${e.director}</span></div>`;
+  if (e.author) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">作者</span><span class="detail-meta-value">${e.author}</span></div>`;
+  if (e.artist) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">艺人</span><span class="detail-meta-value">${e.artist}</span></div>`;
+  if (e.album) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">专辑</span><span class="detail-meta-value">${e.album}</span></div>`;
+  if (e.genres && e.genres.length) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">类型</span><span class="detail-meta-value">${e.genres.join(' / ')}</span></div>`;
+  if (e.runtime) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">片长</span><span class="detail-meta-value">${e.runtime} 分钟</span></div>`;
+  if (e.release_date) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">上映</span><span class="detail-meta-value">${e.release_date}</span></div>`;
+  if (e.platform) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">平台</span><span class="detail-meta-value">${e.platform}</span></div>`;
+  if (e.location && e.type === 'place') objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">位置</span><span class="detail-meta-value">${e.location}</span></div>`;
+  if (objHtml) html += `<div class="detail-section fade-in-delay-1"><div class="detail-section-title">作品资料 · Work Info</div><div class="detail-meta-grid">${objHtml}</div></div>`;
+
+  // 我的记录 (Personal data — user's own experience)
+  let perHtml = '';
+  if (date) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">${e.type==='movie'?'观看日期':e.type==='book'?'读完日期':e.type==='game'?'通关日期':'日期'}</span><span class="detail-meta-value">${date.replace(/-/g,'/')}</span></div>`;
+  if (time) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">时间</span><span class="detail-meta-value">${time}</span></div>`;
+  if (e.rating) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">评分</span><span class="detail-meta-value" style="color:#E8B948">${'★'.repeat(e.rating)}${'☆'.repeat(5-e.rating)}</span></div>`;
+  if (e.mood) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">心情</span><span class="detail-meta-value">${e.mood}</span></div>`;
+  if (e.category) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">分类</span><span class="detail-meta-value">${e.category}</span></div>`;
+  if (e.importance) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">重要程度</span><span class="detail-meta-value">${'●'.repeat(e.importance)}${'○'.repeat(5-e.importance)}</span></div>`;
+  if (e.watched_with) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">同行</span><span class="detail-meta-value">${e.watched_with}</span></div>`;
+  if (e.people && e.people.length) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">同行</span><span class="detail-meta-value">${e.people.join('、')}</span></div>`;
+  if (e.hours) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">游戏时长</span><span class="detail-meta-value">${e.hours} 小时</span></div>`;
+  if (e.rewatch_count) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">重看次数</span><span class="detail-meta-value">${e.rewatch_count}</span></div>`;
+  if (perHtml) html += `<div class="detail-section fade-in-delay-1"><div class="detail-section-title">我的记录 · My Record</div><div class="detail-meta-grid">${perHtml}</div></div>`;
+
+  // 感想/笔记
   const tc = e.review || e.content || e.notes || e.note;
-  if (tc) html += `<div class="detail-section fade-in-delay-1"><div class="detail-section-title">${e.review?'Review · 感想':e.content?'正文':'Notes · 笔记'}</div><div class="detail-review">${tc}</div></div>`;
-  if (e.quotes) html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">Quote · 摘录</div><div class="detail-review" style="font-style:italic;border-left:3px solid var(--border-strong);padding-left:16px;">${e.quotes}</div></div>`;
-  if (e.tags && e.tags.length) html += `<div class="detail-section fade-in-delay-3"><div class="detail-section-title">Tags · 标签</div><div class="detail-tags">${e.tags.map(t=>`<span class="detail-tag">${t}</span>`).join('')}</div></div>`;
+  if (tc) html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">${e.review?'感想 · Review':e.content?'正文':'笔记 · Notes'}</div><div class="detail-review">${tc}</div></div>`;
+  if (e.quotes) html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">摘录 · Quote</div><div class="detail-review" style="font-style:italic;border-left:3px solid var(--border-strong);padding-left:16px;">${e.quotes}</div></div>`;
+  if (e.tags && e.tags.length) html += `<div class="detail-section fade-in-delay-3"><div class="detail-section-title">标签 · Tags</div><div class="detail-tags">${e.tags.map(t=>`<span class="detail-tag">${t}</span>`).join('')}</div></div>`;
   document.getElementById('content').innerHTML = html;
   document.getElementById('content').classList.add('fade-in');
   window.scrollTo({ top:0, behavior:'smooth' });
@@ -1027,74 +1312,250 @@ async function openDetail(id) {
 // === Quick Capture ===
 function openCapture(entryId) {
   editingId = entryId;
-  const title = document.getElementById('modal-title');
   const saveBtn = document.getElementById('save-btn');
-  if (entryId) { title.textContent = 'Edit Entry'; saveBtn.textContent = '更新'; loadEntryForEdit(entryId); }
-  else { title.textContent = 'Quick Capture'; saveBtn.textContent = '保存'; resetCaptureForm(); }
+  if (entryId) {
+    saveBtn.textContent = '更新';
+    document.getElementById('step-type').style.display = 'none';
+    document.getElementById('step-form').style.display = 'block';
+    loadEntryForEdit(entryId);
+  } else {
+    saveBtn.textContent = '保存';
+    document.getElementById('step-type').style.display = 'block';
+    document.getElementById('step-form').style.display = 'none';
+    selectedType = null;
+    selectedRating = 0;
+    doubanSelectedMovie = null;
+  }
   document.getElementById('capture-modal').classList.add('show');
-  if (!entryId) document.getElementById('capture-input').focus();
+}
+
+function backToTypeSelect() {
+  document.getElementById('step-form').style.display = 'none';
+  document.getElementById('step-type').style.display = 'block';
+  selectedType = null;
+}
+
+function selectType(type) {
+  selectedType = type;
+  selectedRating = 0;
+  const meta = TYPE_META[type] || {};
+  document.getElementById('modal-title').textContent = meta.label || '记录';
+  document.getElementById('step-type').style.display = 'none';
+  document.getElementById('step-form').style.display = 'block';
+  const container = document.getElementById('workflow-container');
+  const today = new Date().toISOString().slice(0,10);
+  const now = new Date().toTimeString().slice(0,5);
+
+  if (type === 'movie') {
+    container.innerHTML = `
+      <div class="douban-search">
+        <div class="field-label" style="margin-bottom:8px;">🔍 搜索电影，自动导入信息</div>
+        <div class="douban-search-box">
+          <input type="text" class="field-input" id="douban-input" placeholder="输入电影名，如：奥本海默..." oninput="debouncedDoubanSearch(this.value)">
+        </div>
+        <div id="douban-results" class="douban-results"></div>
+      </div>
+      <div class="capture-fields show" id="capture-fields">
+        <div class="field-row"><div class="field-label">片名</div><input type="text" class="field-input" id="capture-title" placeholder="电影名"></div>
+        <div class="field-row" id="rating-row"><div class="field-label">评分</div>
+          <div class="rating-select"><span class="rating-star" data-val="1" onclick="setRating(1)">☆</span><span class="rating-star" data-val="2" onclick="setRating(2)">☆</span><span class="rating-star" data-val="3" onclick="setRating(3)">☆</span><span class="rating-star" data-val="4" onclick="setRating(4)">☆</span><span class="rating-star" data-val="5" onclick="setRating(5)">☆</span></div>
+        </div>
+        <div class="field-row"><div class="field-label">观后感</div><textarea class="field-textarea" id="capture-review" placeholder="写一些你的想法..."></textarea></div>
+        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="科幻, 哲学, IMAX"></div>
+      </div>`;
+    document.getElementById('douban-input').focus();
+  } else if (type === 'book') {
+    container.innerHTML = `
+      <div class="douban-search">
+        <div class="field-label" style="margin-bottom:8px;">🔍 搜索书籍，自动导入信息</div>
+        <div class="douban-search-box">
+          <input type="text" class="field-input" id="book-input" placeholder="输入书名，如：百年孤独..." oninput="debouncedBookSearch(this.value)">
+        </div>
+        <div id="douban-results" class="douban-results"></div>
+      </div>
+      <div class="capture-fields show" id="capture-fields">
+        <div class="field-row"><div class="field-label">书名</div><input type="text" class="field-input" id="capture-title" placeholder="书名"></div>
+        <div class="field-row"><div class="field-label">作者</div><input type="text" class="field-input" id="capture-extra" placeholder="作者"></div>
+        <div class="field-row"><div class="field-label">阅读状态</div>
+          <div class="reading-status">
+            <button class="reading-status-btn" onclick="setReadingStatus('want')">想读</button>
+            <button class="reading-status-btn" onclick="setReadingStatus('reading')">在读</button>
+            <button class="reading-status-btn selected" onclick="setReadingStatus('done')">已读</button>
+          </div>
+        </div>
+        <div class="field-row" id="rating-row"><div class="field-label">评分</div>
+          <div class="rating-select"><span class="rating-star" data-val="1" onclick="setRating(1)">☆</span><span class="rating-star" data-val="2" onclick="setRating(2)">☆</span><span class="rating-star" data-val="3" onclick="setRating(3)">☆</span><span class="rating-star" data-val="4" onclick="setRating(4)">☆</span><span class="rating-star" data-val="5" onclick="setRating(5)">☆</span></div>
+        </div>
+        <div class="field-row"><div class="field-label">读书笔记</div><textarea class="field-textarea" id="capture-review" placeholder="写一些你的想法..."></textarea></div>
+        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="历史, 文学"></div>
+      </div>`;
+    document.getElementById('book-input').focus();
+  } else if (type === 'diary') {
+    container.innerHTML = `
+      <div class="capture-fields show" id="capture-fields">
+        <div class="field-row"><div class="field-label">标题（可选）</div><input type="text" class="field-input" id="capture-title" placeholder="给这天起个名字..."></div>
+        <div class="field-row"><div class="field-label">日记内容</div><textarea class="capture-textarea" id="capture-review" placeholder="今天发生了什么？写点什么..." style="min-height:200px;"></textarea></div>
+        <div class="field-row"><div class="field-label">心情</div><input type="text" class="field-input" id="capture-extra" placeholder="平静 / 兴奋 / 沉思..."></div>
+        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="日常, 思考"></div>
+      </div>`;
+    setTimeout(() => document.getElementById('capture-review')?.focus(), 100);
+  } else if (type === 'event') {
+    const eventCats = ['旅行','学习','工作','生活','社交','纪念','重要事件','其他'];
+    container.innerHTML = `
+      <div class="capture-fields show" id="capture-fields">
+        <div class="field-row"><div class="field-label">发生了什么</div><input type="text" class="field-input" id="capture-title" placeholder="一句话概括"></div>
+        <div class="field-row"><div class="field-label">详细描述</div><textarea class="field-textarea" id="capture-review" placeholder="详细记录..."></textarea></div>
+        <div class="field-row"><div class="field-label">分类</div>
+          <div class="event-categories" id="event-cats">
+            ${eventCats.map(c => `<span class="event-cat" onclick="setEventCategory('${c}')">${c}</span>`).join('')}
+          </div>
+        </div>
+        <div class="field-row"><div class="field-label">地点（可选）</div><input type="text" class="field-input" id="capture-extra" placeholder="地点"></div>
+        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="生活, 转折"></div>
+      </div>`;
+    document.getElementById('capture-title').focus();
+  } else if (type === 'music') {
+    container.innerHTML = `
+      <div class="capture-fields show" id="capture-fields">
+        <div class="field-row"><div class="field-label">曲目</div><input type="text" class="field-input" id="capture-title" placeholder="歌曲名"></div>
+        <div class="field-row"><div class="field-label">艺人 / 专辑</div><input type="text" class="field-input" id="capture-extra" placeholder="艺人 / 专辑"></div>
+        <div class="field-row" id="rating-row"><div class="field-label">评分</div>
+          <div class="rating-select"><span class="rating-star" data-val="1" onclick="setRating(1)">☆</span><span class="rating-star" data-val="2" onclick="setRating(2)">☆</span><span class="rating-star" data-val="3" onclick="setRating(3)">☆</span><span class="rating-star" data-val="4" onclick="setRating(4)">☆</span><span class="rating-star" data-val="5" onclick="setRating(5)">☆</span></div>
+        </div>
+        <div class="field-row"><div class="field-label">感想</div><textarea class="field-textarea" id="capture-review" placeholder="听后感..."></textarea></div>
+        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="深夜, 散步"></div>
+      </div>`;
+    document.getElementById('capture-title').focus();
+  } else if (type === 'game') {
+    container.innerHTML = `
+      <div class="capture-fields show" id="capture-fields">
+        <div class="field-row"><div class="field-label">游戏名</div><input type="text" class="field-input" id="capture-title" placeholder="游戏名"></div>
+        <div class="field-row"><div class="field-label">平台</div><input type="text" class="field-input" id="capture-extra" placeholder="PS5 / PC / Switch..."></div>
+        <div class="field-row" id="rating-row"><div class="field-label">评分</div>
+          <div class="rating-select"><span class="rating-star" data-val="1" onclick="setRating(1)">☆</span><span class="rating-star" data-val="2" onclick="setRating(2)">☆</span><span class="rating-star" data-val="3" onclick="setRating(3)">☆</span><span class="rating-star" data-val="4" onclick="setRating(4)">☆</span><span class="rating-star" data-val="5" onclick="setRating(5)">☆</span></div>
+        </div>
+        <div class="field-row"><div class="field-label">评测</div><textarea class="field-textarea" id="capture-review" placeholder="游戏体验..."></textarea></div>
+        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="RPG, 开放世界"></div>
+      </div>`;
+    document.getElementById('capture-title').focus();
+  } else if (type === 'place') {
+    container.innerHTML = `
+      <div class="capture-fields show" id="capture-fields">
+        <div class="field-row"><div class="field-label">地点名</div><input type="text" class="field-input" id="capture-title" placeholder="地点名"></div>
+        <div class="field-row"><div class="field-label">位置</div><input type="text" class="field-input" id="capture-extra" placeholder="城市 / 地区"></div>
+        <div class="field-row" id="rating-row"><div class="field-label">评分</div>
+          <div class="rating-select"><span class="rating-star" data-val="1" onclick="setRating(1)">☆</span><span class="rating-star" data-val="2" onclick="setRating(2)">☆</span><span class="rating-star" data-val="3" onclick="setRating(3)">☆</span><span class="rating-star" data-val="4" onclick="setRating(4)">☆</span><span class="rating-star" data-val="5" onclick="setRating(5)">☆</span></div>
+        </div>
+        <div class="field-row"><div class="field-label">游记</div><textarea class="field-textarea" id="capture-review" placeholder="记录你的旅行..."></textarea></div>
+        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="旅行, 城市"></div>
+      </div>`;
+    document.getElementById('capture-title').focus();
+  } else {
+    container.innerHTML = `
+      <div class="capture-fields show" id="capture-fields">
+        <div class="field-row"><div class="field-label">标题</div><input type="text" class="field-input" id="capture-title" placeholder="标题"></div>
+        <div class="field-row"><div class="field-label">内容</div><textarea class="field-textarea" id="capture-review" placeholder="写一些内容..."></textarea></div>
+        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="标签"></div>
+      </div>`;
+    document.getElementById('capture-title').focus();
+  }
 }
 
 function resetCaptureForm() {
-  ['capture-input','capture-title','capture-review','capture-tags','capture-extra'].forEach(id => { document.getElementById(id).value = ''; });
-  document.getElementById('capture-date').value = new Date().toISOString().slice(0,10);
-  document.getElementById('capture-time').value = '';
   selectedType = null; selectedRating = 0;
-  document.querySelectorAll('.type-option').forEach(t => t.classList.remove('selected'));
-  document.getElementById('capture-fields').classList.remove('show');
-  document.getElementById('rating-row').style.display = 'none';
-  document.getElementById('extra-fields').style.display = 'none';
-  document.querySelectorAll('.rating-star').forEach(s => { s.classList.remove('active'); s.textContent = '☆'; });
   doubanSelectedMovie = null;
-  const di = document.getElementById('douban-input');
-  if (di) di.value = '';
-  const dr = document.getElementById('douban-results');
-  if (dr) dr.innerHTML = '';
+  document.getElementById('workflow-container').innerHTML = '';
 }
 
 async function loadEntryForEdit(id) {
   const e = await dbGet(id);
   if (!e) { closeCapture(); return; }
-  document.getElementById('capture-input').value = e.review || e.content || e.notes || e.note || '';
-  document.getElementById('capture-title').value = e.title || '';
-  document.getElementById('capture-date').value = getEntryDate(e) || '';
-  document.getElementById('capture-time').value = getEntryTime(e) || '';
-  document.getElementById('capture-review').value = e.review || e.content || e.notes || e.note || '';
-  document.getElementById('capture-tags').value = (e.tags || []).join(', ');
+  selectType(e.type);
+  if (e.title) document.getElementById('capture-title').value = e.title;
+  if (e.review) document.getElementById('capture-review').value = e.review;
+  else if (e.content) document.getElementById('capture-review').value = e.content;
+  else if (e.notes) document.getElementById('capture-review').value = e.notes;
+  else if (e.note) document.getElementById('capture-review').value = e.note;
+  if (e.tags) document.getElementById('capture-tags').value = e.tags.join(', ');
   if (e.rating) setRating(e.rating);
-  selectType(e.type, false);
-  const extraMap = { book:e.author, music:e.artist, game:e.platform, place:e.location, event:e.location };
-  if (extraMap[e.type]) {
-    document.getElementById('capture-extra').value = extraMap[e.type];
-    document.getElementById('extra-fields').style.display = 'block';
-    const labels = { book:'作者', music:'艺人 / 专辑', game:'平台', place:'地点', event:'地点' };
-    document.getElementById('extra-label').textContent = labels[e.type] || '补充信息';
-  }
+  const extraMap = { book:e.author, music:e.artist, game:e.platform, place:e.location, event:e.location, diary:e.mood };
+  if (extraMap[e.type] && document.getElementById('capture-extra')) document.getElementById('capture-extra').value = extraMap[e.type];
   doubanSelectedMovie = (e.type === 'movie' && e.poster) ? { img: e.poster, title: e.title, year: e.release_date || '', sub_title: e.original_title || '' } : null;
+  if (e.type === 'movie' && e.title) document.getElementById('capture-title').value = e.title;
+  if (e.type === 'book' && e.author) document.getElementById('capture-extra').value = e.author;
+  if (e.type === 'event' && e.category) setEventCategory(e.category);
+  document.getElementById('modal-title').textContent = '编辑记录';
+  document.getElementById('back-btn').style.display = 'none';
 }
 
-function closeCapture() { document.getElementById('capture-modal').classList.remove('show'); editingId = null; }
-
-function detectType() {
-  if (editingId) return;
-  const text = document.getElementById('capture-input').value.toLowerCase();
-  const kw = { movie:['电影','看','watched','movie','film','影院'], book:['书','读','book','read','读完'], music:['音乐','歌','听','music','song','专辑'], game:['游戏','玩','game','通关'], place:['去','旅行','place','地点','景点'], event:['事件','决定','搬家','毕业','生日','转折','想通'] };
-  for (const [type, keywords] of Object.entries(kw)) { if (keywords.some(k => text.includes(k))) { selectType(type, false); return; } }
+// === Reading Status & Event Category ===
+let readingStatus = 'done';
+function setReadingStatus(status) {
+  readingStatus = status;
+  document.querySelectorAll('.reading-status-btn').forEach(b => b.classList.remove('selected'));
+  event.target.classList.add('selected');
+}
+let eventCategory = '';
+function setEventCategory(cat) {
+  eventCategory = cat;
+  document.querySelectorAll('.event-cat').forEach(c => c.classList.remove('selected'));
+  event.target.classList.add('selected');
 }
 
-function selectType(type) {
-  selectedType = type;
-  document.querySelectorAll('.type-option').forEach(t => t.classList.remove('selected'));
-  const el = document.querySelector(`.type-option[data-type="${type}"]`);
-  if (el) el.classList.add('selected');
-  document.getElementById('capture-fields').classList.add('show');
-  document.getElementById('rating-row').style.display = ['movie','book','music','game','place'].includes(type) ? 'block' : 'none';
-  if (['book','music','game','place','event'].includes(type)) {
-    document.getElementById('extra-fields').style.display = 'block';
-    const labels = { book:'作者', music:'艺人 / 专辑', game:'平台', place:'地点', event:'地点' };
-    document.getElementById('extra-label').textContent = labels[type] || '补充信息';
-  } else document.getElementById('extra-fields').style.display = 'none';
+// === Book Search (via Douban) ===
+let bookSearchTimer = null;
+function debouncedBookSearch(val) {
+  clearTimeout(bookSearchTimer);
+  bookSearchTimer = setTimeout(() => searchBook(val), 400);
 }
+async function searchBook(query) {
+  if (!query || query.trim().length < 1) { renderBookResults([]); return; }
+  const resultsEl = document.getElementById('douban-results');
+  if (resultsEl) resultsEl.innerHTML = '<div class="douban-loading">搜索中...</div>';
+  const q = query.trim();
+  const results = [];
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        data.forEach(d => {
+          if (d.type === 'book' || d.title.includes(query)) results.push(d);
+        });
+      }
+    }
+  } catch(e) {}
+  renderBookResults(results);
+}
+function renderBookResults(results) {
+  const el = document.getElementById('douban-results');
+  if (!el) return;
+  if (!results || results.length === 0) {
+    el.innerHTML = '<div class="douban-loading">没有找到相关书籍，可手动填写</div>';
+    return;
+  }
+  el.innerHTML = results.map((r, i) => `
+    <div class="douban-result-item" onclick="selectBookResult(${i})">
+      <img src="${proxyImage(r.img)}" alt="${r.title}" loading="lazy" onerror="this.style.display='none'">
+      <div class="douban-result-info">
+        <div class="douban-result-title">${r.title}</div>
+        <div class="douban-result-year">${r.year || ''} ${r.sub_title ? '· ' + r.sub_title : ''}</div>
+        <div class="douban-source-badge">来源：豆瓣</div>
+      </div>
+    </div>
+  `).join('');
+  window._bookResults = results;
+}
+function selectBookResult(idx) {
+  const r = window._bookResults && window._bookResults[idx];
+  if (!r) return;
+  document.getElementById('capture-title').value = r.title;
+  if (r.sub_title) document.getElementById('capture-extra').value = r.sub_title;
+  document.querySelectorAll('.douban-result-item').forEach((el, i) => el.classList.toggle('selected', i === idx));
+  showToast('已导入：' + r.title, 'success');
+}
+
+function closeCapture() { document.getElementById('capture-modal').classList.remove('show'); editingId = null; document.getElementById('back-btn').style.display = ''; }
 
 function setRating(val) {
   selectedRating = val;
@@ -1102,23 +1563,47 @@ function setRating(val) {
 }
 
 async function saveCapture() {
-  const title = document.getElementById('capture-title').value.trim() || document.getElementById('capture-input').value.trim().slice(0, 50);
-  if (!title) { showToast('请输入标题或内容', 'error'); return; }
+  const titleEl = document.getElementById('capture-title');
+  const reviewEl = document.getElementById('capture-review');
+  const tagsEl = document.getElementById('capture-tags');
+  const extraEl = document.getElementById('capture-extra');
+  const title = titleEl ? titleEl.value.trim() : '';
+  if (!title && selectedType !== 'diary') { showToast('请输入标题', 'error'); return; }
   if (!selectedType) { showToast('请选择记录类型', 'error'); return; }
-  const date = document.getElementById('capture-date').value;
-  const time = document.getElementById('capture-time').value;
-  const review = document.getElementById('capture-review').value.trim() || document.getElementById('capture-input').value.trim();
-  const tagsStr = document.getElementById('capture-tags').value.trim();
+  const review = reviewEl ? reviewEl.value.trim() : '';
+  const tagsStr = tagsEl ? tagsEl.value.trim() : '';
   const tags = tagsStr ? tagsStr.split(/[,，]/).map(t => t.trim()).filter(Boolean) : [];
-  const extra = document.getElementById('capture-extra').value.trim();
-  const entry = { type:selectedType, title, tags, updated_at:new Date().toISOString() };
-  if (selectedType === 'movie') { entry.watch_date=date; entry.watch_time=time; entry.review=review; if(extra)entry.director=extra; if(selectedRating)entry.rating=selectedRating; if(doubanSelectedMovie){entry.poster=doubanSelectedMovie.img; if(doubanSelectedMovie.year)entry.release_date=doubanSelectedMovie.year; if(doubanSelectedMovie.sub_title)entry.original_title=doubanSelectedMovie.sub_title;} }
-  else if (selectedType === 'book') { entry.finish_date=date; if(time)entry.finish_time=time; entry.notes=review; if(extra)entry.author=extra; if(selectedRating)entry.rating=selectedRating; }
-  else if (selectedType === 'music') { entry.date=date; entry.note=review; if(extra)entry.artist=extra; if(selectedRating)entry.rating=selectedRating; }
-  else if (selectedType === 'game') { entry.start_date=date; if(extra)entry.platform=extra; entry.review=review; if(selectedRating)entry.rating=selectedRating; }
-  else if (selectedType === 'place') { entry.date=date; entry.note=review; if(extra)entry.location=extra; if(selectedRating)entry.rating=selectedRating; }
-  else if (selectedType === 'event') { entry.event_date=date; if(time)entry.event_time=time; entry.content=review; if(extra)entry.location=extra; }
-  else { entry.event_date=date; entry.content=review; }
+  const extra = extraEl ? extraEl.value.trim() : '';
+  const now = new Date();
+  const today = now.toISOString().slice(0,10);
+  const time = now.toTimeString().slice(0,5);
+  const entry = { type:selectedType, title, tags, updated_at:now.toISOString() };
+  if (selectedType === 'movie') {
+    entry.watch_date=today; entry.watch_time=time; entry.review=review;
+    if(selectedRating)entry.rating=selectedRating;
+    if(doubanSelectedMovie){entry.poster=doubanSelectedMovie.img; if(doubanSelectedMovie.year)entry.release_date=doubanSelectedMovie.year; if(doubanSelectedMovie.sub_title)entry.original_title=doubanSelectedMovie.sub_title;}
+  } else if (selectedType === 'book') {
+    if(readingStatus==='done'){entry.finish_date=today; entry.finish_time=time;}
+    else if(readingStatus==='reading'){entry.start_date=today; entry.finish_date=null;}
+    else {entry.start_date=null; entry.finish_date=null;}
+    entry.notes=review; if(extra)entry.author=extra; if(selectedRating)entry.rating=selectedRating;
+  } else if (selectedType === 'diary') {
+    entry.event_date=today; entry.event_time=time;
+    entry.content=review; if(extra)entry.mood=extra;
+    if(!title) entry.title = today.slice(5).replace('-','月')+'日';
+  } else if (selectedType === 'event') {
+    entry.event_date=today; entry.event_time=time;
+    entry.content=review; if(extra)entry.location=extra;
+    if(eventCategory)entry.category=eventCategory;
+  } else if (selectedType === 'music') {
+    entry.date=today; entry.note=review; if(extra)entry.artist=extra; if(selectedRating)entry.rating=selectedRating;
+  } else if (selectedType === 'game') {
+    entry.start_date=today; if(extra)entry.platform=extra; entry.review=review; if(selectedRating)entry.rating=selectedRating;
+  } else if (selectedType === 'place') {
+    entry.date=today; entry.note=review; if(extra)entry.location=extra; if(selectedRating)entry.rating=selectedRating;
+  } else {
+    entry.event_date=today; entry.content=review;
+  }
   if (editingId) {
     const ex = await dbGet(editingId);
     const merged = { ...ex, ...entry };
@@ -1131,7 +1616,7 @@ async function saveCapture() {
     closeCapture();
     await openDetail(editId);
   } else {
-    entry.created_at = new Date().toISOString();
+    entry.created_at = now.toISOString();
     await dbAdd(entry);
     showToast('已保存', 'success');
     closeCapture();
@@ -1192,6 +1677,27 @@ document.addEventListener('keydown', (e) => {
 });
 document.getElementById('capture-modal').addEventListener('click', function(e) { if (e.target === this) closeCapture(); });
 document.getElementById('confirm-overlay').addEventListener('click', function(e) { if (e.target === this) closeConfirm(); });
+
+// === Image lazy load ===
+document.addEventListener('load', function(e) {
+  if (e.target && e.target.tagName === 'IMG') e.target.classList.add('loaded');
+}, true);
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('img[loading="lazy"]').forEach(img => {
+    if (img.complete) img.classList.add('loaded');
+    else img.addEventListener('load', () => img.classList.add('loaded'), { once:true });
+  });
+});
+
+// === Mobile keyboard adaptation ===
+if ('virtualKeyboard' in navigator) {
+  navigator.virtualKeyboard.overlaysContent = true;
+}
+document.addEventListener('focusin', function(e) {
+  if (e.target.matches('input, textarea')) {
+    setTimeout(() => e.target.scrollIntoView({ behavior:'smooth', block:'center' }), 300);
+  }
+});
 
 // === Mobile Touch Gestures ===
 let touchStartX = 0, touchStartY = 0, touchEndX = 0, touchEndY = 0;
