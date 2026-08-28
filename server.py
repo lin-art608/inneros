@@ -80,6 +80,8 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith('/img?url='):
             self.handle_image_proxy()
+        elif self.path.startswith('/api/sports'):
+            self.handle_sports()
         elif self.path.startswith('/api/douban'):
             self.handle_douban()
         elif self.path.startswith('/api/search?q='):
@@ -113,11 +115,28 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(500, 'Douban search failed')
 
     def handle_douban(self):
-        # 与线上 functions/api/douban.js 行为一致：电影/书籍走豆瓣 subject_suggest，归一化返回
+        # 与线上 functions/api/douban.js 行为一致：
+        #   1) 搜索模式 type=movie|book&q= —— 豆瓣 subject_suggest 归一化返回
+        #   2) 详情模式 type=detail&kind=movie|book&id= —— 电影走 m.douban rexxar API（含简介/导演/评分/片长），
+        #      书籍走详情页 HTML 解析（出版社/ISBN/页数/出版年/简介）
         parsed = urllib.parse.urlparse(self.path)
         params = urllib.parse.parse_qs(parsed.query)
         q = params.get('q', [''])[0]
         dtype = params.get('type', ['movie'])[0]
+        did = params.get('id', [''])[0]
+
+        if dtype == 'detail':
+            kind = params.get('kind', ['movie'])[0]
+            if not did:
+                self._send_json({'detail': None}, 400)
+                return
+            try:
+                detail = self._douban_book_detail(did) if kind == 'book' else self._douban_movie_detail(did)
+                self._send_json({'detail': detail})
+            except Exception:
+                self._send_json({'detail': None}, 502)
+            return
+
         if not q:
             self._send_json({'results': [], 'items': []}, 400)
             return
@@ -142,6 +161,154 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({'results': results})
         except Exception:
             self._send_json({'results': [], 'items': []}, 502)
+
+    def _fetch_url(self, url, referer='https://movie.douban.com/', timeout=12):
+        req = urllib.request.Request(url)
+        req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        req.add_header('Referer', referer)
+        req.add_header('Accept', 'application/json, text/javascript, */*; q=0.01')
+        req.add_header('Accept-Language', 'zh-CN,zh;q=0.9')
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return response.read().decode('utf-8', 'ignore')
+
+    def _douban_movie_detail(self, did):
+        # 豆瓣移动端 rexxar API：含 intro 简介 / 导演 / 类型 / 评分 / 片长
+        body = self._fetch_url(f'https://m.douban.com/rexxar/api/v2/movie/{did}',
+                               referer=f'https://m.douban.com/movie/{did}/')
+        d = json.loads(body)
+        durations = d.get('durations') or ['']
+        dm = re.search(r'\d+', durations[0] or '')
+        pubdate = (d.get('pubdate') or [''])[0] if d.get('pubdate') else ''
+        return {
+            'external_id': str(d.get('id') or did),
+            'title': d.get('title') or '',
+            'original_title': d.get('original_title') or '',
+            'poster': d.get('cover_url') or ((d.get('pic') or {}).get('large') or ''),
+            'release_date': pubdate or (str(d.get('year')) if d.get('year') else ''),
+            'director': ' / '.join(x.get('name', '') for x in (d.get('directors') or [])),
+            'actors': ' / '.join(x.get('name', '') for x in (d.get('actors') or [])),
+            'genres': d.get('genres') or [],
+            'description': d.get('intro') or '',
+            'rating': ((d.get('rating') or {}).get('value') or None),
+            'runtime': int(dm.group()) if dm else None,
+            'subtitle': d.get('card_subtitle') or '',
+        }
+
+    def _douban_book_detail(self, did):
+        # 书籍详情页 HTML 解析：出版社 / ISBN / 页数 / 出版年 / 简介 / 作者
+        html = self._fetch_url(f'https://book.douban.com/subject/{did}/', referer='https://book.douban.com/')
+        publisher = isbn = pages = pubdate = ''
+        info_m = re.search(r'<div id="info">([\s\S]*?)</div>', html)
+        if info_m:
+            text = re.sub(r'<br\s*/?>', '\n', info_m.group(1))
+            text = re.sub(r'<[^>]+>', '', text)
+            def line(label):
+                m = re.search(label + r'\s*[::]\s*([^\n]+)', text)
+                return m.group(1).strip() if m else ''
+            publisher = line('出版社')
+            isbn = line('ISBN')
+            pages = line('页数')
+            pubdate = line('出版年')
+        intro = ''
+        intro_m = re.search(r'<div class="intro">([\s\S]*?)</div>', html)
+        if intro_m:
+            p_m = re.search(r'<p>([\s\S]*?)</p>', intro_m.group(1))
+            if p_m:
+                intro = re.sub(r'<[^>]+>', ' ', p_m.group(1))
+                intro = re.sub(r'\s+', ' ', intro).strip()
+        author = ''
+        author_m = re.search(r'<span class="pl">\s*作者\s*[::]\s*</span>([\s\S]{0,400}?)<br', html)
+        if author_m:
+            author = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', author_m.group(1))).strip()
+        return {
+            'external_id': str(did),
+            'authors': author,
+            'publisher': publisher,
+            'isbn': isbn,
+            'pageCount': int(pages) if pages and pages.isdigit() else 0,
+            'publishedDate': pubdate,
+            'description': intro,
+        }
+
+    def handle_sports(self):
+        # 与线上 functions/api/sports.js 行为一致：TheSportsDB 代理（球队搜索 + 真实足球赛程）
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+        stype = params.get('type', [''])[0]
+
+        def tsb_fetch(path):
+            url = f'https://www.thesportsdb.com/api/v1/json/3/{path}'
+            req = urllib.request.Request(url)
+            req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+            req.add_header('Accept', 'application/json')
+            with urllib.request.urlopen(req, timeout=15) as response:
+                return json.loads(response.read().decode('utf-8', 'ignore'))
+
+        league_map = {
+            '4328': ('英超', 4), '4335': ('西甲', 4), '4331': ('德甲', 4), '4332': ('意甲', 4),
+            '4334': ('法甲', 3), '4480': ('欧冠', 5), '4398': ('中超', 3),
+        }
+
+        def normalize_event(ev, lm):
+            ts = None
+            raw_ts = ev.get('strTimestamp') or ''
+            if raw_ts:
+                ts = raw_ts if (raw_ts.endswith('Z') or re.search(r'[+-]\d{2}:?\d{2}$', raw_ts)) else raw_ts + 'Z'
+            hs, as_ = ev.get('intHomeScore'), ev.get('intAwayScore')
+            has_score = (hs is not None and hs != '') or (as_ is not None and as_ != '')
+            is_fin = has_score or re.search(r'FT|Finished|AET|PEN', str(ev.get('strStatus') or ''), re.I)
+            rnd = f"第{ev.get('intRound')}轮" if ev.get('intRound') else (ev.get('strStatus') or '')
+            return {
+                'sport': 'football',
+                'home_id': ev.get('idHomeTeam') or f"{ev.get('idEvent')}_h",
+                'home_name': ev.get('strHomeTeam') or '',
+                'away_id': ev.get('idAwayTeam') or f"{ev.get('idEvent')}_a",
+                'away_name': ev.get('strAwayTeam') or '',
+                'ts': ts,
+                'date': ev.get('dateEvent') or '',
+                'time': str(ev.get('strTime') or '')[:5],
+                'league': lm[0] if lm else (ev.get('strLeague') or ''),
+                'round': rnd,
+                'status': 'finished' if is_fin else 'upcoming',
+                'home_score': int(hs) if (hs is not None and str(hs) != '') else None,
+                'away_score': int(as_) if (as_ is not None and str(as_) != '') else None,
+                'importance': lm[1] if lm else 3,
+                'tournament_weight': lm[1] if lm else 3,
+            }
+
+        try:
+            if stype == 'teamsearch':
+                q = params.get('q', [''])[0].strip()
+                sport = params.get('sport', ['football'])[0]
+                if not q:
+                    self._send_json({'results': []}, 400)
+                    return
+                want = 'ESports' if sport == 'cs2' else 'Soccer'
+                d = tsb_fetch('searchteams.php?t=' + urllib.parse.quote(q))
+                teams = [t for t in (d.get('teams') or []) if not want or t.get('strSport') == want][:12]
+                results = [{'id': t.get('idTeam'), 'name': t.get('strTeam') or '',
+                            'full': t.get('strTeamAlternate') or t.get('strTeam') or '',
+                            'league': t.get('strLeague') or '', 'badge': t.get('strBadge') or '',
+                            'sport': t.get('strSport') or ''} for t in teams]
+                self._send_json({'results': results})
+                return
+            if stype == 'matches':
+                leagues = params.get('leagues', ['4328,4335,4331,4332,4334,4480'])[0]
+                all_events = []
+                for lid in [s.strip() for s in leagues.split(',') if s.strip()]:
+                    lm = league_map.get(lid)
+                    try:
+                        d = tsb_fetch('eventsnextleague.php?id=' + lid)
+                        for ev in (d.get('events') or []):
+                            all_events.append(normalize_event(ev, lm))
+                    except Exception:
+                        continue
+                all_events.sort(key=lambda m: m.get('ts') or '')
+                self._send_json({'matches': all_events[:80]})
+                return
+            self._send_json({'error': 'unknown type'}, 400)
+        except Exception:
+            self._send_json({'results': [], 'matches': []}, 502)
 
     def _send_json(self, obj, status=200):
         data = json.dumps(obj, ensure_ascii=False).encode('utf-8')
