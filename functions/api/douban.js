@@ -81,10 +81,43 @@ async function movieDetail(id) {
   };
 }
 
-// === 书籍详情：书籍详情页 HTML 解析（出版社 / ISBN / 页数 / 出版年 / 简介） ===
+// === 书籍详情：m.douban rexxar API（简介/作者/出版社/页数/译者/评分），失败回退详情页 HTML 解析 ===
+// 说明：book.douban.com/subject/{id}/ HTML 详情页对数据中心 IP 302 到 sec.douban.com 反爬页（2026-08 实测），
+// rexxar 移动端 API 实测稳定（Referer 需为 m.douban.com 书籍页），故 rexxar 优先、HTML 解析留作兜底。
 function stripTags(s) { return (s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); }
 
 async function bookDetail(id) {
+  try {
+    const res = await fetch(`https://m.douban.com/rexxar/api/v2/book/${id}`, {
+      headers: {
+        'User-Agent': UA,
+        'Referer': `https://m.douban.com/book/subject/${id}/`,
+        'Accept': 'application/json',
+      },
+    });
+    if (!res.ok) throw new Error('douban ' + res.status);
+    const d = await res.json();
+    // card_subtitle 形如 "作者 / 出版社 / 出版年 / 价格"，press 字段缺失时兜底解析
+    const segs = (d.card_subtitle || '').split(' / ');
+    const pagesRaw = Array.isArray(d.pages) ? d.pages[0] : d.pages;
+    return {
+      external_id: String(d.id || id),
+      authors: (Array.isArray(d.author) && d.author.join(' / ')) || '',
+      publisher: (Array.isArray(d.press) && d.press.join(' / ')) || (segs.length >= 3 ? segs[1] : ''),
+      isbn: d.isbn13 || d.isbn || '',
+      pageCount: pagesRaw ? (parseInt(pagesRaw, 10) || 0) : 0,
+      publishedDate: (Array.isArray(d.pubdate) && d.pubdate[0]) || '',
+      description: d.intro || '',
+      rating: d.rating && d.rating.value ? d.rating.value : null,
+      translator: (Array.isArray(d.translator) && d.translator.join(' / ')) || '',
+      price: (Array.isArray(d.price) && d.price[0]) || '',
+    };
+  } catch (e) {
+    return await bookDetailHtml(id);
+  }
+}
+
+async function bookDetailHtml(id) {
   const url = `https://book.douban.com/subject/${id}/`;
   const res = await fetch(url, {
     headers: { 'User-Agent': UA, 'Referer': 'https://book.douban.com/', 'Accept-Language': 'zh-CN,zh;q=0.9' },

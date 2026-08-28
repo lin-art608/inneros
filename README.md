@@ -8,6 +8,48 @@ Personal digital space for memory, resources, sports and life.
 
 # 更新记录
 
+## 2026-08-28 V1.2 收尾：修复队标样式损坏 + CS2 真实赛程 + 返回层级栈完善
+
+> 前一提交（返回键修改）遗留三类问题本次全部修复，并补齐 CS2 真实数据源缺口。所有接口经本地实测。
+
+### fix: 队标/选择器样式损坏（用户反馈"插入的图标把网页搞坏了"）
+- `.team-logo` 缺 `position:relative` → 徽标绝对定位逃逸到全页；补齐定位上下文 + `overflow:hidden`
+- 徽标 `<img>` 无尺寸样式 → 原尺寸撑爆布局；新增 `.team-logo-badge img` 等比缩放规则（透明 PNG 回退彩色缩写圆）
+- 选择器 v2 的全部组件类（`ts-chips`/`ts-online-*`/`ts-manual-row`/`ts-done-btn` 等）无样式 → 按既有设计语言补齐
+- 选择器弹窗容器补 `.modal` 类：居中/内边距/移动端底部抽屉行为恢复
+- 新增 `.sync-fail-banner`（赛程同步失败横幅）
+
+### feat: CS2 真实赛程（此前为静态假数据，§6.1/§12 GAP）
+- 数据源 = Liquipedia MediaWiki API（免密钥；合规：gzip + 描述性 UA + 服务端缓存 5 分钟，≤2 req/s）
+- `/api/sports?type=cs2matches` 解析 `Liquipedia:Matches` ticker：约 50 场未来+进行中+刚完赛场次，
+  含时间戳/队名/真队标/赛事/Bo 赛制；比分按 winner 标记解析（M80 2:1 NAVI 实测）
+- `ensureCS2Matches()` 客户端缓存 + last_synced_at + 失败重试；关注匹配按名称键（LP 页面标题/短名 ↔ 注册表/tsdb/在线搜索名）
+- 静态 `CS2_SCHEDULE`/`FOOTBALL_SCHEDULE`/`nextDate()` 删除——无缓存时显示空态/失败态，不用 mock 冒充真实数据
+
+### feat: 足球按关注球队拉取赛程（联赛 fixtures 只有 1 场，覆盖不了主队）
+- `/api/sports?type=matches&ids=` 增加 `eventsnext/eventslast` 按队拉取（下一场 + 最近结果，去重合并）
+- 实测：阿森纳下一场（维拉 vs 阿森纳，UTC→北京时间自动转换）+ 最近 3:0 全部上墙
+
+### feat: CS2 搜索兜底（TheSportsDB 电竞覆盖差）
+- 搜 NAVI 在 TheSportsDB 无结果 → Liquipedia opensearch 兜底（`provider:'liquipedia'`，id 前缀 `lp:`）
+- 队标取战队页 infobox 首图，重定向页（NAVI→Natus_Vincere）自动跟随；每队结果缓存
+
+### fix: 书籍简介/出版社改走 rexxar（HTML 详情页被反爬）
+- `book.douban.com/subject/{id}` 对数据中心 IP 302 到 sec.douban.com → 详情解析拿不到数据
+- 改 `m.douban.com/rexxar/api/v2/book/{id}` 优先（实测：百年孤独 简介/出版社/页数/译者/评分 9.3 全通），HTML 解析留作兜底
+- 书籍保存入库补齐 `rating`/`translator`/`publish_date`（评分来自 Provider，禁止手填）
+
+### fix: 返回键层级栈真正生效（前一提交只有 pushState 没有 popstate）
+- 补 `popstate` 监听：详情层回列表、跨页回退、选择器/记录弹窗层随栈关闭
+- `navigate` 同页刷新改 `replaceState`（保存/删除后不堆积重复层）；`openTeamSelector`/`openCapture` 入栈
+- 页面内返回按钮、Escape、浏览器返回键三条路径统一走 `history.back()` → popstate 收尾（含关注后页面刷新）
+- 实测：详情→返回回列表、选择器→返回关闭并刷新，均不退出网页
+
+### 实测记录（本地 server.py + 浏览器端到端）
+- CS2：NAVI/Virtus.pro 关注 → paiN vs NAVI **LIVE** + M80 2:1 真实队标上墙
+- 足球：阿森纳关注 → 下一场/最近结果/焦点卡，真队徽，时间本地化
+- 电影：奥本海默 搜索→选片→保存 → 详情页 导演/类型/豆瓣评分 8.8/片长/上映/完整中文简介
+
 ## 2026-08-28 V1.2 Agent 执行计划合规修正
 
 > 依据 `InnerOS_V1.2_Agent_执行计划.docx`（P0→P6）审计后修正。原则：先审计再迭代，不重写。

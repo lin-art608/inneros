@@ -415,6 +415,10 @@ let selectedType = null;
 let editingId = null;
 let activeFilters = new Set(['all']);
 let activeScale = 'month';
+// 浏览器返回键层级栈标记（V1.2 交互要求：返回键 = 返回上一层内容，而不是退出网页）
+let detailOpenId = null;        // 详情页层：非 null 表示当前停留在详情页
+let selectorOpenSport = null;   // 球队选择器层：非 null 表示选择器弹窗已入栈
+let captureOpen = false;        // 记录弹窗层
 
 // === IndexedDB ===
 const DB_NAME = 'memory_os';
@@ -572,43 +576,16 @@ const TEAM_BY_TSDB = {};
 // === Sports Data Adapter ===
 // Unified match model: { id, sport, home_id, home_name, home_color, home_text, away_id, away_name, away_color, away_text, date, time, status, league, round, home_score, away_score, importance, tournament_weight }
 // status: 'upcoming' | 'live' | 'finished'
-
-const CS2_SCHEDULE = [
-  { home_id:'navi', away_id:'g2', date:nextDate(2), time:'22:00', league:'IEM Cologne', round:'半决赛', importance:5, tournament_weight:5, status:'upcoming' },
-  { home_id:'faze', away_id:'vitality', date:nextDate(3), time:'18:00', league:'ESL Pro League', round:'小组赛', importance:3, tournament_weight:3, status:'upcoming' },
-  { home_id:'spirit', away_id:'mouz', date:nextDate(3), time:'21:00', league:'BLAST Premier', round:'小组赛', importance:3, tournament_weight:3, status:'upcoming' },
-  { home_id:'liquid', away_id:'furia', date:nextDate(4), time:'20:00', league:'IEM Qualifier', round:'淘汰赛', importance:4, tournament_weight:3, status:'upcoming' },
-  { home_id:'navi', away_id:'faze', date:nextDate(-1), time:'22:00', league:'IEM Cologne', round:'四分之一决赛', home_score:2, away_score:0, importance:4, tournament_weight:5, status:'finished' },
-  { home_id:'g2', away_id:'liquid', date:nextDate(-2), time:'20:00', league:'ESL Pro League', round:'小组赛', home_score:16, away_score:14, importance:2, tournament_weight:3, status:'finished' },
-  { home_id:'vitality', away_id:'spirit', date:nextDate(-3), time:'21:00', league:'BLAST Premier', round:'小组赛', home_score:1, away_score:2, importance:2, tournament_weight:3, status:'finished' },
-  { home_id:'astralis', away_id:'heroic', date:nextDate(5), time:'19:00', league:'ESL Pro League', round:'小组赛', importance:2, tournament_weight:3, status:'upcoming' },
-  { home_id:'cloud9', away_id:'ence', date:nextDate(6), time:'23:00', league:'BLAST Showdown', round:'淘汰赛', importance:3, tournament_weight:2, status:'upcoming' },
-];
-
-const FOOTBALL_SCHEDULE = [
-  { home_id:'mci', away_id:'ars', date:nextDate(0), time:'23:30', league:'英超', round:'第3轮', importance:5, tournament_weight:4, status:'upcoming' },
-  { home_id:'rma', away_id:'bar', date:nextDate(1), time:'04:00', league:'西甲', round:'国家德比', importance:5, tournament_weight:5, status:'upcoming' },
-  { home_id:'bay', away_id:'bvb', date:nextDate(1), time:'00:30', league:'德甲', round:'国家德比', importance:5, tournament_weight:4, status:'upcoming' },
-  { home_id:'liv', away_id:'che', date:nextDate(2), time:'23:00', league:'英超', round:'第4轮', importance:4, tournament_weight:4, status:'upcoming' },
-  { home_id:'juv', away_id:'int', date:nextDate(3), time:'03:45', league:'意甲', round:'都灵德比', importance:4, tournament_weight:4, status:'upcoming' },
-  { home_id:'psg', away_id:'mil', date:nextDate(4), time:'04:00', league:'欧冠', round:'小组赛', importance:4, tournament_weight:5, status:'upcoming' },
-  { home_id:'sdts', away_id:'shhg', date:nextDate(2), time:'19:35', league:'中超', round:'第18轮', importance:4, tournament_weight:3, status:'upcoming' },
-  { home_id:'mun', away_id:'tot', date:nextDate(5), time:'23:30', league:'英超', round:'北伦敦德比', importance:4, tournament_weight:4, status:'upcoming' },
-  { home_id:'mci', away_id:'liv', date:nextDate(-1), time:'23:00', league:'英超', round:'第2轮', home_score:2, away_score:1, importance:4, tournament_weight:4, status:'finished' },
-  { home_id:'bar', away_id:'rma', date:nextDate(-7), time:'04:00', league:'西甲', round:'国家德比', home_score:1, away_score:1, importance:5, tournament_weight:5, status:'finished' },
-  { home_id:'sdts', away_id:'bjgg', date:nextDate(-3), time:'19:35', league:'中超', round:'第17轮', home_score:3, away_score:1, importance:3, tournament_weight:3, status:'finished' },
-];
-
-function nextDate(offset) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return d.toISOString().slice(0,10);
-}
+// V1.2 §6.1/§12：赛程一律来自真实 Provider（足球=TheSportsDB，CS2=Liquipedia，经 /api/sports 代理），
+// 此前的 CS2_SCHEDULE / FOOTBALL_SCHEDULE 静态假赛程已删除——无缓存时显示空态/失败态，不用 mock 冒充真实数据。
 
 function getTeamById(id, sport) {
   if (sport === 'cs2') return CS2_TEAMS.find(t => t.id === id);
   return FOOTBALL_TEAMS.find(t => t.id === id);
 }
+
+// 关注匹配键：小写化并去掉符号，用于 Liquipedia（LP 页面标题/短名）与关注记录（名称/id）双向匹配
+function normTeamKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9一-鿿]/g, ''); }
 
 // 真实赛程的球队视觉信息：优先 TheSportsDB 注册表（有真实队标），否则中性色兜底
 function findTeamVisual(sport, id, fallbackName) {
@@ -619,15 +596,15 @@ function findTeamVisual(sport, id, fallbackName) {
 
 function getUnifiedMatches(sport) {
   const cache = getSportsCache()[sport];
-  // 有缓存（即使过期）优先用缓存，避免刷新间隙闪回静态演示数据；无缓存才用静态注册表演示数据
-  const schedule = (cache && cache.data && cache.data.length) ? cache.data : (sport === 'cs2' ? CS2_SCHEDULE : FOOTBALL_SCHEDULE);
+  // 只用真实同步到的缓存；无缓存返回空数组（UI 显示空态/失败态，不回退假数据）
+  const schedule = (cache && cache.data && cache.data.length) ? cache.data : [];
   return schedule.map(raw => {
     let m = raw;
     // 真实赛程带 UTC 时间戳 → 转本地日期/时间
     if (m.ts) { const d = new Date(m.ts); m = { ...m, date: localDate(d), time: localTime(d) }; }
     const home = m.home_name ? findTeamVisual(sport, m.home_id, m.home_name) : (getTeamById(m.home_id, sport) || { name:m.home_id, color:'#666', text:'#FFF' });
     const away = m.away_name ? findTeamVisual(sport, m.away_id, m.away_name) : (getTeamById(m.away_id, sport) || { name:m.away_id, color:'#666', text:'#FFF' });
-    return { ...m, sport, home_name:home.name, home_color:home.color, home_text:home.text, home_badge:home.badge || null, away_name:away.name, away_color:away.color, away_text:away.text, away_badge:away.badge || null };
+    return { ...m, sport, home_name:home.name, home_color:home.color, home_text:home.text, home_badge:home.badge || m.home_badge || null, away_name:away.name, away_color:away.color, away_text:away.text, away_badge:away.badge || m.away_badge || null };
   });
 }
 
@@ -635,6 +612,19 @@ function getMatchesForTeams(teamIds, sport) {
   if (!teamIds || teamIds.length === 0) return [];
   return getUnifiedMatches(sport).filter(m =>
     teamIds.includes(m.home_id) || teamIds.includes(m.away_id)
+  );
+}
+
+// CS2 关注匹配：Liquipedia 赛程用 LP 页面标题（如 Natus Vincere）/短名（NAVI），
+// 关注记录可能是注册表 id、tsdb_id 或在线搜索名称——统一按名称键 + id 双向匹配。
+function cs2MatchesForFollowed(csFollowed) {
+  const keys = new Set();
+  (csFollowed || []).forEach(t => {
+    [t.name, t.full, t.provider_team_id, t.tsdb_id].forEach(x => { const k = normTeamKey(x); if (k) keys.add(k); });
+  });
+  if (keys.size === 0) return [];
+  return getUnifiedMatches('cs2').filter(m =>
+    [m.home_id, m.home_name, m.home_full, m.away_id, m.away_name, m.away_full].some(x => keys.has(normTeamKey(x)))
   );
 }
 
@@ -727,9 +717,15 @@ function toggleNavGroup(group) {
 }
 
 async function navigate(page, fromPop = false) {
+  const prevPage = currentPage;
   currentPage = page;
-  // 浏览器返回键集成：页面切换写入历史栈，popstate 时回退上一层（fromPop=true 不重复入栈）
-  if (!fromPop) history.pushState({ __inneros: true, page }, '');
+  detailOpenId = null; // 页面重渲染 = 退出详情层
+  // 浏览器返回键集成：跨页面切换入栈；同页刷新（保存/删除后重渲染）只替换当前栈项，避免堆积重复层
+  if (!fromPop) {
+    const st = { __inneros: true, page };
+    if (page === prevPage) history.replaceState(st, '');
+    else history.pushState(st, '');
+  }
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const navEl = document.querySelector(`[data-page="${page}"]`);
   if (navEl) navEl.classList.add('active');
@@ -776,11 +772,12 @@ async function navigate(page, fromPop = false) {
 
 // === Resources: CS Esports ===
 async function renderResourceCS() {
+  const synced = await ensureCS2Matches(); // Liquipedia 真实赛程；失败保留缓存
   const followedTeams = await dbGetTeams();
   const csFollowed = followedTeams.filter(t => t.sport === 'cs2');
   const followedIds = csFollowed.flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
-  const myMatches = getMatchesForTeams(followedIds, 'cs2');
-  const myUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => a.date.localeCompare(b.date));
+  const myMatches = cs2MatchesForFollowed(csFollowed);
+  const myUpcoming = myMatches.filter(m => m.status === 'upcoming' || m.status === 'live').sort((a,b) => a.date.localeCompare(b.date));
   const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
   const allUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => {
     const sa = calculateMatchScore(a, followedIds), sb = calculateMatchScore(b, followedIds);
@@ -851,6 +848,11 @@ async function renderResourceCS() {
   }
 
   if (!csFollowed.length) html += `<div class="empty-state"><div class="empty-state-icon">🎮</div><div class="empty-state-title">先关注一支战队</div><div class="empty-state-desc">关注后，这里只展示与你有关的下一场和最近比赛。</div><button class="placeholder-cta" onclick="openTeamSelector('cs2')">＋ 关注战队</button></div>`;
+  else if (myUpcoming.length === 0 && myRecent.length === 0) {
+    html += !synced
+      ? `<div class="sync-fail-banner">⚠️ 赛程同步失败 · 上次成功 ${getSportsLastSynced('cs2') ? new Date(getSportsLastSynced('cs2')).toLocaleString() : '从未同步'}<button class="link-btn" onclick="refreshSports('cs2')">重试</button></div>`
+      : `<div class="empty-state" style="padding:40px 20px;"><div class="empty-state-title">关注战队近期没有比赛</div><div class="empty-state-desc">Liquipedia 未收录近期对阵，可尝试同步或关注更多战队。</div></div>`;
+  }
   document.getElementById('content').innerHTML = html;
 }
 
@@ -860,12 +862,16 @@ function renderMatchCard(m, followedIds) {
   const awayTeam = { name:m.away_name, color:m.away_color, text:m.away_text, badge:m.away_badge };
   let scoreHtml = '';
   if (m.status === 'finished') {
-    const win1 = m.home_score > m.away_score;
-    scoreHtml = `<div class="match-score">
-      <span class="${win1?'win':'lose'}">${m.home_score}</span>
-      <span class="match-score-sep">:</span>
-      <span class="${!win1?'win':'lose'}">${m.away_score}</span>
-    </div>`;
+    if (m.home_score != null && m.away_score != null) {
+      const win1 = m.home_score > m.away_score;
+      scoreHtml = `<div class="match-score">
+        <span class="${win1?'win':'lose'}">${m.home_score}</span>
+        <span class="match-score-sep">:</span>
+        <span class="${!win1?'win':'lose'}">${m.away_score}</span>
+      </div>`;
+    } else {
+      scoreHtml = `<span class="match-time" style="font-size:13px;color:var(--text-tertiary);">已结束</span>`; // 数据源未提供比分时不造假
+    }
   } else if (m.status === 'live') {
     scoreHtml = `<span class="match-live-badge">LIVE</span>`;
   } else {
@@ -875,8 +881,8 @@ function renderMatchCard(m, followedIds) {
   const score = calculateMatchScore(m, followedIds);
   const stars = Math.min(5, Math.max(1, Math.round(score / 4)));
   const reason = getMatchReason(m, isMain, stars);
-  const sourceName = m.sport === 'cs2' ? 'HLTV' : '懂球帝';
-  const sourceUrl = m.sport === 'cs2' ? 'https://www.hltv.org/matches' : 'https://www.dongqiudi.com/schedule';
+  const sourceName = m.sport === 'cs2' ? 'Liquipedia' : 'TheSportsDB';
+  const sourceUrl = m.sport === 'cs2' ? 'https://liquipedia.net/counterstrike/Liquipedia:Matches' : 'https://www.thesportsdb.com';
   return `<div class="match-card${mainClass}">
     <div class="match-card-league">${m.league} · ${m.round}</div>
     <div class="match-card-teams">
@@ -924,30 +930,53 @@ function needsSportsRefresh(sport) {
   return elapsed > 30; // refresh every 30 min
 }
 
-// === 真实足球赛程（TheSportsDB，经 /api/sports 代理，免 Key）===
-// V1.2 §6.1/§12：足球真实数据源已接入（英超/西甲/德甲/意甲/法甲/欧冠），
-// 替代此前 nextDate() 生成的静态假赛程。
-// 已知阻塞：TheSportsDB 无 CS2 赛事（仅 LoL/RL），HLTV/Liquipedia 均有反爬/无公开接口，
-// CS2 真实赛程仍用静态演示数据，待 Key 策略定后接入（如 pandascore）。
+// === 真实赛程同步（TheSportsDB 足球 + Liquipedia CS2，经 /api/sports 代理，免 Key）===
+// V1.2 §6.1/§6.3：足球=英超/西甲/德甲/意甲/法甲/欧冠联赛未来场次；CS2=Liquipedia:Matches ticker。
+// 失败策略：保留上次成功缓存 + 显示 last_synced_at 与重试；无缓存时显示空态，不用静态假数据冒充真实数据。
 const FOOTBALL_LEAGUE_IDS = '4328,4335,4331,4332,4334,4480';
 let footballFetchInflight = null;
 async function ensureFootballMatches(force) {
-  if (!force && !needsSportsRefresh('football')) return;
+  if (!force && !needsSportsRefresh('football')) return true;
   if (footballFetchInflight) return footballFetchInflight;
   footballFetchInflight = (async () => {
     try {
-      const res = await fetch(`/api/sports?type=matches&leagues=${FOOTBALL_LEAGUE_IDS}`);
+      // 带上关注球队的 TheSportsDB id：按队取下一场+最近结果（V1.2 §6.1）
+      const followed = await dbGetTeams();
+      const ids = followed.filter(t => t.sport === 'football' && t.tsdb_id).map(t => t.tsdb_id).slice(0, 6).join(',');
+      const res = await fetch(`/api/sports?type=matches&leagues=${FOOTBALL_LEAGUE_IDS}&ids=${encodeURIComponent(ids)}`);
       if (!res.ok) throw new Error('http ' + res.status);
       const data = await res.json();
       const events = data.matches || [];
-      if (events.length > 0) { setSportsCache('football', events); return; }
+      if (events.length > 0) { setSportsCache('football', events); return true; }
       throw new Error('empty');
     } catch (e) {
-      // 失败：保留现有缓存；无缓存则 getUnifiedMatches 回退静态演示赛程
-      console.warn('足球赛程同步失败，使用本地缓存/演示数据', e);
+      // 失败：保留现有缓存（getSportsLastSynced 继续显示上次成功时间）
+      console.warn('足球赛程同步失败，使用本地缓存', e);
+      return false;
     } finally { footballFetchInflight = null; }
   })();
   return footballFetchInflight;
+}
+
+// CS2 真实赛程：Liquipedia ticker（未来 + 进行中，约 50 场），客户端按关注名称过滤
+let cs2FetchInflight = null;
+async function ensureCS2Matches(force) {
+  if (!force && !needsSportsRefresh('cs2')) return true;
+  if (cs2FetchInflight) return cs2FetchInflight;
+  cs2FetchInflight = (async () => {
+    try {
+      const res = await fetch('/api/sports?type=cs2matches');
+      if (!res.ok) throw new Error('http ' + res.status);
+      const data = await res.json();
+      const matches = data.matches || [];
+      if (matches.length > 0) { setSportsCache('cs2', matches); return true; }
+      throw new Error('empty');
+    } catch (e) {
+      console.warn('CS2赛程同步失败，使用本地缓存', e);
+      return false;
+    } finally { cs2FetchInflight = null; }
+  })();
+  return cs2FetchInflight;
 }
 
 // === 球队选择器 v2（参考 OneFootball/懂球帝 的关注交互） ===
@@ -991,6 +1020,9 @@ async function openTeamSelector(sport) {
     <button class="btn btn-ghost" onclick="addManualTeam('${sport}')">＋ 关注</button>
   </div>`;
   html += `<button class="btn ts-done-btn" onclick="closeTeamSelector()">完成</button>`;
+  // 选择器入历史栈：浏览器返回键关闭选择器（返回上一层），而不是退出网页
+  history.pushState({ __inneros: true, page: currentPage, selector: sport }, '');
+  selectorOpenSport = sport;
   showTeamSelectorModal(html, sport);
 }
 
@@ -1000,7 +1032,7 @@ function showTeamSelectorModal(content, sport) {
     modal = document.createElement('div');
     modal.id = 'team-selector-modal';
     modal.className = 'modal-overlay';
-    modal.innerHTML = `<div class="modal-content team-selector-content"><div id="team-selector-body"></div></div>`;
+    modal.innerHTML = `<div class="modal team-selector-content"><div id="team-selector-body"></div></div>`;
     modal.addEventListener('click', function(e) { if (e.target === modal) closeTeamSelector(); });
     document.body.appendChild(modal);
   }
@@ -1008,10 +1040,14 @@ function showTeamSelectorModal(content, sport) {
   modal.classList.add('show');
 }
 
-function closeTeamSelector() {
+function closeTeamSelector(fromPop = false) {
   const modal = document.getElementById('team-selector-modal');
   if (modal) modal.classList.remove('show');
   teamOnlineResults = [];
+  // 选择器是历史栈中的一层：用户点 ✕/完成 时走 history.back()，由 popstate 统一收尾（含页面刷新），
+  // 保证浏览器返回键、页面内按钮、Escape 三条路径行为一致（返回上一层，不退出网页）
+  if (!fromPop && selectorOpenSport) { history.back(); return; }
+  selectorOpenSport = null;
   // 关闭后刷新当前页面，让"我的主队/我的赛程"立即反映关注变化
   if (currentPage === 'res-cs') renderResourceCS();
   else if (currentPage === 'res-football') renderResourceFootball();
@@ -1090,7 +1126,9 @@ async function toggleTeamOnline(idx, sport, el) {
     if (el) { el.classList.remove('selected'); const b = el.querySelector('.ts-online-btn'); if (b) b.textContent = '＋ 关注'; }
     showToast(`已取消关注 ${t.name}`, 'success');
   } else {
-    await dbAddTeam({ provider:'thesportsdb', provider_team_id:t.id, tsdb_id:t.id, name:t.name, full:t.full || t.name, sport, color:'#6C8ED4', text:'#FFF', badge:t.badge || '' });
+    // provider 随数据源（thesportsdb/liquipedia）；liquipedia 无 tsdb_id，赛程经名称键匹配
+    const provider = t.provider || 'thesportsdb';
+    await dbAddTeam({ provider, provider_team_id:t.id, tsdb_id:provider === 'thesportsdb' ? t.id : null, name:t.name, full:t.full || t.name, sport, color:'#6C8ED4', text:'#FFF', badge:t.badge || '' });
     teamSelectorFollowed.add(t.id);
     if (el) { el.classList.add('selected'); const b = el.querySelector('.ts-online-btn'); if (b) b.textContent = '✓ 已关注'; }
     showToast(`已关注 ${t.name}`, 'success');
@@ -1150,24 +1188,24 @@ async function removeTeam(id, sport) {
 }
 async function refreshSports(sport) {
   if (sport === 'football') {
-    await ensureFootballMatches(true); // 拉取 TheSportsDB 真实赛程
-    showToast('已同步最新足球赛程', 'success');
+    const ok = await ensureFootballMatches(true); // 拉取 TheSportsDB 真实赛程
+    showToast(ok ? '已同步最新足球赛程' : '同步失败，显示上次成功数据', ok ? 'success' : 'error');
   } else {
-    setSportsCache(sport, getUnifiedMatches(sport));
-    showToast('已更新本地赛事缓存', 'success');
+    const ok = await ensureCS2Matches(true); // 拉取 Liquipedia 真实赛程
+    showToast(ok ? '已同步最新CS2赛程' : '同步失败，显示上次成功数据', ok ? 'success' : 'error');
   }
   if (sport === 'cs2') await renderResourceCS(); else await renderResourceFootball();
 }
 
 // === Resources: Football ===
 async function renderResourceFootball() {
-  // 拉取真实赛程（TheSportsDB，经 /api/sports 代理）；失败回退本地缓存/静态演示数据
-  await ensureFootballMatches();
+  // 拉取真实赛程（TheSportsDB，经 /api/sports 代理）；失败保留上次成功缓存
+  const synced = await ensureFootballMatches();
   const followedTeams = await dbGetTeams();
   const fbFollowed = followedTeams.filter(t => t.sport === 'football');
   const followedIds = fbFollowed.flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
   const myMatches = getMatchesForTeams(followedIds, 'football');
-  const myUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => a.date.localeCompare(b.date));
+  const myUpcoming = myMatches.filter(m => m.status === 'upcoming' || m.status === 'live').sort((a,b) => a.date.localeCompare(b.date));
   const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
   const allUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => {
     const sa = calculateMatchScore(a, followedIds), sb = calculateMatchScore(b, followedIds);
@@ -1247,6 +1285,11 @@ async function renderResourceFootball() {
     </div>`;
   }
   if (!fbFollowed.length) html += `<div class="empty-state"><div class="empty-state-icon">⚽</div><div class="empty-state-title">先设置你的主队</div><div class="empty-state-desc">关注主队后，这里只展示相关的赛程和比赛结果。</div><button class="placeholder-cta" onclick="openTeamSelector('football')">＋ 关注主队</button></div>`;
+  else if (myUpcoming.length === 0 && myRecent.length === 0) {
+    html += !synced
+      ? `<div class="sync-fail-banner">⚠️ 赛程同步失败 · 上次成功 ${getSportsLastSynced('football') ? new Date(getSportsLastSynced('football')).toLocaleString() : '从未同步'}<button class="link-btn" onclick="refreshSports('football')">重试</button></div>`
+      : `<div class="empty-state" style="padding:40px 20px;"><div class="empty-state-title">关注球队近期没有比赛</div><div class="empty-state-desc">数据源暂未收录近期赛程，可稍后刷新。</div></div>`;
+  }
   document.getElementById('content').innerHTML = html;
 }
 
@@ -1426,11 +1469,12 @@ async function renderToday() {
   // 我的赛程 (P3: My Schedule on homepage)
   const followedTeams = await dbGetTeams();
   if (followedTeams.length > 0) {
-    await ensureFootballMatches(); // 真实足球赛程（TheSportsDB）；失败用本地缓存/演示数据
+    // 真实赛程（足球=TheSportsDB，CS2=Liquipedia）；失败只展示缓存，不冒充真实数据
+    const [fbOk, cs2Ok] = await Promise.all([ensureFootballMatches(), ensureCS2Matches()]);
     const cs2Ids = followedTeams.filter(t=>t.sport==='cs2').flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
     const fbIds = followedTeams.filter(t=>t.sport==='football').flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
-    const cs2Matches = getMatchesForTeams(cs2Ids, 'cs2').filter(m=>m.status==='upcoming');
-    const fbMatches = getMatchesForTeams(fbIds, 'football').filter(m=>m.status==='upcoming');
+    const cs2Matches = cs2MatchesForFollowed(followedTeams.filter(t=>t.sport==='cs2')).filter(m=>m.status==='upcoming' || m.status==='live');
+    const fbMatches = getMatchesForTeams(fbIds, 'football').filter(m=>m.status==='upcoming' || m.status==='live');
     const allMyMatches = [...cs2Matches, ...fbMatches].sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
     if (allMyMatches.length > 0) {
       html += `<div class="my-schedule-section card-enter"><div class="section-label">⚡ 我的赛程 · My Schedule</div><div class="match-list">`;
@@ -1931,6 +1975,7 @@ async function openDetail(id, fromPop = false) {
   if (!e) return;
   // 浏览器返回键集成：详情页入栈，返回时回到来源页面（fromPop=true 不重复入栈）
   if (!fromPop) history.pushState({ __inneros: true, page: currentPage, detail: id }, '');
+  detailOpenId = id;
   const meta = TYPE_META[e.type] || TYPE_META.event;
   const date = getEntryDate(e);
   const time = getEntryTime(e);
@@ -2042,6 +2087,9 @@ function openCapture(entryId) {
     uploadedPhotos = []; photoFailures = [];
   }
   document.getElementById('capture-modal').classList.add('show');
+  // 记录弹窗入历史栈：浏览器返回键关闭弹窗/回上一层，而不是退出网页
+  history.pushState({ __inneros: true, page: currentPage, capture: true }, '');
+  captureOpen = true;
 }
 
 function backToTypeSelect() {
@@ -2205,7 +2253,15 @@ function setEventCategory(cat) {
 }
 
 
-function closeCapture() { document.getElementById('capture-modal').classList.remove('show'); editingId = null; document.getElementById('back-btn').style.display = ''; }
+function closeCapture(fromPop = false) {
+  document.getElementById('capture-modal').classList.remove('show');
+  editingId = null;
+  document.getElementById('back-btn').style.display = '';
+  const was = captureOpen;
+  captureOpen = false;
+  // 弹窗是历史栈中的一层：页面内关闭走 history.back()，与浏览器返回键同一条路径
+  if (!fromPop && was) history.back();
+}
 
 async function saveCapture() {
   const titleEl = document.getElementById('capture-title');
@@ -2258,6 +2314,10 @@ async function saveCapture() {
       merged.genres = selectedBook.categories;
       merged.book_description = selectedBook.description;
       merged.page_count = selectedBook.pageCount;
+      // 豆瓣详情补全（V1.2 §4.2：客观资料来自 Provider，不可手填）
+      if (selectedBook.rating) merged.rating = selectedBook.rating;
+      if (selectedBook.translator) merged.translator = selectedBook.translator;
+      if (selectedBook.publishedDate) merged.publish_date = selectedBook.publishedDate;
     }
     if (selectedType === 'book') {
       if (readingStatus === 'done') { merged.finish_date = today; merged.reading_status = 'done'; }
@@ -2297,6 +2357,9 @@ async function saveCapture() {
         entry.genres = selectedBook.categories;
         entry.book_description = selectedBook.description;
         entry.page_count = selectedBook.pageCount;
+        if (selectedBook.rating) entry.rating = selectedBook.rating;
+        if (selectedBook.translator) entry.translator = selectedBook.translator;
+        if (selectedBook.publishedDate) entry.publish_date = selectedBook.publishedDate;
       }
     } else if (selectedType === 'diary') {
       entry.event_date = today; entry.event_time = time;
@@ -2371,8 +2434,27 @@ function closeSidebar() { document.getElementById('sidebar').classList.remove('o
 // === Keyboard ===
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openCapture(null); }
-  if (e.key === 'Escape') { closeCapture(); closeConfirm(); }
+  if (e.key === 'Escape') {
+    if (captureOpen) closeCapture();
+    if (selectorOpenSport) closeTeamSelector();
+    closeConfirm();
+  }
 });
+
+// === 浏览器返回键：统一"返回上一层内容"，而不是退出网页 ===
+// 层级：页面 → 详情 → 球队选择器 / 记录弹窗。pushState 负责入栈（navigate/openDetail/openTeamSelector/openCapture），
+// popstate 在这里把 UI 收敛到历史状态对应的层：弹窗关闭、选择器关闭、详情回列表、跨页回退。
+window.addEventListener('popstate', async (e) => {
+  const st = e.state || {};
+  if (selectorOpenSport && st.selector !== selectorOpenSport) closeTeamSelector(true);
+  if (captureOpen && !st.capture) closeCapture(true);
+  // 详情层：当前状态不再带 detail → 回到来源页面
+  if (detailOpenId != null && !st.detail) { await navigate((st.__inneros && st.page) ? st.page : currentPage, true); return; }
+  if (st.detail && st.detail !== detailOpenId) { await openDetail(st.detail, true); return; }
+  // 页面层：跨页回退
+  if (st.__inneros && st.page && st.page !== currentPage && detailOpenId == null) await navigate(st.page, true);
+});
+
 document.getElementById('capture-modal').addEventListener('click', function(e) { if (e.target === this) closeCapture(); });
 document.getElementById('confirm-overlay').addEventListener('click', function(e) { if (e.target === this) closeConfirm(); });
 

@@ -16,6 +16,21 @@ import socketserver
 import time
 import re
 import json
+import gzip
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+
+# 简单内存缓存：{key: (expire_ts, payload)}——本地预览与线上 cf cacheTtl 行为对齐，避免重复外呼
+HTTP_CACHE = {}
+HTTP_CACHE_TTL = 600
+
+def cached_fetch_json(cache_key, fetch_fn):
+    hit = HTTP_CACHE.get(cache_key)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    data = fetch_fn()
+    HTTP_CACHE[cache_key] = (time.time() + HTTP_CACHE_TTL, data)
+    return data
 
 PORT = 8765
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -195,7 +210,39 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
         }
 
     def _douban_book_detail(self, did):
-        # 书籍详情页 HTML 解析：出版社 / ISBN / 页数 / 出版年 / 简介 / 作者
+        # 书籍详情：m.douban rexxar API 优先（与线上 douban.js 一致）；详情页 HTML 解析仅作兜底
+        # （book.douban.com 详情页对数据中心 IP 302 反爬，2026-08 实测）
+        try:
+            body = self._fetch_url(f'https://m.douban.com/rexxar/api/v2/book/{did}',
+                                   referer=f'https://m.douban.com/book/subject/{did}/')
+            d = json.loads(body)
+            segs = (d.get('card_subtitle') or '').split(' / ')
+            press = d.get('press') or []
+            pages_raw = d.get('pages')
+            if isinstance(pages_raw, list):
+                pages_raw = pages_raw[0] if pages_raw else ''
+            pages_val = str(pages_raw or '').strip()
+            pubdate = d.get('pubdate') or ['']
+            price = d.get('price')
+            if isinstance(price, list):
+                price = price[0] if price else ''
+            return {
+                'external_id': str(d.get('id') or did),
+                'authors': ' / '.join(d.get('author') or []),
+                'publisher': ' / '.join(press) or (segs[1] if len(segs) >= 3 else ''),
+                'isbn': d.get('isbn13') or d.get('isbn') or '',
+                'pageCount': int(pages_val) if pages_val.isdigit() else 0,
+                'publishedDate': pubdate[0] if pubdate else '',
+                'description': d.get('intro') or '',
+                'rating': ((d.get('rating') or {}).get('value') or None),
+                'translator': ' / '.join(d.get('translator') or []),
+                'price': price or '',
+            }
+        except Exception:
+            return self._douban_book_detail_html(did)
+
+    def _douban_book_detail_html(self, did):
+        # 兜底：书籍详情页 HTML 解析：出版社 / ISBN / 页数 / 出版年 / 简介 / 作者
         html = self._fetch_url(f'https://book.douban.com/subject/{did}/', referer='https://book.douban.com/')
         publisher = isbn = pages = pubdate = ''
         info_m = re.search(r'<div id="info">([\s\S]*?)</div>', html)
@@ -237,12 +284,14 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
         stype = params.get('type', [''])[0]
 
         def tsb_fetch(path):
-            url = f'https://www.thesportsdb.com/api/v1/json/3/{path}'
-            req = urllib.request.Request(url)
-            req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
-            req.add_header('Accept', 'application/json')
-            with urllib.request.urlopen(req, timeout=15) as response:
-                return json.loads(response.read().decode('utf-8', 'ignore'))
+            def do():
+                url = f'https://www.thesportsdb.com/api/v1/json/3/{path}'
+                req = urllib.request.Request(url)
+                req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+                req.add_header('Accept', 'application/json')
+                with urllib.request.urlopen(req, timeout=12) as response:
+                    return json.loads(response.read().decode('utf-8', 'ignore'))
+            return cached_fetch_json('tsdb:' + path, do)
 
         league_map = {
             '4328': ('英超', 4), '4335': ('西甲', 4), '4331': ('德甲', 4), '4332': ('意甲', 4),
@@ -289,26 +338,177 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
                 results = [{'id': t.get('idTeam'), 'name': t.get('strTeam') or '',
                             'full': t.get('strTeamAlternate') or t.get('strTeam') or '',
                             'league': t.get('strLeague') or '', 'badge': t.get('strBadge') or '',
-                            'sport': t.get('strSport') or ''} for t in teams]
+                            'sport': t.get('strSport') or '', 'provider': 'thesportsdb'} for t in teams]
+                # TheSportsDB 电竞覆盖差（如搜 NAVI 无结果）→ Liquipedia opensearch 兜底
+                if not results and sport == 'cs2':
+                    results = self._lp_search_teams(q)
                 self._send_json({'results': results})
                 return
             if stype == 'matches':
                 leagues = params.get('leagues', ['4328,4335,4331,4332,4334,4480'])[0]
+                followed_ids = [s.strip() for s in params.get('ids', [''])[0].split(',') if s.strip()]
+                ids = [s.strip() for s in leagues.split(',') if s.strip()]
                 all_events = []
-                for lid in [s.strip() for s in leagues.split(',') if s.strip()]:
+
+                def fetch_league(lid):
                     lm = league_map.get(lid)
                     try:
                         d = tsb_fetch('eventsnextleague.php?id=' + lid)
-                        for ev in (d.get('events') or []):
-                            all_events.append(normalize_event(ev, lm))
+                        return [normalize_event(ev, lm) for ev in (d.get('events') or [])]
                     except Exception:
+                        return []
+
+                # 按关注球队拉取：下一场 + 最近完赛（V1.2 §6.1：联赛 fixtures 只有 1 场，主队赛程必须按队取）
+                def fetch_team(tid):
+                    out = []
+                    for path in (f'eventsnext.php?id={tid}', f'eventslast.php?id={tid}'):
+                        try:
+                            d = tsb_fetch(path)
+                            src = d.get('events') or d.get('results') or []
+                            out.extend(normalize_event(ev, None) for ev in src)
+                        except Exception:
+                            continue
+                    return out
+
+                # 并行抓取（免费档限流宽松，缓存 10 分钟兜底）
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    futures = [pool.submit(fetch_league, lid) for lid in ids]
+                    futures += [pool.submit(fetch_team, tid) for tid in followed_ids[:6]]
+                    for fu in futures:
+                        all_events.extend(fu.result())
+                # 按事件去重后按时间排序
+                seen = set()
+                deduped = []
+                for m in all_events:
+                    key = f"{m.get('home_id')}|{m.get('away_id')}|{m.get('date')}"
+                    if key in seen:
                         continue
-                all_events.sort(key=lambda m: m.get('ts') or '')
-                self._send_json({'matches': all_events[:80]})
+                    seen.add(key)
+                    deduped.append(m)
+                deduped.sort(key=lambda m: m.get('ts') or '')
+                self._send_json({'matches': deduped[:80]})
+                return
+            if stype == 'cs2matches':
+                self._send_json({'matches': self._lp_cs2_matches()})
                 return
             self._send_json({'error': 'unknown type'}, 400)
         except Exception:
             self._send_json({'results': [], 'matches': []}, 502)
+
+    # Liquipedia API 合规：gzip 必需 + 描述性 UA + 缓存降频（≤2 req/s，见 liquipedia.net/api-terms-of-use）
+    _lp_cache = {'ts': 0, 'data': None}
+
+    def _lp_search_teams(self, q):
+        # 电竞战队搜索兜底：opensearch 拿候选页名，队标取战队页 infobox 首图（各自缓存 10 分钟）
+        def fetch_one(title):
+            try:
+                for _ in range(2):  # 重定向页（如 NAVI→Natus_Vincere）最多跟随一次
+                    p = self._lp_fetch_json('https://liquipedia.net/counterstrike/api.php?action=parse&page='
+                                            + urllib.parse.quote(title.replace(' ', '_')) + '&prop=text&format=json')
+                    html = ((p.get('parse') or {}).get('text') or {}).get('*') or ''
+                    m = (re.search(r'infobox-image[^>]*>[\s\S]{0,400}?<img[^>]*src="([^"]+)"', html)
+                         or re.search(r'<img[^>]*src="(/commons/images/[^"]+?lightmode[^"]*?)"', html))
+                    if m:
+                        badge = m.group(1)
+                        return ('https://liquipedia.net' + badge) if badge.startswith('/') else badge
+                    red = re.search(r'redirectText"><li><a href="/counterstrike/([^"]+)"', html)
+                    if not red:
+                        return ''
+                    title = urllib.parse.unquote(red.group(1))
+                return ''
+            except Exception:
+                return ''
+
+        try:
+            d = self._lp_fetch_json('https://liquipedia.net/counterstrike/api.php?action=opensearch&search='
+                                    + urllib.parse.quote(q) + '&limit=6&format=json')
+            titles = [t for t in (d[1] or []) if '/' not in t][:4]
+        except Exception:
+            return []
+        if not titles:
+            return []
+        with ThreadPoolExecutor(max_workers=2) as pool:  # 限速礼貌：并发≤2
+            badges = list(pool.map(fetch_one, titles))
+        return [{'id': 'lp:' + t, 'name': t, 'full': t, 'league': 'CS2 · Liquipedia',
+                 'badge': badge, 'sport': 'ESports', 'provider': 'liquipedia'}
+                for t, badge in zip(titles, badges)]
+
+    def _lp_fetch_json(self, url):
+        # 5 分钟内存缓存：与线上 cf cacheTtl=300 对齐，避免搜索/刷新高频打到 Liquipedia
+        def do():
+            req = urllib.request.Request(url)
+            req.add_header('User-Agent', 'InnerOS/1.0 (https://inneros.pages.dev; contact: dev@inneros.asia)')
+            req.add_header('Accept-Encoding', 'gzip')
+            with urllib.request.urlopen(req, timeout=20) as response:
+                raw = response.read()
+                if (response.headers.get('Content-Encoding') or '') == 'gzip':
+                    raw = gzip.decompress(raw)
+                return json.loads(raw.decode('utf-8', 'ignore'))
+        return cached_fetch_json('lp:' + url, do)
+
+    def _lp_cs2_matches(self):
+        # 本地内存缓存 5 分钟，与线上 cf cacheTtl=300 对齐，避免高频打到 Liquipedia
+        now = time.time()
+        if self._lp_cache['data'] and now - self._lp_cache['ts'] < 300:
+            return self._lp_cache['data']
+        d = self._lp_fetch_json('https://liquipedia.net/counterstrike/api.php?action=parse&page=Liquipedia:Matches&format=json&prop=text')
+        html = ((d.get('parse') or {}).get('text') or {}).get('*') or ''
+        if not html:
+            raise RuntimeError('liquipedia empty')
+        matches = self._parse_lp_ticker(html)
+        self.__class__._lp_cache = {'ts': now, 'data': matches}
+        return matches
+
+    @classmethod
+    def _parse_lp_ticker(cls, html):
+        # 结构 2026-08 实测：match-info 块含 timer-object 时间戳、双方 team-template（队标+短名+LP 页面标题）、赛事名、Bo 赛制
+        def parse_team(seg):
+            img = re.search(r'team-template-lightmode"><a[^>]*><img[^>]*src="([^"]+)"', seg)
+            name = re.search(r'<span class="name"[^>]*><a[^>]*title="([^"]*)"[^>]*>([^<]*)</a>', seg)
+            badge = img.group(1) if img else ''
+            if badge.startswith('/'):
+                badge = 'https://liquipedia.net' + badge
+            return {
+                'full': name.group(1) if name else '',
+                'name': name.group(2).strip() if name else '',
+                'badge': badge,
+            }
+
+        now_ms = time.time() * 1000
+        matches = []
+        for b in html.split('<div class="match-info">')[1:]:
+            parts = b.split('<div class="match-info-header-opponent')
+            if len(parts) < 3:
+                continue
+            home, away = parse_team(parts[1]), parse_team(parts[2])
+            if not home['name'] and not away['name']:
+                continue
+            ts_m = re.search(r'timer-object[^>]*data-timestamp="(\d+)"', b)
+            ts = int(ts_m.group(1)) * 1000 if ts_m else 0
+            tour_m = re.search(r'match-info-tournament-name"[^>]*>([\s\S]*?)</span>', b)
+            league = re.sub(r'<[^>]+>', '', tour_m.group(1)).strip() if tour_m else ''
+            bo_m = re.search(r'\((Bo\d)\)', b, re.I)
+            scores = re.findall(r'match-info-header-scoreholder-score[^\"]*\">\s*(-?\d+)\s*<', b)
+            status, hs, as_ = 'upcoming', None, None
+            if ts and now_ms >= ts and now_ms < ts + 3.5 * 3600 * 1000:
+                status = 'live'
+            elif ts and now_ms >= ts + 3.5 * 3600 * 1000:
+                status = 'finished'
+                if len(scores) >= 2:
+                    hs, as_ = int(scores[0]), int(scores[1])
+            d = datetime.utcfromtimestamp(ts / 1000) if ts else datetime.utcnow()
+            slug = re.sub(r'[^a-z0-9-]', '', (home['name'] + '-' + away['name']).lower())
+            matches.append({
+                'sport': 'cs2',
+                'id': f"lp-{int(ts / 1000)}-{slug}",
+                'home_id': home['full'] or home['name'], 'home_name': home['name'], 'home_badge': home['badge'],
+                'away_id': away['full'] or away['name'], 'away_name': away['name'], 'away_badge': away['badge'],
+                'ts': ts, 'date': d.strftime('%Y-%m-%d'), 'time': d.strftime('%H:%M'),
+                'league': league, 'round': bo_m.group(1) if bo_m else '',
+                'status': status, 'home_score': hs, 'away_score': as_,
+                'importance': 3, 'tournament_weight': 3,
+            })
+        return matches
 
     def _send_json(self, obj, status=200):
         data = json.dumps(obj, ensure_ascii=False).encode('utf-8')

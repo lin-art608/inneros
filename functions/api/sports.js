@@ -4,11 +4,16 @@
 //      解决 V1.2 §6.1"球队注册表硬编码、搜不到列表外球队"的根因。
 //   2) type=matches&leagues=4328,4335,... —— 真实足球赛程（英超/西甲/德甲/意甲/法甲/欧冠），
 //      替代此前 nextDate() 生成的假赛程（V1.2 §6.1 禁止项）。
-// 注意：TheSportsDB 无 CS2 赛事数据（仅 LoL/RL），CS2 真实赛程仍为已知阻塞项（需 Key 源）。
+//   3) type=cs2matches —— CS2 真实赛程（Liquipedia MediaWiki API，免密钥），
+//      解析 Liquipedia:Matches ticker（未来+进行中场次，含时间戳/队名/队标/赛事/赛制）。
+// Liquipedia API 合规：要求 gzip + 描述性 UA（含联系方式）+ ≤2 req/s，见 liquipedia.net/api-terms-of-use；
+// 本函数经 cf cacheTtl=300 边缘缓存，远低于限流阈值。
 // 边缘缓存 10 分钟，降低对免费接口的请求压力。
 
 const TSB_KEY = '3'; // TheSportsDB 免费 Key（公开测试用）
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const LP_API = 'https://liquipedia.net/counterstrike/api.php';
+const LP_UA = 'InnerOS/1.0 (https://inneros.pages.dev; contact: dev@inneros.asia)';
 
 // 联赛 ID → 中文名 + 权重（用于推荐分）
 const LEAGUE_MAP = {
@@ -30,7 +35,7 @@ async function tsdb(url) {
   return res.json();
 }
 
-// 球队搜索（football→Soccer / cs2→ESports）
+// 球队搜索（football→Soccer / cs2→ESports；电竞覆盖差时回退 Liquipedia opensearch）
 async function teamSearch(q, sport) {
   const wantSport = sport === 'cs2' ? 'ESports' : 'Soccer';
   const d = await tsdb(`https://www.thesportsdb.com/api/v1/json/${TSB_KEY}/searchteams.php?t=${encodeURIComponent(q)}`);
@@ -42,7 +47,38 @@ async function teamSearch(q, sport) {
     league: t.strLeague || '',
     badge: t.strBadge || '',
     sport: t.strSport || '',
+    provider: 'thesportsdb',
   }));
+}
+
+// 战队页 infobox 首图即队标；重定向页（NAVI→Natus_Vincere）跟随一次；每队缓存 24h，控制限速
+async function lpLogoFor(title) {
+  for (let i = 0; i < 2; i++) {
+    const d = await lpFetch(`${LP_API}?action=parse&page=${encodeURIComponent(title.replace(/ /g, '_'))}&prop=text&format=json`);
+    const html = d.parse && d.parse.text && d.parse.text['*'];
+    if (!html) return '';
+    const inf = html.match(/infobox-image[^>]*>[\s\S]{0,400}?<img[^>]*src="([^"]+)"/);
+    const any = inf || html.match(/<img[^>]*src="(\/commons\/images\/[^"]+?lightmode[^"]*?)"/);
+    if (any) return any[1].startsWith('/') ? 'https://liquipedia.net' + any[1] : any[1];
+    const red = html.match(/redirectText"><ul><li><a href="\/counterstrike\/([^"]+)"/);
+    if (!red) return '';
+    title = decodeURIComponent(red[1]);
+  }
+  return '';
+}
+
+// CS2 搜索兜底：TheSportsDB 电竞覆盖差（搜 NAVI 无结果）→ Liquipedia opensearch
+// 队标取战队页 infobox 首图（每队缓存 24h）；id 用 'lp:' 前缀 + LP 页面标题（关注后可与 ticker 队名匹配）
+async function searchCS2Fallback(q) {
+  const d = await lpFetch(`${LP_API}?action=opensearch&search=${encodeURIComponent(q)}&limit=6&format=json`);
+  const titles = (d[1] || []).filter(t => !t.includes('/')).slice(0, 4);
+  const out = [];
+  for (const t of titles) {
+    let badge = '';
+    try { badge = await lpLogoFor(t); } catch (e) { /* 队标失败允许为空 */ }
+    out.push({ id: 'lp:' + t, name: t, full: t, league: 'CS2 · Liquipedia', badge, sport: 'ESports', provider: 'liquipedia' });
+  }
+  return out;
 }
 
 // 事件 → 统一比赛模型（app.js 既有模型，见 getUnifiedMatches）
@@ -86,8 +122,29 @@ async function leagueMatches(leagueIds) {
       for (const ev of (d.events || [])) all.push(normalizeEvent(ev, lm));
     } catch (e) { /* 单联赛失败不影响其它 */ }
   }));
-  all.sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')));
-  return all.slice(0, 80);
+  return all;
+}
+
+// 按关注球队拉取：下一场（eventsnext）+ 最近完赛（eventslast），免费档各返回少量场次
+// V1.2 §6.1：显示下一场、最近 3~5 场；联赛级 fixtures 只有 1 场，关注球队必须按队拉取才能覆盖
+async function followedTeamEvents(teamIds) {
+  const ids = teamIds.slice(0, 6);
+  const all = [];
+  await Promise.all(ids.flatMap(id => [
+    (async () => {
+      try {
+        const d = await tsdb(`https://www.thesportsdb.com/api/v1/json/${TSB_KEY}/eventsnext.php?id=${encodeURIComponent(id)}`);
+        for (const ev of (d.events || [])) all.push(normalizeEvent(ev, null));
+      } catch (e) { /* 单队失败不影响其它 */ }
+    })(),
+    (async () => {
+      try {
+        const d = await tsdb(`https://www.thesportsdb.com/api/v1/json/${TSB_KEY}/eventslast.php?id=${encodeURIComponent(id)}`);
+        for (const ev of (d.results || [])) all.push(normalizeEvent(ev, null));
+      } catch (e) { /* 同上 */ }
+    })(),
+  ]));
+  return all;
 }
 
 function jsonResponse(obj, status) {
@@ -101,6 +158,78 @@ function jsonResponse(obj, status) {
   });
 }
 
+// ---- CS2：Liquipedia ticker 解析（结构经 2026-08 实测验证） ----
+async function lpFetch(url) {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': LP_UA, 'Accept-Encoding': 'gzip' },
+    cf: { cacheEverything: true, cacheTtl: 300 },
+  });
+  if (!res.ok) throw new Error('liquipedia ' + res.status);
+  return res.json();
+}
+
+// 把 Liquipedia:Matches 的 HTML 解析为统一比赛模型（与 normalizeEvent 同构）
+function parseLpTicker(html) {
+  const blocks = html.split('<div class="match-info">');
+  const matches = [];
+  const parseTeam = (seg) => {
+    // 队标取 lightmode 变体（站点 CDN 相对路径需补域名）
+    const img = seg.match(/team-template-lightmode"><a[^>]*><img[^>]*src="([^"]+)"/);
+    // name span：text = 队伍短名（NAVI），title 属性 = LP 页面标题（Natus Vincere，与关注匹配键一致）
+    const name = seg.match(/<span class="name"[^>]*><a[^>]*title="([^"]*)"[^>]*>([^<]*)<\/a>/);
+    return {
+      full: name ? name[1] : '',
+      name: name ? name[2].trim() : '',
+      badge: img ? (img[1].startsWith('/') ? 'https://liquipedia.net' + img[1] : img[1]) : '',
+    };
+  };
+  for (const b of blocks.slice(1)) {
+    const parts = b.split('<div class="match-info-header-opponent');
+    if (parts.length < 3) continue;
+    const home = parseTeam(parts[1]);
+    const away = parseTeam(parts[2]);
+    if (!home.name && !away.name) continue;
+    const tsM = b.match(/timer-object[^>]*data-timestamp="(\d+)"/);
+    const ts = tsM ? parseInt(tsM[1], 10) * 1000 : 0;
+    const tourM = b.match(/match-info-tournament-name"[^>]*>([\s\S]*?)<\/span>/);
+    const league = tourM ? tourM[1].replace(/<[^>]+>/g, '').trim() : '';
+    const boM = b.match(/\((Bo\d)\)/i);
+    const scores = [...b.matchAll(/match-info-header-scoreholder-score[^\"]*\">\s*(-?\d+)\s*</g)].map(m => m[1]);
+    // ticker 包含未开赛 + 进行中 + 刚完赛的场次：按时间戳窗口判定状态（Bo3 场次按 3.5h 兜底）
+    const now = Date.now();
+    let status = 'upcoming';
+    let home_score = null, away_score = null;
+    if (ts && now >= ts && now < ts + 3.5 * 3600e3) status = 'live';
+    else if (ts && now >= ts + 3.5 * 3600e3) {
+      status = 'finished';
+      if (scores.length >= 2) { home_score = Number(scores[0]); away_score = Number(scores[1]); }
+    }
+    const d = new Date(ts || now);
+    matches.push({
+      sport: 'cs2',
+      id: 'lp-' + Math.floor(ts / 1000) + '-' + (home.name + '-' + away.name).toLowerCase().replace(/[^a-z0-9-]/g, ''),
+      home_id: home.full || home.name,
+      home_name: home.name, home_badge: home.badge,
+      away_id: away.full || away.name,
+      away_name: away.name, away_badge: away.badge,
+      ts,
+      date: d.toISOString().slice(0, 10),
+      time: ('0' + d.getUTCHours()).slice(-2) + ':' + ('0' + d.getUTCMinutes()).slice(-2),
+      league, round: boM ? boM[1] : '',
+      status, home_score, away_score,
+      importance: 3, tournament_weight: 3,
+    });
+  }
+  return matches;
+}
+
+async function cs2Matches() {
+  const d = await lpFetch(`${LP_API}?action=parse&page=Liquipedia:Matches&format=json&prop=text`);
+  const html = d.parse && d.parse.text && d.parse.text['*'];
+  if (!html) throw new Error('liquipedia empty');
+  return parseLpTicker(html);
+}
+
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
   const type = url.searchParams.get('type') || '';
@@ -110,12 +239,26 @@ export async function onRequestGet(context) {
     if (type === 'teamsearch') {
       if (!q) return jsonResponse({ results: [] }, 400);
       const sport = url.searchParams.get('sport') || 'football';
-      const results = await teamSearch(q, sport);
+      let results = await teamSearch(q, sport);
+      if (!results.length && sport === 'cs2') results = await searchCS2Fallback(q);
       return jsonResponse({ results });
     }
     if (type === 'matches') {
       const leagues = url.searchParams.get('leagues') || '4328,4335,4331,4332,4334,4480';
-      const matches = await leagueMatches(leagues);
+      const followedIds = (url.searchParams.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean);
+      // 联赛 fixtures + 关注球队各自赛程，按事件 id 去重后按时间排序
+      const [lg, mine] = await Promise.all([leagueMatches(leagues), followedTeamEvents(followedIds)]);
+      const seen = new Set();
+      const matches = [...lg, ...mine].filter(m => {
+        const key = m.home_id + '|' + m.away_id + '|' + m.date;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || ''))).slice(0, 80);
+      return jsonResponse({ matches });
+    }
+    if (type === 'cs2matches') {
+      const matches = await cs2Matches();
       return jsonResponse({ matches });
     }
     return jsonResponse({ error: 'unknown type' }, 400);
