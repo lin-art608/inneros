@@ -15,6 +15,7 @@ import sys
 import socketserver
 import time
 import re
+import json
 
 PORT = 8765
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -79,6 +80,8 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith('/img?url='):
             self.handle_image_proxy()
+        elif self.path.startswith('/api/douban'):
+            self.handle_douban()
         elif self.path.startswith('/api/search?q='):
             self.handle_douban_search()
         else:
@@ -108,6 +111,46 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(data)
         except Exception:
             self.send_error(500, 'Douban search failed')
+
+    def handle_douban(self):
+        # 与线上 functions/api/douban.js 行为一致：电影/书籍走豆瓣 subject_suggest，归一化返回
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+        q = params.get('q', [''])[0]
+        dtype = params.get('type', ['movie'])[0]
+        if not q:
+            self._send_json({'results': [], 'items': []}, 400)
+            return
+        kind = 'book' if dtype == 'book' else 'movie'
+        douban_url = f'https://{kind}.douban.com/j/subject_suggest?q={urllib.parse.quote(q)}'
+        try:
+            req = urllib.request.Request(douban_url)
+            req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+            req.add_header('Referer', 'https://movie.douban.com/')
+            req.add_header('Accept', 'application/json, text/javascript, */*; q=0.01')
+            with urllib.request.urlopen(req, timeout=10) as response:
+                raw = json.loads(response.read().decode('utf-8', 'ignore'))
+            if kind == 'book':
+                items = [{'external_id': it.get('id'), 'title': it.get('title', ''), 'authors': it.get('author_name', ''),
+                          'publisher': '', 'publishedDate': it.get('year', ''), 'cover': it.get('pic', ''),
+                          'isbn': '', 'categories': [], 'description': '', 'pageCount': 0, 'provider': 'douban'} for it in raw]
+                self._send_json({'items': items})
+            else:
+                results = [{'external_id': it.get('id'), 'title': it.get('title', ''), 'original_title': it.get('sub_title', ''),
+                            'poster': it.get('img', ''), 'release_date': it.get('year', ''),
+                            'director': '', 'genres': [], 'description': '', 'provider': 'douban'} for it in raw]
+                self._send_json({'results': results})
+        except Exception:
+            self._send_json({'results': [], 'items': []}, 502)
+
+    def _send_json(self, obj, status=200):
+        data = json.dumps(obj, ensure_ascii=False).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+        self.wfile.write(data)
 
     def handle_image_proxy(self):
         parsed = urllib.parse.urlparse(self.path)

@@ -29,6 +29,28 @@ Personal digital space for memory, resources, sports and life.
 - Sports 真实 Provider 需密钥，§12 禁止购买/提交密钥 → 真实赛程聚合暂未接
 - 视觉重构(P5)、全量回归(P6) 未做
 
+## 2026-08-28 数据源更换：电影/书籍改豆瓣代理
+
+> 依据 V1.2 审计结论实施（先审计、再迭代）。解决"中文搜不到 + 中国大陆不可达"两类根因。
+
+### refactor: 电影/书籍搜索改走豆瓣（/api/douban）
+- 新增 `functions/api/douban.js`（Cloudflare Pages Function）：代理豆瓣 `subject_suggest`，
+  电影/书籍统一归一化为既有字段名；**免 API Key**，绕过浏览器 CORS 与 GFW。
+- `app.js`：`searchMovie` / `searchBook` 改调 `/api/douban`（弃用 iTunes-US、Google Books）。
+  - 电影：此前 iTunes(US 商店) 中文片名/中文电影搜不到 → 现豆瓣中文覆盖完整。
+  - 书籍：此前 Google Books 在大陆 `googleapis.com` 常被墙/超时 → 现豆瓣中国大陆可达。
+- `app.js`：`searchMusic` 加 `country=CN`，提升中文歌曲/歌手覆盖（音乐数据源保留 iTunes）。
+- `app.js`：`downloadImageAsDataURL` 对 `doubanio.com` 图源改走 `/img?url=` 代理，避免防盗链丢图。
+- `server.py`：新增 `/api/douban` 路由，与线上 Function 行为一致，本地 `python server.py` 预览同效。
+
+### 实测（本地 server.py）
+- 电影：星际穿越 / Interstellar → 正确返回（中文名 + 原名 + 海报 + 年份）
+- 书籍：百年孤独 / 三体 → 作者、封面、年份齐全
+
+### 已知缺口（暂缓，待补全）
+- 导演 / 简介 / ISBN / 出版社 暂为空：豆瓣详情接口（`/j/subject/`）已被限流/改版，仅 `subject_suggest` 稳定可用。
+  后续可用豆瓣详情页 HTML 解析或换 TMDB/Open Library（需评估大陆可达性）补全。
+
 ## 2026-08-28 V1.1 智能记录与资源聚合
 
 ### feat: 多次记录数据模型 (entries[] 追加模式)

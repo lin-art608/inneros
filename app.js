@@ -63,6 +63,22 @@ function blobToDataURL(blob) {
 
 async function downloadImageAsDataURL(url) {
   if (!url || url.startsWith('data:') || url.startsWith('blob:')) return url;
+  // 豆瓣图源经本地/CF 图片代理（/img?url=），避免防盗链与 GFW 问题（V1.2 电影/书籍改豆瓣后需要）
+  if (url.includes('doubanio.com') || url.includes('douban.com')) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch(`/img?url=${encodeURIComponent(url)}`, { signal: controller.signal });
+      clearTimeout(timer);
+      if (res.ok) {
+        const blob = await res.blob();
+        if (blob.size > 500) {
+          const dataUrl = await blobToDataURL(blob);
+          if (dataUrl && dataUrl.startsWith('data:image')) return dataUrl;
+        }
+      }
+    } catch (e) { /* 失败则继续走下方通用代理 */ }
+  }
   const proxies = [
         `https://images.weserv.nl/?url=${encodeURIComponent(url.replace(/^https?:\/\//, ''))}`,
         `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
@@ -97,26 +113,30 @@ let selectedGame = null;
 let workSearchResults = [];
 const ContentProvider = {
   async searchMovie(query) {
-    const res = await fetch(`https://itunes.apple.com/search?media=movie&entity=movie&limit=8&term=${encodeURIComponent(query)}`);
+    // V1.2 §5/§P1：电影改走豆瓣（中国可达+中文覆盖好），经 /api/douban 代理绕过 CORS 与 GFW
+    const res = await fetch(`/api/douban?type=movie&q=${encodeURIComponent(query)}`);
     if (!res.ok) throw new Error('电影数据源暂时不可用');
-    return (await res.json()).results.map(item => ({
-      external_id: String(item.trackId), title: item.trackName || item.collectionName || '', original_title: item.trackName || '',
-      poster: item.artworkUrl100?.replace('100x100bb', '600x600bb') || '', release_date: (item.releaseDate || '').slice(0, 10),
-      director: item.artistName || '', genres: item.primaryGenreName ? [item.primaryGenreName] : [], description: item.longDescription || item.shortDescription || '', provider: 'itunes',
+    const data = await res.json();
+    return (data.results || []).map(item => ({
+      external_id: String(item.external_id), title: item.title || '', original_title: item.original_title || '',
+      poster: item.poster || '', release_date: item.release_date || '',
+      director: item.director || '', genres: item.genres || [], description: item.description || '', provider: 'douban',
     }));
   },
   async searchBook(query) {
-    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=8`);
+    // V1.2 §5/§P1：书籍改走豆瓣读书（googleapis.com 在中国大陆常被墙/超时），经 /api/douban 代理
+    const res = await fetch(`/api/douban?type=book&q=${encodeURIComponent(query)}`);
     if (!res.ok) throw new Error('图书数据源暂时不可用');
-    return (await res.json()).items?.map(item => ({
-      external_id: item.id, title: item.volumeInfo.title || '', authors: (item.volumeInfo.authors || []).join(', '), publisher: item.volumeInfo.publisher || '',
-      publishedDate: item.volumeInfo.publishedDate || '', cover: item.volumeInfo.imageLinks?.thumbnail?.replace('http://', 'https://') || '',
-      isbn: item.volumeInfo.industryIdentifiers?.find(x => x.type === 'ISBN_13')?.identifier || item.volumeInfo.industryIdentifiers?.[0]?.identifier || '',
-      categories: item.volumeInfo.categories || [], description: item.volumeInfo.description || '', pageCount: item.volumeInfo.pageCount || 0, provider: 'google-books',
-    })) || [];
+    const data = await res.json();
+    return (data.items || []).map(item => ({
+      external_id: String(item.external_id), title: item.title || '', authors: item.authors || '',
+      publisher: item.publisher || '', publishedDate: item.publishedDate || '', cover: item.cover || '',
+      isbn: item.isbn || '', categories: item.categories || [], description: item.description || '', pageCount: item.pageCount || 0, provider: 'douban',
+    }));
   },
   async searchMusic(query) {
-    const res = await fetch(`https://itunes.apple.com/search?media=music&entity=song&limit=8&term=${encodeURIComponent(query)}`);
+    // 加 country=CN 提升中文歌曲/歌手覆盖（V1.2 审计建议）
+    const res = await fetch(`https://itunes.apple.com/search?media=music&entity=song&limit=8&term=${encodeURIComponent(query)}&country=CN`);
     if (!res.ok) throw new Error('音乐数据源暂时不可用');
     return (await res.json()).results.map(item => ({ external_id:String(item.trackId), title:item.trackName || '', artist:item.artistName || '', album:item.collectionName || '', poster:item.artworkUrl100?.replace('100x100bb', '600x600bb') || '', release_date:(item.releaseDate || '').slice(0,10), genres:item.primaryGenreName?[item.primaryGenreName]:[], provider:'itunes' }));
   },
