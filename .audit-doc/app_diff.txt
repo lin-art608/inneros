@@ -1,0 +1,603 @@
+diff --git a/app.js b/app.js
+index 6710a96..a57f4ea 100644
+--- a/app.js
++++ b/app.js
+@@ -238,7 +238,7 @@ function renderBookResults(results) {
+   if (!results.length) { container.innerHTML = '<div class="douban-no-result">未找到相关书籍</div>'; return; }
+   container.innerHTML = results.map((b, i) =>
+     `<div class="douban-result-item" onclick="selectBookResult(${i})">
+-      ${b.cover ? `<img class="douban-result-cover" src="${b.cover}" loading="lazy" onerror="this.style.display='none'">` : '<div class="douban-result-cover placeholder">📖</div>'}
++      ${b.cover ? `<img class="douban-result-cover" src="${proxyImage(b.cover)}" loading="lazy" onerror="this.style.display='none'">` : '<div class="douban-result-cover placeholder">📖</div>'}
+       <div class="douban-result-info">
+         <div class="douban-result-title">${b.title}</div>
+         ${b.authors ? `<div class="douban-result-subtitle">${b.authors}</div>` : ''}
+@@ -248,15 +248,23 @@ function renderBookResults(results) {
+   ).join('');
+ }
+ 
+-function selectBookResult(idx) {
++async function selectBookResult(idx) {
+   const b = bookSearchResults[idx];
+   if (!b) return;
+-  selectedBook = b;
++  selectedBook = { ...b };
+   document.querySelectorAll('.douban-result-item').forEach((el, i) => el.classList.toggle('selected', i === idx));
+   const titleEl = document.getElementById('capture-title');
+   if (titleEl) titleEl.value = b.title;
+   const extraEl = document.getElementById('capture-extra');
+   if (extraEl) extraEl.value = b.authors || '';
++  // V1.2 §8：并行缓存封面 + 拉取书籍详情（出版社/ISBN/页数/出版年/简介），补全作品资料
++  const [dataUrl, detail] = await Promise.all([
++    b.cover ? downloadImageAsDataURL(b.cover) : Promise.resolve(null),
++    enrichWorkDetail('book', b),
++  ]);
++  if (detail) mergeDetail(b, detail);
++  if (dataUrl) b.cover = dataUrl;
++  selectedBook = { ...b };
+   const coverPreview = document.getElementById('book-cover-preview');
+   if (coverPreview && b.cover) coverPreview.innerHTML = `<img src="${b.cover}" style="width:60px;height:80px;object-fit:cover;border-radius:4px;">`;
+ }
+@@ -292,6 +300,27 @@ function renderWorkResults(type, results) {
+     </div>
+   `).join('');
+ }
++// 豆瓣详情补全（V1.2 §8：选中搜索结果后拉详情，补齐简介/导演/评分/片长；书籍：出版社/ISBN/页数/简介）
++// 解决"只有 suggest 级数据、简介为空"的缺口；详情由 /api/douban?type=detail 代理（电影走 m.douban rexxar API，书籍走详情页解析）
++async function enrichWorkDetail(type, r) {
++  if (!r || !r.external_id) return null;
++  try {
++    const kind = type === 'book' ? 'book' : 'movie';
++    const res = await fetch(`/api/douban?type=detail&kind=${kind}&id=${encodeURIComponent(r.external_id)}`);
++    if (!res.ok) return null;
++    const data = await res.json();
++    return data.detail || null;
++  } catch (e) { return null; }
++}
++
++function mergeDetail(target, detail) {
++  if (!detail) return;
++  for (const k in detail) {
++    const v = detail[k];
++    if (v !== '' && v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0)) target[k] = v;
++  }
++}
++
+ async function selectWorkResult(type, idx) {
+   const r = workSearchResults[idx];
+   if (!r) return;
+@@ -303,11 +332,14 @@ async function selectWorkResult(type, idx) {
+   });
+   showToast('正在缓存封面...', 'success');
+   const imageKey = r.poster ? 'poster' : 'cover';
+-  const dataUrl = await downloadImageAsDataURL(r[imageKey]);
+-  if (dataUrl) {
+-    r[imageKey] = dataUrl;
+-    if (type === 'movie') selectedMovie = { ...r }; else if (type === 'music') selectedMusic = { ...r }; else if (type === 'game') selectedGame = { ...r };
+-  }
++  // 并行：缓存封面 + 拉取豆瓣详情（电影：简介/导演/评分/片长；书籍：出版社/ISBN/页数/简介）
++  const [dataUrl, detail] = await Promise.all([
++    downloadImageAsDataURL(r[imageKey]),
++    (type === 'movie') ? enrichWorkDetail(type, r) : Promise.resolve(null),
++  ]);
++  if (detail) mergeDetail(r, detail);
++  if (dataUrl) r[imageKey] = dataUrl;
++  if (type === 'movie') selectedMovie = { ...r }; else if (type === 'music') selectedMusic = { ...r }; else if (type === 'game') selectedGame = { ...r };
+   showToast('已导入：' + r.title, 'success');
+ }
+ 
+@@ -498,41 +530,45 @@ function dbDeleteTeam(id) {
+ // 阻塞：真实足球/电竞 API 通常需要密钥，而 V1.2 §12 禁止购买/提交 API Key，故暂未接入。
+ // 过渡方案：见 addManualTeam()——允许按名称手动关注任意球队（provider:'manual'）。
+ const CS2_TEAMS = [
+-  { id:'navi', name:'NAVI', full:'Natus Vincere', color:'#FFE600', text:'#000', region:'EU' },
+-  { id:'g2', name:'G2', full:'G2 Esports', color:'#1A1A1A', text:'#FFF', region:'EU' },
+-  { id:'faze', name:'FaZe', full:'FaZe Clan', color:'#E63946', text:'#FFF', region:'EU' },
+-  { id:'vitality', name:'Vitality', full:'Team Vitality', color:'#FFD700', text:'#000', region:'EU' },
+-  { id:'spirit', name:'Spirit', full:'Team Spirit', color:'#C75450', text:'#FFF', region:'EU' },
+-  { id:'mouz', name:'MOUZ', full:'MOUZ', color:'#000', text:'#E63946', region:'EU' },
+-  { id:'liquid', name:'Liquid', full:'Team Liquid', color:'#0A66C2', text:'#FFF', region:'NA' },
+-  { id:'furia', name:'FURIA', full:'FURIA Esports', color:'#000', text:'#FFF', region:'SA' },
+-  { id:'astralis', name:'Astralis', full:'Astralis', color:'#1A1A1A', text:'#E63946', region:'EU' },
+-  { id:'heroic', name:'Heroic', full:'Heroic', color:'#FF6B35', text:'#FFF', region:'EU' },
+-  { id:'cloud9', name:'Cloud9', full:'Cloud9', color:'#1B3A5C', text:'#FFF', region:'NA' },
+-  { id:'ence', name:'ENCE', full:'ENCE', color:'#0EAE52', text:'#000', region:'EU' },
++  { id:'navi', name:'NAVI', full:'Natus Vincere', color:'#FFE600', text:'#000', region:'EU', tsdb_id:'148013', badge:'https://r2.thesportsdb.com/images/media/team/badge/jzfnzf1761226695.png' },
++  { id:'g2', name:'G2', full:'G2 Esports', color:'#1A1A1A', text:'#FFF', region:'EU', tsdb_id:'136536', badge:'https://r2.thesportsdb.com/images/media/team/badge/0vkww41675440633.png' },
++  { id:'faze', name:'FaZe', full:'FaZe Clan', color:'#E63946', text:'#FFF', region:'EU', tsdb_id:'136293', badge:'https://r2.thesportsdb.com/images/media/team/badge/mk07e01549466609.png' },
++  { id:'vitality', name:'Vitality', full:'Team Vitality', color:'#FFD700', text:'#000', region:'EU', tsdb_id:'136538', badge:'https://r2.thesportsdb.com/images/media/team/badge/1k8hie1761293957.png' },
++  { id:'spirit', name:'Spirit', full:'Team Spirit', color:'#C75450', text:'#FFF', region:'EU', tsdb_id:'148341', badge:'https://r2.thesportsdb.com/images/media/team/badge/wgjk2p1714390105.png' },
++  { id:'mouz', name:'MOUZ', full:'MOUZ', color:'#000', text:'#E63946', region:'EU', tsdb_id:'148011', badge:'https://r2.thesportsdb.com/images/media/team/badge/7coikd1705438948.png' },
++  { id:'liquid', name:'Liquid', full:'Team Liquid', color:'#0A66C2', text:'#FFF', region:'NA', tsdb_id:'136526', badge:'https://r2.thesportsdb.com/images/media/team/badge/o1bxs61761218944.png' },
++  { id:'furia', name:'FURIA', full:'FURIA Esports', color:'#000', text:'#FFF', region:'SA', tsdb_id:'148012', badge:'https://r2.thesportsdb.com/images/media/team/badge/es3htk1705439167.png' },
++  { id:'astralis', name:'Astralis', full:'Astralis', color:'#1A1A1A', text:'#E63946', region:'EU', tsdb_id:'147808', badge:'https://r2.thesportsdb.com/images/media/team/badge/vjo37g1697310003.png' },
++  { id:'heroic', name:'Heroic', full:'Heroic', color:'#FF6B35', text:'#FFF', region:'EU', tsdb_id:'148342', badge:'https://r2.thesportsdb.com/images/media/team/badge/jl2cut1714390743.png' },
++  { id:'cloud9', name:'Cloud9', full:'Cloud9', color:'#1B3A5C', text:'#FFF', region:'NA', tsdb_id:'136294', badge:'https://r2.thesportsdb.com/images/media/team/badge/j6htd11761329683.png' },
++  { id:'ence', name:'ENCE', full:'ENCE', color:'#0EAE52', text:'#000', region:'EU', tsdb_id:'153703', badge:'https://r2.thesportsdb.com/images/media/team/badge/jbwn4d1761334997.png' },
+ ];
+ 
+ const FOOTBALL_TEAMS = [
+-  { id:'mci', name:'曼城', full:'Manchester City', color:'#6CABDD', text:'#000', league:'英超' },
+-  { id:'ars', name:'阿森纳', full:'Arsenal', color:'#EF0107', text:'#FFF', league:'英超' },
+-  { id:'liv', name:'利物浦', full:'Liverpool', color:'#C8102E', text:'#FFF', league:'英超' },
+-  { id:'che', name:'切尔西', full:'Chelsea', color:'#034694', text:'#FFF', league:'英超' },
+-  { id:'tot', name:'热刺', full:'Tottenham', color:'#132257', text:'#FFF', league:'英超' },
+-  { id:'mun', name:'曼联', full:'Manchester United', color:'#DA291C', text:'#FFF', league:'英超' },
+-  { id:'rma', name:'皇马', full:'Real Madrid', color:'#FFFFFF', text:'#000', league:'西甲' },
+-  { id:'bar', name:'巴萨', full:'FC Barcelona', color:'#A50044', text:'#FFF', league:'西甲' },
+-  { id:'atm', name:'马竞', full:'Atletico Madrid', color:'#CB3524', text:'#FFF', league:'西甲' },
+-  { id:'bay', name:'拜仁', full:'Bayern Munich', color:'#DC052D', text:'#FFF', league:'德甲' },
+-  { id:'bvb', name:'多特', full:'Borussia Dortmund', color:'#FDE100', text:'#000', league:'德甲' },
+-  { id:'juv', name:'尤文', full:'Juventus', color:'#000', text:'#FFF', league:'意甲' },
+-  { id:'mil', name:'AC米兰', full:'AC Milan', color:'#FB090B', text:'#000', league:'意甲' },
+-  { id:'int', name:'国米', full:'Inter Milan', color:'#0066CC', text:'#FFF', league:'意甲' },
+-  { id:'psg', name:'巴黎', full:'Paris Saint-Germain', color:'#004170', text:'#FFF', league:'法甲' },
+-  { id:'sdts', name:'山东泰山', full:'Shandong Taishan', color:'#FF6B00', text:'#FFF', league:'中超' },
+-  { id:'shhg', name:'上海海港', full:'Shanghai Port', color:'#E60012', text:'#FFF', league:'中超' },
+-  { id:'bjgg', name:'北京国安', full:'Beijing Guoan', color:'#0066B3', text:'#FFF', league:'中超' },
++  { id:'mci', name:'曼城', full:'Manchester City', color:'#6CABDD', text:'#000', league:'英超', tsdb_id:'133613', badge:'https://r2.thesportsdb.com/images/media/team/badge/vwpvry1467462651.png' },
++  { id:'ars', name:'阿森纳', full:'Arsenal', color:'#EF0107', text:'#FFF', league:'英超', tsdb_id:'133604', badge:'https://r2.thesportsdb.com/images/media/team/badge/uyhbfe1612467038.png' },
++  { id:'liv', name:'利物浦', full:'Liverpool', color:'#C8102E', text:'#FFF', league:'英超', tsdb_id:'133602', badge:'https://r2.thesportsdb.com/images/media/team/badge/kfaher1737969724.png' },
++  { id:'che', name:'切尔西', full:'Chelsea', color:'#034694', text:'#FFF', league:'英超', tsdb_id:'133610', badge:'https://r2.thesportsdb.com/images/media/team/badge/pbf4ul1782638263.png' },
++  { id:'tot', name:'热刺', full:'Tottenham', color:'#132257', text:'#FFF', league:'英超', tsdb_id:'133616', badge:'https://r2.thesportsdb.com/images/media/team/badge/dfyfhl1604094109.png' },
++  { id:'mun', name:'曼联', full:'Manchester United', color:'#DA291C', text:'#FFF', league:'英超', tsdb_id:'133612', badge:'https://r2.thesportsdb.com/images/media/team/badge/xzqdr11517660252.png' },
++  { id:'rma', name:'皇马', full:'Real Madrid', color:'#FFFFFF', text:'#000', league:'西甲', tsdb_id:'133738', badge:'https://r2.thesportsdb.com/images/media/team/badge/vwvwrw1473502969.png' },
++  { id:'bar', name:'巴萨', full:'FC Barcelona', color:'#A50044', text:'#FFF', league:'西甲', tsdb_id:'133739', badge:'https://r2.thesportsdb.com/images/media/team/badge/wq9sir1639406443.png' },
++  { id:'atm', name:'马竞', full:'Atletico Madrid', color:'#CB3524', text:'#FFF', league:'西甲', tsdb_id:'133729', badge:'https://r2.thesportsdb.com/images/media/team/badge/0ulh3q1719984315.png' },
++  { id:'bay', name:'拜仁', full:'Bayern Munich', color:'#DC052D', text:'#FFF', league:'德甲', tsdb_id:'133664', badge:'https://r2.thesportsdb.com/images/media/team/badge/01ogkh1716960412.png' },
++  { id:'bvb', name:'多特', full:'Borussia Dortmund', color:'#FDE100', text:'#000', league:'德甲', tsdb_id:'133650', badge:'https://r2.thesportsdb.com/images/media/team/badge/tqo8ge1716960353.png' },
++  { id:'juv', name:'尤文', full:'Juventus', color:'#000', text:'#FFF', league:'意甲', tsdb_id:'133676', badge:'https://r2.thesportsdb.com/images/media/team/badge/uxf0gr1742983727.png' },
++  { id:'mil', name:'AC米兰', full:'AC Milan', color:'#FB090B', text:'#000', league:'意甲', tsdb_id:'133667', badge:'https://r2.thesportsdb.com/images/media/team/badge/wvspur1448806617.png' },
++  { id:'int', name:'国米', full:'Inter Milan', color:'#0066CC', text:'#FFF', league:'意甲', tsdb_id:'133681', badge:'https://r2.thesportsdb.com/images/media/team/badge/ryhu6d1617113103.png' },
++  { id:'psg', name:'巴黎', full:'Paris Saint-Germain', color:'#004170', text:'#FFF', league:'法甲', tsdb_id:'133714', badge:'https://r2.thesportsdb.com/images/media/team/badge/rwqrrq1473504808.png' },
++  { id:'sdts', name:'山东泰山', full:'Shandong Taishan', color:'#FF6B00', text:'#FFF', league:'中超', tsdb_id:'134648', badge:'https://r2.thesportsdb.com/images/media/team/badge/vheyu21654266995.png' },
++  { id:'shhg', name:'上海海港', full:'Shanghai Port', color:'#E60012', text:'#FFF', league:'中超', tsdb_id:'134640', badge:'https://r2.thesportsdb.com/images/media/team/badge/d9evs91776534441.png' },
++  { id:'bjgg', name:'北京国安', full:'Beijing Guoan', color:'#0066B3', text:'#FFF', league:'中超', tsdb_id:'134635', badge:'https://r2.thesportsdb.com/images/media/team/badge/cdkguq1652626854.png' },
+ ];
+ 
++// TheSportsDB 球队 ID → 注册表条目（真实赛程的 idHomeTeam/idAwayTeam 通过它取队标/配色）
++const TEAM_BY_TSDB = {};
++[...CS2_TEAMS, ...FOOTBALL_TEAMS].forEach(t => { if (t.tsdb_id) TEAM_BY_TSDB[t.tsdb_id] = t; });
++
+ // === Sports Data Adapter ===
+ // Unified match model: { id, sport, home_id, home_name, home_color, home_text, away_id, away_name, away_color, away_text, date, time, status, league, round, home_score, away_score, importance, tournament_weight }
+ // status: 'upcoming' | 'live' | 'finished'
+@@ -574,14 +610,24 @@ function getTeamById(id, sport) {
+   return FOOTBALL_TEAMS.find(t => t.id === id);
+ }
+ 
++// 真实赛程的球队视觉信息：优先 TheSportsDB 注册表（有真实队标），否则中性色兜底
++function findTeamVisual(sport, id, fallbackName) {
++  const t = TEAM_BY_TSDB[id] || getTeamById(id, sport);
++  if (t) return { name: t.name, color: t.color, text: t.text, badge: t.badge };
++  return { name: fallbackName || id, color: '#6C8ED4', text: '#FFF', badge: null };
++}
++
+ function getUnifiedMatches(sport) {
+   const cache = getSportsCache()[sport];
+-  const schedule = cache?.data && !needsSportsRefresh(sport) ? cache.data : (sport === 'cs2' ? CS2_SCHEDULE : FOOTBALL_SCHEDULE);
+-  if (!cache || needsSportsRefresh(sport)) setSportsCache(sport, schedule);
+-  return schedule.map(m => {
+-    const home = getTeamById(m.home_id, sport) || { name:m.home_id, color:'#666', text:'#FFF' };
+-    const away = getTeamById(m.away_id, sport) || { name:m.away_id, color:'#666', text:'#FFF' };
+-    return { ...m, sport, home_name:home.name, home_color:home.color, home_text:home.text, away_name:away.name, away_color:away.color, away_text:away.text };
++  // 有缓存（即使过期）优先用缓存，避免刷新间隙闪回静态演示数据；无缓存才用静态注册表演示数据
++  const schedule = (cache && cache.data && cache.data.length) ? cache.data : (sport === 'cs2' ? CS2_SCHEDULE : FOOTBALL_SCHEDULE);
++  return schedule.map(raw => {
++    let m = raw;
++    // 真实赛程带 UTC 时间戳 → 转本地日期/时间
++    if (m.ts) { const d = new Date(m.ts); m = { ...m, date: localDate(d), time: localTime(d) }; }
++    const home = m.home_name ? findTeamVisual(sport, m.home_id, m.home_name) : (getTeamById(m.home_id, sport) || { name:m.home_id, color:'#666', text:'#FFF' });
++    const away = m.away_name ? findTeamVisual(sport, m.away_id, m.away_name) : (getTeamById(m.away_id, sport) || { name:m.away_id, color:'#666', text:'#FFF' });
++    return { ...m, sport, home_name:home.name, home_color:home.color, home_text:home.text, home_badge:home.badge || null, away_name:away.name, away_color:away.color, away_text:away.text, away_badge:away.badge || null };
+   });
+ }
+ 
+@@ -609,8 +655,19 @@ function calculateMatchScore(match, followedTeamIds) {
+ function renderTeamLogo(team, size) {
+   const s = size || 48;
+   const fontSize = Math.round(s * 0.35);
+-  const initials = team.name.slice(0, 3).toUpperCase();
+-  return `<span class="team-logo" style="width:${s}px;height:${s}px;background:${team.color};color:${team.text};border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:${fontSize}px;font-weight:700;font-family:var(--font-sans);flex-shrink:0;">${initials}</span>`;
++  const name = (team && team.name) || '?';
++  const initials = name.slice(0, 3).toUpperCase();
++  const color = (team && team.color) || '#6C8ED4';
++  const text = (team && team.text) || '#FFF';
++  const circleStyle = `display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:${fontSize}px;font-weight:700;font-family:var(--font-sans);`;
++  // 有真实队标（TheSportsDB badge，经 /img 代理避免防盗链/被墙）→ 图片 + 首字母圆圈兜底
++  if (team && team.badge) {
++    return `<span class="team-logo team-logo-badge" style="width:${s}px;height:${s}px;">
++      <span style="position:absolute;inset:0;${circleStyle}background:${color};color:${text};">${initials}</span>
++      <img src="/img?url=${encodeURIComponent(team.badge)}" alt="${name}" loading="lazy" onerror="this.remove()">
++    </span>`;
++  }
++  return `<span class="team-logo" style="width:${s}px;height:${s}px;background:${color};color:${text};${circleStyle}flex-shrink:0;">${initials}</span>`;
+ }
+ 
+ // === Seed (demo data only) ===
+@@ -669,8 +726,10 @@ function toggleNavGroup(group) {
+   if (el) el.classList.toggle('open');
+ }
+ 
+-async function navigate(page) {
++async function navigate(page, fromPop = false) {
+   currentPage = page;
++  // 浏览器返回键集成：页面切换写入历史栈，popstate 时回退上一层（fromPop=true 不重复入栈）
++  if (!fromPop) history.pushState({ __inneros: true, page }, '');
+   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+   const navEl = document.querySelector(`[data-page="${page}"]`);
+   if (navEl) navEl.classList.add('active');
+@@ -719,7 +778,7 @@ async function navigate(page) {
+ async function renderResourceCS() {
+   const followedTeams = await dbGetTeams();
+   const csFollowed = followedTeams.filter(t => t.sport === 'cs2');
+-  const followedIds = csFollowed.map(t => t.provider_team_id);
++  const followedIds = csFollowed.flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
+   const myMatches = getMatchesForTeams(followedIds, 'cs2');
+   const myUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => a.date.localeCompare(b.date));
+   const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
+@@ -738,14 +797,14 @@ async function renderResourceCS() {
+   html += `<div class="my-teams-bar"><div class="my-teams-label">⚡ 我关注的主队</div><div class="my-teams-list" id="cs-my-teams">`;
+   if (csFollowed.length > 0) {
+     csFollowed.forEach(t => {
+-      const team = CS2_TEAMS.find(c => c.id === t.provider_team_id) || { name:t.name, color:t.color||'#666', text:'#FFF' };
++      const team = CS2_TEAMS.find(c => c.id === t.provider_team_id) || { name:t.name, color:t.color||'#666', text:'#FFF', badge:t.badge };
+       html += `<div class="my-team-chip" style="border-color:${team.color}44;">
+         ${renderTeamLogo(team, 28)}
+         <span class="my-team-name">${team.name}</span>
+       </div>`;
+     });
+   }
+-  html += `<button class="add-team-btn" onclick="navigate('settings')">在设置中管理关注战队</button>`;
++  html += `<button class="add-team-btn" onclick="openTeamSelector('cs2')">＋ 添加主队</button>`;
+   html += `</div></div>`;
+ 
+   // My team's upcoming matches (if any)
+@@ -778,12 +837,12 @@ async function renderResourceCS() {
+       <div class="featured-match-title">${featured.league}</div>
+       <div class="featured-match-teams">
+         <div class="featured-team">
+-          ${renderTeamLogo(getTeamById(featured.home_id,'cs2'), 72)}
++          ${renderTeamLogo(findTeamVisual('cs2', featured.home_id, featured.home_name), 72)}
+           <div class="featured-team-name">${featured.home_name}</div>
+         </div>
+         <div class="featured-vs">VS</div>
+         <div class="featured-team">
+-          ${renderTeamLogo(getTeamById(featured.away_id,'cs2'), 72)}
++          ${renderTeamLogo(findTeamVisual('cs2', featured.away_id, featured.away_name), 72)}
+           <div class="featured-team-name">${featured.away_name}</div>
+         </div>
+       </div>
+@@ -791,14 +850,14 @@ async function renderResourceCS() {
+     </div>`;
+   }
+ 
+-  if (!csFollowed.length) html += `<div class="empty-state"><div class="empty-state-icon">🎮</div><div class="empty-state-title">先关注一支战队</div><div class="empty-state-desc">设置关注后，这里只展示与你有关的下一场和最近比赛。</div><button class="placeholder-cta" onclick="navigate('settings')">打开 Sports 设置</button></div>`;
++  if (!csFollowed.length) html += `<div class="empty-state"><div class="empty-state-icon">🎮</div><div class="empty-state-title">先关注一支战队</div><div class="empty-state-desc">关注后，这里只展示与你有关的下一场和最近比赛。</div><button class="placeholder-cta" onclick="openTeamSelector('cs2')">＋ 关注战队</button></div>`;
+   document.getElementById('content').innerHTML = html;
+ }
+ 
+ function renderMatchCard(m, followedIds) {
+   const isMain = followedIds.includes(m.home_id) || followedIds.includes(m.away_id);
+-  const homeTeam = { name:m.home_name, color:m.home_color, text:m.home_text };
+-  const awayTeam = { name:m.away_name, color:m.away_color, text:m.away_text };
++  const homeTeam = { name:m.home_name, color:m.home_color, text:m.home_text, badge:m.home_badge };
++  const awayTeam = { name:m.away_name, color:m.away_color, text:m.away_text, badge:m.away_badge };
+   let scoreHtml = '';
+   if (m.status === 'finished') {
+     const win1 = m.home_score > m.away_score;
+@@ -865,29 +924,73 @@ function needsSportsRefresh(sport) {
+   return elapsed > 30; // refresh every 30 min
+ }
+ 
++// === 真实足球赛程（TheSportsDB，经 /api/sports 代理，免 Key）===
++// V1.2 §6.1/§12：足球真实数据源已接入（英超/西甲/德甲/意甲/法甲/欧冠），
++// 替代此前 nextDate() 生成的静态假赛程。
++// 已知阻塞：TheSportsDB 无 CS2 赛事（仅 LoL/RL），HLTV/Liquipedia 均有反爬/无公开接口，
++// CS2 真实赛程仍用静态演示数据，待 Key 策略定后接入（如 pandascore）。
++const FOOTBALL_LEAGUE_IDS = '4328,4335,4331,4332,4334,4480';
++let footballFetchInflight = null;
++async function ensureFootballMatches(force) {
++  if (!force && !needsSportsRefresh('football')) return;
++  if (footballFetchInflight) return footballFetchInflight;
++  footballFetchInflight = (async () => {
++    try {
++      const res = await fetch(`/api/sports?type=matches&leagues=${FOOTBALL_LEAGUE_IDS}`);
++      if (!res.ok) throw new Error('http ' + res.status);
++      const data = await res.json();
++      const events = data.matches || [];
++      if (events.length > 0) { setSportsCache('football', events); return; }
++      throw new Error('empty');
++    } catch (e) {
++      // 失败：保留现有缓存；无缓存则 getUnifiedMatches 回退静态演示赛程
++      console.warn('足球赛程同步失败，使用本地缓存/演示数据', e);
++    } finally { footballFetchInflight = null; }
++  })();
++  return footballFetchInflight;
++}
++
++// === 球队选择器 v2（参考 OneFootball/懂球帝 的关注交互） ===
++// 改进（对应用户反馈"主队设置太麻烦、选择不全不美观"）：
++//   1) 顶部搜索：中文实时筛选热门列表 + 英文在线搜全球任意球队（TheSportsDB，含真实队标）
++//   2) 联赛快捷筛选 chips（足球）
++//   3) 热门网格展示真实队标（此前是色块+缩写，观感差且部分队标拉取失败）
++//   4) 点击即关注/取消，不用来回切换页面；完成后一键返回
++let teamSelectorFollowed = new Set();
++let teamOnlineResults = [];
++let teamOnlineTimer = null;
++
+ async function openTeamSelector(sport) {
+-  const teams = sport === 'cs2' ? CS2_TEAMS : FOOTBALL_TEAMS;
+   const followed = await dbGetTeams();
+-  const followedIds = followed.filter(t => t.sport === sport).map(t => t.provider_team_id);
+-  let html = `<div class="team-selector-header">选择主队 · ${sport === 'cs2' ? 'CS2 Teams' : 'Football Clubs'}<button class="team-selector-close" onclick="closeTeamSelector()">✕</button></div>`;
+-  html += `<input type="text" class="team-search-input" placeholder="搜索战队..." oninput="filterTeamList(this.value)" id="team-search-input">`;
++  const sportFollowed = followed.filter(t => t.sport === sport);
++  // 关注匹配键：静态注册表 id + TheSportsDB id（真实赛程用 tsdb id）
++  teamSelectorFollowed = new Set(sportFollowed.flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean)));
++  const registry = sport === 'cs2' ? CS2_TEAMS : FOOTBALL_TEAMS;
++
++  let html = `<div class="team-selector-header">选择主队 · ${sport === 'cs2' ? 'CS2 战队' : '足球俱乐部'}<button class="team-selector-close" onclick="closeTeamSelector()">✕</button></div>`;
++  html += `<input type="text" class="team-search-input" id="team-search-input" placeholder="🔍 搜索球队（中文筛选热门，英文搜全球）" oninput="debouncedTeamOnlineSearch('${sport}', this.value)">`;
++  html += `<div id="team-online-results"></div>`;
++  if (sport === 'football') {
++    html += `<div class="ts-league-chips" id="ts-league-chips">${['全部','英超','西甲','德甲','意甲','法甲','中超'].map((l,i) => `<button class="ts-chip${i===0?' active':''}" onclick="filterTeamGrid('${l}',this)">${l}</button>`).join('')}</div>`;
++  }
++  html += `<div class="ts-section-label">热门${sport === 'cs2' ? '战队' : '球队'} · POPULAR</div>`;
+   html += `<div class="team-selector-grid" id="team-selector-grid">`;
+-  teams.forEach(t => {
+-    const isFollowed = followedIds.includes(t.id);
+-    html += `<div class="team-selector-item${isFollowed?' selected':''}" onclick="toggleTeam('${t.id}','${sport}',this)" data-name="${t.name.toLowerCase()}${(t.full||'').toLowerCase()}">
+-      ${renderTeamLogo(t, 40)}
++  registry.forEach(t => {
++    const isFollowed = teamSelectorFollowed.has(t.id) || (t.tsdb_id && teamSelectorFollowed.has(t.tsdb_id));
++    html += `<div class="team-selector-item${isFollowed?' selected':''}" onclick="toggleTeam('${t.id}','${sport}',this)" data-name="${(t.name + ' ' + (t.full||'')).toLowerCase()}" data-league="${t.league||''}">
++      ${renderTeamLogo(t, 44)}
+       <div class="team-selector-name">${t.name}</div>
+       <div class="team-selector-full">${t.full || ''}</div>
+-      ${isFollowed ? '<span class="team-selector-check">✓</span>' : '<span class="team-selector-add">+</span>'}
++      ${isFollowed ? '<span class="team-selector-check">✓</span>' : '<span class="team-selector-add">＋</span>'}
+     </div>`;
+   });
+-  // V1.2 §6.1 过渡方案：允许按名称关注任意球队/战队（见 addManualTeam）。
+-  // 原因：上方 CS2_TEAMS / FOOTBALL_TEAMS 是写死的静态列表，列表外的球队"搜不到"。
+-  html += `<div class="team-selector-manual" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:8px;">
+-    <input type="text" id="manual-team-input" class="team-search-input" style="flex:1" placeholder="列表里搜不到？输入球队/战队名手动关注" onkeydown="if(event.key==='Enter')addManualTeam('${sport}')">
++  html += `</div>`;
++  // 兜底：数据源不可用时仍可手动关注
++  html += `<div class="ts-manual-row">
++    <input type="text" id="manual-team-input" class="team-search-input" placeholder="搜不到？输入名称手动关注" onkeydown="if(event.key==='Enter')addManualTeam('${sport}')">
+     <button class="btn btn-ghost" onclick="addManualTeam('${sport}')">＋ 关注</button>
+   </div>`;
+-  html += `</div>`;
++  html += `<button class="btn ts-done-btn" onclick="closeTeamSelector()">完成</button>`;
+   showTeamSelectorModal(html, sport);
+ }
+ 
+@@ -908,6 +1011,11 @@ function showTeamSelectorModal(content, sport) {
+ function closeTeamSelector() {
+   const modal = document.getElementById('team-selector-modal');
+   if (modal) modal.classList.remove('show');
++  teamOnlineResults = [];
++  // 关闭后刷新当前页面，让"我的主队/我的赛程"立即反映关注变化
++  if (currentPage === 'res-cs') renderResourceCS();
++  else if (currentPage === 'res-football') renderResourceFootball();
++  else if (currentPage === 'today') navigate('today', true);
+ }
+ 
+ function filterTeamList(query) {
+@@ -918,20 +1026,95 @@ function filterTeamList(query) {
+   });
+ }
+ 
++// 联赛快捷筛选（足球 chips）
++function filterTeamGrid(league, btn) {
++  if (btn && btn.parentElement) btn.parentElement.querySelectorAll('.ts-chip').forEach(b => b.classList.remove('active'));
++  if (btn) btn.classList.add('active');
++  const q = (document.getElementById('team-search-input')?.value || '').toLowerCase().trim();
++  document.querySelectorAll('#team-selector-grid .team-selector-item').forEach(item => {
++    const matchLeague = league === '全部' || (item.dataset.league || '') === league;
++    const matchQuery = !q || (item.dataset.name || '').includes(q);
++    item.style.display = (matchLeague && matchQuery) ? '' : 'none';
++  });
++}
++
++// 搜索输入：中文同步筛选热门网格 + 英文触发在线全球搜索
++function debouncedTeamOnlineSearch(sport, value) {
++  clearTimeout(teamOnlineTimer);
++  const q = value.trim();
++  filterTeamList(q);
++  const box = document.getElementById('team-online-results');
++  if (!q || q.length < 2) { teamOnlineResults = []; if (box) box.innerHTML = ''; return; }
++  teamOnlineTimer = setTimeout(() => searchTeamsOnline(sport, q), 500);
++}
++
++// 在线搜索全球球队（TheSportsDB，经 /api/sports 代理；含真实队标）
++async function searchTeamsOnline(sport, query) {
++  const box = document.getElementById('team-online-results');
++  if (!box) return;
++  box.innerHTML = '<div class="ts-search-hint">搜索中...</div>';
++  try {
++    const res = await fetch(`/api/sports?type=teamsearch&q=${encodeURIComponent(query)}&sport=${sport}`);
++    if (!res.ok) throw new Error('http ' + res.status);
++    const data = await res.json();
++    teamOnlineResults = (data.results || []).filter(t => t.id);
++    if (teamOnlineResults.length === 0) {
++      box.innerHTML = '<div class="ts-search-hint">未搜到，试试英文名，或在下方手动添加</div>';
++      return;
++    }
++    box.innerHTML = teamOnlineResults.map((t, i) => {
++      const isF = teamSelectorFollowed.has(t.id);
++      return `<div class="ts-online-item${isF?' selected':''}" onclick="toggleTeamOnline(${i},'${sport}',this)">
++        ${renderTeamLogo({ name:t.name, badge:t.badge, color:'#6C8ED4', text:'#FFF' }, 36)}
++        <div style="min-width:0;flex:1;">
++          <div class="ts-online-name">${t.name}</div>
++          <div class="ts-online-league">${t.league || ''}</div>
++        </div>
++        <span class="ts-online-btn">${isF ? '✓ 已关注' : '＋ 关注'}</span>
++      </div>`;
++    }).join('');
++  } catch (e) {
++    box.innerHTML = '<div class="ts-search-hint">搜索失败（数据源暂不可用），可在下方手动添加</div>';
++  }
++}
++
++// 关注/取消在线搜索到的球队（存 TheSportsDB 真实 id + 队标，真实赛程可匹配）
++async function toggleTeamOnline(idx, sport, el) {
++  const t = teamOnlineResults[idx];
++  if (!t || !t.id) return;
++  if (teamSelectorFollowed.has(t.id)) {
++    const all = await dbGetTeams();
++    const existing = all.find(x => x.sport === sport && (x.provider_team_id === t.id || x.tsdb_id === t.id));
++    if (existing) await dbDeleteTeam(existing.id);
++    teamSelectorFollowed.delete(t.id);
++    if (el) { el.classList.remove('selected'); const b = el.querySelector('.ts-online-btn'); if (b) b.textContent = '＋ 关注'; }
++    showToast(`已取消关注 ${t.name}`, 'success');
++  } else {
++    await dbAddTeam({ provider:'thesportsdb', provider_team_id:t.id, tsdb_id:t.id, name:t.name, full:t.full || t.name, sport, color:'#6C8ED4', text:'#FFF', badge:t.badge || '' });
++    teamSelectorFollowed.add(t.id);
++    if (el) { el.classList.add('selected'); const b = el.querySelector('.ts-online-btn'); if (b) b.textContent = '✓ 已关注'; }
++    showToast(`已关注 ${t.name}`, 'success');
++  }
++}
++
+ async function toggleTeam(teamId, sport, el) {
+   const followed = await dbGetTeams();
+-  const existing = followed.find(t => t.sport === sport && t.provider_team_id === teamId);
++  const existing = followed.find(t => t.sport === sport && (t.provider_team_id === teamId || t.tsdb_id === teamId));
+   if (existing) {
+     await dbDeleteTeam(existing.id);
++    if (existing.tsdb_id) teamSelectorFollowed.delete(existing.tsdb_id);
++    if (existing.provider_team_id) teamSelectorFollowed.delete(existing.provider_team_id);
+     el.classList.remove('selected');
+     const badge = el.querySelector('.team-selector-check');
+-    if (badge) { badge.className = 'team-selector-add'; badge.textContent = '+'; }
++    if (badge) { badge.className = 'team-selector-add'; badge.textContent = '＋'; }
+   } else {
+     const team = getTeamById(teamId, sport);
+     if (team) {
+-      // V1.2 §6.1 GAP：provider 应为真实 Provider 名 + 真实 provider_team_id。
+-      // 当前写死 'static' 是临时状态（静态注册表），待接入 SearchProvider Adapter 后替换。
+-      await dbAddTeam({ provider:'static', provider_team_id:teamId, name:team.name, full:team.full, sport, color:team.color, text:team.text });
++      // V1.2 §6.1：注册表球队带 tsdb_id（TheSportsDB 真实 id）+ badge（真实队标），
++      // 真实赛程通过 tsdb_id 匹配，队标经 /img 代理展示。
++      await dbAddTeam({ provider:'static', provider_team_id:teamId, tsdb_id:team.tsdb_id || null, name:team.name, full:team.full, sport, color:team.color, text:team.text, badge:team.badge || '' });
++      teamSelectorFollowed.add(teamId);
++      if (team.tsdb_id) teamSelectorFollowed.add(team.tsdb_id);
+       el.classList.add('selected');
+       const badge = el.querySelector('.team-selector-add');
+       if (badge) { badge.className = 'team-selector-check'; badge.textContent = '✓'; }
+@@ -966,16 +1149,23 @@ async function removeTeam(id, sport) {
+   else await renderResourceFootball();
+ }
+ async function refreshSports(sport) {
+-  setSportsCache(sport, getUnifiedMatches(sport));
+-  showToast('已更新本地赛事缓存', 'success');
++  if (sport === 'football') {
++    await ensureFootballMatches(true); // 拉取 TheSportsDB 真实赛程
++    showToast('已同步最新足球赛程', 'success');
++  } else {
++    setSportsCache(sport, getUnifiedMatches(sport));
++    showToast('已更新本地赛事缓存', 'success');
++  }
+   if (sport === 'cs2') await renderResourceCS(); else await renderResourceFootball();
+ }
+ 
+ // === Resources: Football ===
+ async function renderResourceFootball() {
++  // 拉取真实赛程（TheSportsDB，经 /api/sports 代理）；失败回退本地缓存/静态演示数据
++  await ensureFootballMatches();
+   const followedTeams = await dbGetTeams();
+   const fbFollowed = followedTeams.filter(t => t.sport === 'football');
+-  const followedIds = fbFollowed.map(t => t.provider_team_id);
++  const followedIds = fbFollowed.flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
+   const myMatches = getMatchesForTeams(followedIds, 'football');
+   const myUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => a.date.localeCompare(b.date));
+   const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
+@@ -1010,14 +1200,14 @@ async function renderResourceFootball() {
+   html += `<div class="my-teams-bar"><div class="my-teams-label">⚽ 我关注的主队</div><div class="my-teams-list" id="fb-my-teams">`;
+   if (fbFollowed.length > 0) {
+     fbFollowed.forEach(t => {
+-      const team = FOOTBALL_TEAMS.find(c => c.id === t.provider_team_id) || { name:t.name, color:t.color||'#666', text:'#FFF' };
++      const team = FOOTBALL_TEAMS.find(c => c.id === t.provider_team_id) || { name:t.name, color:t.color||'#666', text:'#FFF', badge:t.badge };
+       html += `<div class="my-team-chip" style="border-color:${team.color}44;">
+         ${renderTeamLogo(team, 28)}
+         <span class="my-team-name">${team.name}</span>
+       </div>`;
+     });
+   }
+-  html += `<button class="add-team-btn" onclick="navigate('settings')">在设置中管理主队</button>`;
++  html += `<button class="add-team-btn" onclick="openTeamSelector('football')">＋ 添加主队</button>`;
+   html += `</div></div>`;
+ 
+   // My team's upcoming matches
+@@ -1044,19 +1234,19 @@ async function renderResourceFootball() {
+       <div class="featured-match-title">${featured.league}</div>
+       <div class="featured-match-teams">
+         <div class="featured-team">
+-          ${renderTeamLogo(getTeamById(featured.home_id,'football'), 72)}
++          ${renderTeamLogo(findTeamVisual('football', featured.home_id, featured.home_name), 72)}
+           <div class="featured-team-name">${featured.home_name}</div>
+         </div>
+         <div class="featured-vs">VS</div>
+         <div class="featured-team">
+-          ${renderTeamLogo(getTeamById(featured.away_id,'football'), 72)}
++          ${renderTeamLogo(findTeamVisual('football', featured.away_id, featured.away_name), 72)}
+           <div class="featured-team-name">${featured.away_name}</div>
+         </div>
+       </div>
+       <div class="featured-match-info">${featured.date.replace(/-/g,'/')} ${featured.time}</div>
+     </div>`;
+   }
+-  if (!fbFollowed.length) html += `<div class="empty-state"><div class="empty-state-icon">⚽</div><div class="empty-state-title">先设置你的主队</div><div class="empty-state-desc">设置主队后，这里只展示相关的赛程和比赛结果。</div><button class="placeholder-cta" onclick="navigate('settings')">打开 Sports 设置</button></div>`;
++  if (!fbFollowed.length) html += `<div class="empty-state"><div class="empty-state-icon">⚽</div><div class="empty-state-title">先设置你的主队</div><div class="empty-state-desc">关注主队后，这里只展示相关的赛程和比赛结果。</div><button class="placeholder-cta" onclick="openTeamSelector('football')">＋ 关注主队</button></div>`;
+   document.getElementById('content').innerHTML = html;
+ }
+ 
+@@ -1236,8 +1426,9 @@ async function renderToday() {
+   // 我的赛程 (P3: My Schedule on homepage)
+   const followedTeams = await dbGetTeams();
+   if (followedTeams.length > 0) {
+-    const cs2Ids = followedTeams.filter(t=>t.sport==='cs2').map(t=>t.provider_team_id);
+-    const fbIds = followedTeams.filter(t=>t.sport==='football').map(t=>t.provider_team_id);
++    await ensureFootballMatches(); // 真实足球赛程（TheSportsDB）；失败用本地缓存/演示数据
++    const cs2Ids = followedTeams.filter(t=>t.sport==='cs2').flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
++    const fbIds = followedTeams.filter(t=>t.sport==='football').flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
+     const cs2Matches = getMatchesForTeams(cs2Ids, 'cs2').filter(m=>m.status==='upcoming');
+     const fbMatches = getMatchesForTeams(fbIds, 'football').filter(m=>m.status==='upcoming');
+     const allMyMatches = [...cs2Matches, ...fbMatches].sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+@@ -1735,13 +1926,15 @@ function confirmClearData() {
+ }
+ 
+ // === Entry Detail ===
+-async function openDetail(id) {
++async function openDetail(id, fromPop = false) {
+   const e = await dbGet(id);
+   if (!e) return;
++  // 浏览器返回键集成：详情页入栈，返回时回到来源页面（fromPop=true 不重复入栈）
++  if (!fromPop) history.pushState({ __inneros: true, page: currentPage, detail: id }, '');
+   const meta = TYPE_META[e.type] || TYPE_META.event;
+   const date = getEntryDate(e);
+   const time = getEntryTime(e);
+-  let html = `<button class="detail-back" onclick="navigate('${currentPage}')">← 返回</button>`;
++  let html = `<button class="detail-back" onclick="history.back()">← 返回</button>`;
+   html += `<div class="detail-actions"><button class="detail-action-btn" onclick="openCapture(${e.id})">＋ 追加记录</button><button class="detail-action-btn danger" onclick="confirmDelete(${e.id})">🗑 删除</button></div>`;
+ 
+   // V1.2 §7：事件 / 日记 / 地点 详情必须在顶部突出「地点 + 时间」。
+@@ -1772,6 +1965,7 @@ async function openDetail(id) {
+   if (e.artist) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">艺人</span><span class="detail-meta-value">${e.artist}</span></div>`;
+   if (e.album) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">专辑</span><span class="detail-meta-value">${e.album}</span></div>`;
+   if (e.genres && e.genres.length) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">类型</span><span class="detail-meta-value">${e.genres.join(' / ')}</span></div>`;
++  if (e.rating) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">豆瓣评分</span><span class="detail-meta-value" style="color:#F5A623;font-weight:700;">★ ${e.rating}</span></div>`;
+   if (e.runtime) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">片长</span><span class="detail-meta-value">${e.runtime} 分钟</span></div>`;
+   if (e.release_date) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">上映</span><span class="detail-meta-value">${e.release_date}</span></div>`;
+   if (e.publisher) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">出版社</span><span class="detail-meta-value">${e.publisher}</span></div>`;
+@@ -1779,7 +1973,8 @@ async function openDetail(id) {
+   if (e.page_count) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">页数</span><span class="detail-meta-value">${e.page_count}</span></div>`;
+   if (e.platform) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">平台</span><span class="detail-meta-value">${e.platform}</span></div>`;
+   if (e.location && e.type === 'place') objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">位置</span><span class="detail-meta-value">${e.location}</span></div>`;
+-  if (e.book_description) objHtml += `<div class="detail-meta-item" style="grid-column:1/-1"><span class="detail-meta-label">简介</span><span class="detail-meta-value" style="font-size:13px;line-height:1.6;">${e.book_description.slice(0,300)}${e.book_description.length>300?'...':''}</span></div>`;
++  const synopsis = e.book_description || e.description; // 书籍=book_description，电影=description（豆瓣详情补全）
++  if (synopsis) objHtml += `<div class="detail-meta-item" style="grid-column:1/-1"><span class="detail-meta-label">简介</span><span class="detail-meta-value" style="font-size:13px;line-height:1.6;">${synopsis.slice(0,300)}${synopsis.length>300?'...':''}</span></div>`;
+   if (objHtml) html += `<div class="detail-section fade-in-delay-1"><div class="detail-section-title">作品资料 · Work Info</div><div class="detail-meta-grid">${objHtml}</div></div>`;
+ 
+   // 我的记录 (Personal data — user's own experience)
