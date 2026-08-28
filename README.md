@@ -8,6 +8,27 @@ Personal digital space for memory, resources, sports and life.
 
 # 更新记录
 
+## 2026-08-28 V1.2 Agent 执行计划合规修正
+
+> 依据 `InnerOS_V1.2_Agent_执行计划.docx`（P0→P6）审计后修正。原则：先审计再迭代，不重写。
+
+### feat: 事件详情突出地点+时间 (§7)
+- 事件/日记/地点详情页顶部注入「📍地点 · 🕒时间」徽标（heroMeta 双向分支）
+- 缓解"详情找不到在哪、什么时候"的查看成本
+
+### feat: 球队支持手动关注任意战队 (§6.1 过渡)
+- 球队选择器新增"手动关注"输入框（`addManualTeam`），存 `provider:'manual'`
+- 缓解硬编码列表导致的"搜不到球队"问题；待真实 Provider Adapter 接入后替换
+
+### docs: 全量 V1.2 § 中文注释
+- 6 处注释标注对应条款，便于后续对照规范管理：
+  Provider 层真实源(§5) / Sports 静态注册表 GAP(§6.1·§12) / Seed 演示数据(§12) /
+  toggleTeam 临时 provider(§6.1) / addManualTeam 过渡(§6.1) / 事件详情顶部(§7)
+
+### 已知阻塞（未动，待决策）
+- Sports 真实 Provider 需密钥，§12 禁止购买/提交密钥 → 真实赛程聚合暂未接
+- 视觉重构(P5)、全量回归(P6) 未做
+
 ## 2026-08-28 V1.1 智能记录与资源聚合
 
 ### feat: 多次记录数据模型 (entries[] 追加模式)

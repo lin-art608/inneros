@@ -87,6 +87,9 @@ async function downloadImageAsDataURL(url) {
 
 // === Public provider adapters (no API keys) ===
 // UI talks only to this normalized layer so a provider can be replaced later.
+// V1.2 §5 统一数据层：UI 只依赖此归一化层，Provider 可替换；§P1 要求电影/书籍/音乐走真实搜索。
+// 当前实现：电影/音乐=iTunes Search（免密钥、CORS 友好）、书籍=Google Books（免密钥）、游戏=FreeToGame。
+// 均为真实 Provider，未用 mock 冒充（符合 §12 禁止项）。
 let workSearchTimer = null;
 let selectedMovie = null;
 let selectedMusic = null;
@@ -467,7 +470,13 @@ function dbDeleteTeam(id) {
   });
 }
 
-// === Sports Team Database (static registry, replace with API later) ===
+// === Sports Team Database (static registry — V1.2 §6.1 / §12 GAP) ===
+// 警告：CS2_TEAMS / FOOTBALL_TEAMS 是写死的静态注册表，并非真实 Provider 返回。
+// 后果：用户只能关注列表内的球队，列表外的球队"搜不到"——这是 V1.2 P0 根因之一。
+// 正确做法（P3 待办）：实现 SearchProvider Adapter（如 football-data.org），搜索→选择→
+//   保存 provider_team_id 与真实 provider 名，而非 'static'。
+// 阻塞：真实足球/电竞 API 通常需要密钥，而 V1.2 §12 禁止购买/提交 API Key，故暂未接入。
+// 过渡方案：见 addManualTeam()——允许按名称手动关注任意球队（provider:'manual'）。
 const CS2_TEAMS = [
   { id:'navi', name:'NAVI', full:'Natus Vincere', color:'#FFE600', text:'#000', region:'EU' },
   { id:'g2', name:'G2', full:'G2 Esports', color:'#1A1A1A', text:'#FFF', region:'EU' },
@@ -584,7 +593,9 @@ function renderTeamLogo(team, size) {
   return `<span class="team-logo" style="width:${s}px;height:${s}px;background:${team.color};color:${team.text};border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:${fontSize}px;font-weight:700;font-family:var(--font-sans);flex-shrink:0;">${initials}</span>`;
 }
 
-// === Seed ===
+// === Seed (demo data only) ===
+// V1.2 §12 说明：SEED_ENTRIES 仅是首次运行的演示记录，不是"全世界作品数据库"的替代品。
+// 真实作品必须经上方 Provider 搜索导入，禁止靠堆静态 JSON 扩充数据（符合 §12 禁止项）。
 async function seedIfEmpty() {
   if (localStorage.getItem('memory_os_seeded') === '1') return;
   const all = await dbGetAll();
@@ -850,6 +861,12 @@ async function openTeamSelector(sport) {
       ${isFollowed ? '<span class="team-selector-check">✓</span>' : '<span class="team-selector-add">+</span>'}
     </div>`;
   });
+  // V1.2 §6.1 过渡方案：允许按名称关注任意球队/战队（见 addManualTeam）。
+  // 原因：上方 CS2_TEAMS / FOOTBALL_TEAMS 是写死的静态列表，列表外的球队"搜不到"。
+  html += `<div class="team-selector-manual" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:8px;">
+    <input type="text" id="manual-team-input" class="team-search-input" style="flex:1" placeholder="列表里搜不到？输入球队/战队名手动关注" onkeydown="if(event.key==='Enter')addManualTeam('${sport}')">
+    <button class="btn btn-ghost" onclick="addManualTeam('${sport}')">＋ 关注</button>
+  </div>`;
   html += `</div>`;
   showTeamSelectorModal(html, sport);
 }
@@ -892,12 +909,35 @@ async function toggleTeam(teamId, sport, el) {
   } else {
     const team = getTeamById(teamId, sport);
     if (team) {
+      // V1.2 §6.1 GAP：provider 应为真实 Provider 名 + 真实 provider_team_id。
+      // 当前写死 'static' 是临时状态（静态注册表），待接入 SearchProvider Adapter 后替换。
       await dbAddTeam({ provider:'static', provider_team_id:teamId, name:team.name, full:team.full, sport, color:team.color, text:team.text });
       el.classList.add('selected');
       const badge = el.querySelector('.team-selector-add');
       if (badge) { badge.className = 'team-selector-check'; badge.textContent = '✓'; }
     }
   }
+}
+
+// V1.2 §6.1 过渡方案：缓解"搜不到球队/战队"问题
+// 根因：CS2_TEAMS / FOOTBALL_TEAMS 是写死的静态注册表，列表外的球队无法关注。
+// 正确修复：实现 SearchProvider Adapter（如 football-data.org），但 V1.2 §12 禁止购买/提交 API Key，
+//   故真实 Provider 接入被阻塞。此处作为过渡，允许用户按名称关注任意球队。
+// 注意：provider:'manual' 表示这是纯文本条目（不是真实 provider_team_id），
+//   待接入真实 Provider 后，应改为 provider 搜索→选择→保存真实 provider_team_id。
+async function addManualTeam(sport) {
+  const input = document.getElementById('manual-team-input');
+  const name = (input?.value || '').trim();
+  if (!name) { showToast('请输入球队/战队名称', 'error'); return; }
+  const followed = await dbGetTeams();
+  const safeId = 'manual_' + name.toLowerCase().replace(/[^a-z0-9一-龥]/g, '_');
+  if (followed.some(t => t.sport === sport && t.provider_team_id === safeId)) {
+    showToast('已关注该球队', 'error'); return;
+  }
+  await dbAddTeam({ provider:'manual', provider_team_id:safeId, name, full:name, sport, color:'#6C8ED4', text:'#FFF' });
+  if (input) input.value = '';
+  showToast(`已关注 ${name}`, 'success');
+  await openTeamSelector(sport); // 刷新关注状态
 }
 
 async function removeTeam(id, sport) {
@@ -1684,15 +1724,25 @@ async function openDetail(id) {
   let html = `<button class="detail-back" onclick="navigate('${currentPage}')">← 返回</button>`;
   html += `<div class="detail-actions"><button class="detail-action-btn" onclick="openCapture(${e.id})">＋ 追加记录</button><button class="detail-action-btn danger" onclick="confirmDelete(${e.id})">🗑 删除</button></div>`;
 
+  // V1.2 §7：事件 / 日记 / 地点 详情必须在顶部突出「地点 + 时间」。
+  let heroMeta = '';
+  if (e.type === 'event' || e.type === 'diary' || e.type === 'place') {
+    const parts = [];
+    if (e.location) parts.push(`📍 ${e.location}`);
+    const hd = getEntryDate(e), ht = getEntryTime(e);
+    if (hd) parts.push(`🕒 ${hd.replace(/-/g, '/')}${ht ? ' ' + ht : ''}`);
+    if (parts.length) heroMeta = `<div class="detail-hero-meta" style="margin-top:8px;font-size:13px;color:var(--text-secondary);display:flex;gap:14px;flex-wrap:wrap;">${parts.join('<span style="opacity:.4">·</span>')}</div>`;
+  }
+
   // Hero: poster + title + type badge
   if (e.poster || e.cover) {
     html += `<div class="detail-hero fade-in">${renderDetailPoster(e)}<div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${meta.emoji} ${meta.label}</div><div class="detail-title">${e.title}</div>`;
     if (e.original_title) html += `<div class="detail-subtitle">${e.original_title}</div>`;
-    html += '</div></div>';
+    html += heroMeta + '</div></div>';
   } else {
     html += `<div class="detail-hero fade-in" style="gap:0"><div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${meta.emoji} ${meta.label}</div><div class="detail-title">${e.title}</div>`;
     if (e.location) html += `<div class="detail-subtitle">${e.location}</div>`;
-    html += '</div></div>';
+    html += heroMeta + '</div></div>';
   }
 
   // 作品资料 (Objective data — external info about the work itself)
