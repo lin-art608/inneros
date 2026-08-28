@@ -688,11 +688,6 @@ async function renderResourceCS() {
   let html = `
     <div class="page-header">
       <div class="page-title">CS赛事 · CS Esports</div>
-      <div class="scale-switcher">
-        <button class="scale-btn active" onclick="window.open('https://www.hltv.org/matches','_blank')">今日比赛</button>
-        <button class="scale-btn" onclick="window.open('https://www.hltv.org/events','_blank')">赛事列表</button>
-        <button class="scale-btn" onclick="window.open('https://www.hltv.org/ranking/teams','_blank')">战队排名</button>
-      </div>
     </div>`;
 
   // My teams section
@@ -732,7 +727,7 @@ async function renderResourceCS() {
   if (allUpcoming.length > 0) {
     const featured = allUpcoming[0];
     html += `
-    <div class="featured-match" onclick="window.open('https://www.hltv.org/matches','_blank')">
+    <div class="featured-match">
       <div class="featured-match-tag">
         <span class="featured-match-live">🔥 焦点</span>
         <span>${featured.league} · ${featured.round}</span>
@@ -749,7 +744,7 @@ async function renderResourceCS() {
           <div class="featured-team-name">${featured.away_name}</div>
         </div>
       </div>
-      <div class="featured-match-info">${featured.date.replace(/-/g,'/')} ${featured.time} · 点击查看详情</div>
+      <div class="featured-match-info">${featured.date.replace(/-/g,'/')} ${featured.time}</div>
     </div>`;
   }
 
@@ -801,7 +796,9 @@ function renderMatchCard(m, followedIds) {
   const score = calculateMatchScore(m, followedIds);
   const stars = Math.min(5, Math.max(1, Math.round(score / 4)));
   const reason = getMatchReason(m, isMain, stars);
-  return `<a class="match-card${mainClass}" href="${m.sport==='cs2'?'https://www.hltv.org/matches':'https://www.dongqiudi.com/schedule'}" target="_blank" rel="noopener">
+  const sourceName = m.sport === 'cs2' ? 'HLTV' : '懂球帝';
+  const sourceUrl = m.sport === 'cs2' ? 'https://www.hltv.org/matches' : 'https://www.dongqiudi.com/schedule';
+  return `<div class="match-card${mainClass}">
     <div class="match-card-league">${m.league} · ${m.round}</div>
     <div class="match-card-teams">
       <div class="match-team">${renderTeamLogo(homeTeam, 36)}<span class="match-team-name">${m.home_name}</span></div>
@@ -811,7 +808,8 @@ function renderMatchCard(m, followedIds) {
     <div class="match-card-date">${m.date.replace(/-/g,'/')} ${m.time}</div>
     <div class="match-card-stars">${'★'.repeat(stars)}${'☆'.repeat(5-stars)}</div>
     ${reason ? `<div class="match-card-reason">${reason}</div>` : ''}
-  </a>`;
+    <a class="match-card-source" href="${sourceUrl}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-size:11px;color:#8a8f98;text-decoration:none;">数据来源 · ${sourceName}</a>
+  </div>`;
 }
 
 function getMatchReason(m, isMain, stars) {
@@ -952,11 +950,6 @@ async function renderResourceFootball() {
   let html = `
     <div class="page-header">
       <div class="page-title">足球 · Football</div>
-      <div class="scale-switcher">
-        <button class="scale-btn active" onclick="window.open('https://www.dongqiudi.com/schedule','_blank')">赛程</button>
-        <button class="scale-btn" onclick="window.open('https://www.sofascore.com','_blank')">实时比分</button>
-        <button class="scale-btn" onclick="window.open('https://www.transfermarkt.com','_blank')">转会</button>
-      </div>
     </div>`;
 
   // My teams section
@@ -990,7 +983,7 @@ async function renderResourceFootball() {
   if (allUpcoming.length > 0) {
     const featured = allUpcoming[0];
     html += `
-    <div class="featured-match" onclick="window.open('https://www.dongqiudi.com/schedule','_blank')">
+    <div class="featured-match">
       <div class="featured-match-tag">
         <span class="featured-match-live">🔥 焦点</span>
         <span>${featured.league} · ${featured.round}</span>
@@ -1007,18 +1000,18 @@ async function renderResourceFootball() {
           <div class="featured-team-name">${featured.away_name}</div>
         </div>
       </div>
-      <div class="featured-match-info">${featured.date.replace(/-/g,'/')} ${featured.time} · 点击查看详情</div>
+      <div class="featured-match-info">${featured.date.replace(/-/g,'/')} ${featured.time}</div>
     </div>`;
   }
   // League grid — prominent
   html += `<div class="res-section-title">热门联赛 · Leagues</div><div class="league-grid">`;
   leagues.forEach(l => {
-    html += `<a class="league-card" href="${l.url}" target="_blank" rel="noopener" style="border-color:${l.accent}22;">
+    html += `<div class="league-card" style="border-color:${l.accent}22;">
       <div class="league-card-flag">${l.flag}</div>
       <div class="league-card-name" style="color:${l.accent};">${l.name}</div>
       <div class="league-card-name-en">${l.nameEn}</div>
       <div class="league-card-desc">${l.desc}</div>
-    </a>`;
+    </div>`;
   });
   html += `</div>`;
   // Data resources
