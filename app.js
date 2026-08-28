@@ -86,6 +86,124 @@ async function downloadImageAsDataURL(url) {
 let doubanSearchTimer = null;
 let doubanSelectedMovie = null;
 
+// === Photo Upload State ===
+let uploadedPhotos = [];
+
+function renderPhotoUpload() {
+  return `<div class="field-row">
+    <div class="field-label">照片</div>
+    <div class="photo-upload-area" id="photo-upload-area">
+      <div class="photo-preview-list" id="photo-preview-list"></div>
+      <label class="photo-add-btn">
+        <span>＋ 照片</span>
+        <input type="file" accept="image/jpeg,image/png,image/webp" multiple style="display:none" onchange="handlePhotoSelect(this)">
+      </label>
+    </div>
+  </div>`;
+}
+
+async function handlePhotoSelect(input) {
+  const files = Array.from(input.files);
+  for (const file of files) {
+    if (file.size > 10 * 1024 * 1024) { showToast('图片不能超过10MB: ' + file.name, 'error'); continue; }
+    const dataUrl = await fileToDataURL(file);
+    if (dataUrl) uploadedPhotos.push(dataUrl);
+  }
+  input.value = '';
+  renderPhotoPreviews();
+}
+
+function fileToDataURL(file) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderPhotoPreviews() {
+  const container = document.getElementById('photo-preview-list');
+  if (!container) return;
+  container.innerHTML = uploadedPhotos.map((src, i) =>
+    `<div class="photo-preview-item">
+      <img src="${src}" onclick="this.parentElement.classList.toggle('expanded')">
+      <button class="photo-remove-btn" onclick="removePhoto(${i})">✕</button>
+    </div>`
+  ).join('');
+}
+
+function removePhoto(idx) {
+  uploadedPhotos.splice(idx, 1);
+  renderPhotoPreviews();
+}
+
+// === Google Books Search ===
+let bookSearchTimer = null;
+let bookSearchResults = [];
+let selectedBook = null;
+
+async function searchGoogleBooks(query) {
+  const q = query.trim();
+  if (!q) return [];
+  try {
+    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=8`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (data.items) return data.items.map(item => ({
+      id: item.id,
+      title: item.volumeInfo.title || '',
+      authors: (item.volumeInfo.authors || []).join(', '),
+      publisher: item.volumeInfo.publisher || '',
+      publishedDate: item.volumeInfo.publishedDate || '',
+      cover: item.volumeInfo.imageLinks?.thumbnail?.replace('http://', 'https://') || item.volumeInfo.imageLinks?.smallThumbnail?.replace('http://', 'https://') || '',
+      isbn: item.volumeInfo.industryIdentifiers?.[0]?.identifier || '',
+      categories: item.volumeInfo.categories || [],
+      description: item.volumeInfo.description || '',
+      pageCount: item.volumeInfo.pageCount || 0,
+    }));
+  } catch(e) {}
+  return [];
+}
+
+function debouncedBookSearch(val) {
+  clearTimeout(bookSearchTimer);
+  bookSearchTimer = setTimeout(async () => {
+    const results = await searchGoogleBooks(val);
+    bookSearchResults = results;
+    renderBookResults(results);
+  }, 400);
+}
+
+function renderBookResults(results) {
+  const container = document.getElementById('douban-results');
+  if (!container) return;
+  if (!results.length) { container.innerHTML = '<div class="douban-no-result">未找到相关书籍</div>'; return; }
+  container.innerHTML = results.map((b, i) =>
+    `<div class="douban-result-item" onclick="selectBookResult(${i})">
+      ${b.cover ? `<img class="douban-result-cover" src="${b.cover}" loading="lazy" onerror="this.style.display='none'">` : '<div class="douban-result-cover placeholder">📖</div>'}
+      <div class="douban-result-info">
+        <div class="douban-result-title">${b.title}</div>
+        ${b.authors ? `<div class="douban-result-subtitle">${b.authors}</div>` : ''}
+        ${b.publishedDate ? `<div class="douban-result-year">${b.publishedDate.slice(0,4)}</div>` : ''}
+      </div>
+    </div>`
+  ).join('');
+}
+
+function selectBookResult(idx) {
+  const b = bookSearchResults[idx];
+  if (!b) return;
+  selectedBook = b;
+  document.querySelectorAll('.douban-result-item').forEach((el, i) => el.classList.toggle('selected', i === idx));
+  const titleEl = document.getElementById('capture-title');
+  if (titleEl) titleEl.value = b.title;
+  const extraEl = document.getElementById('capture-extra');
+  if (extraEl) extraEl.value = b.authors || '';
+  const coverPreview = document.getElementById('book-cover-preview');
+  if (coverPreview && b.cover) coverPreview.innerHTML = `<img src="${b.cover}" style="width:60px;height:80px;object-fit:cover;border-radius:4px;">`;
+}
+
 async function searchDoubanMovieRaw(query) {
   const q = query.trim();
   if (!q) return [];
@@ -680,6 +798,9 @@ function renderMatchCard(m, followedIds) {
     scoreHtml = `<span class="match-time">${m.time}</span>`;
   }
   const mainClass = isMain ? ' match-card-main' : '';
+  const score = calculateMatchScore(m, followedIds);
+  const stars = Math.min(5, Math.max(1, Math.round(score / 4)));
+  const reason = getMatchReason(m, isMain, stars);
   return `<a class="match-card${mainClass}" href="${m.sport==='cs2'?'https://www.hltv.org/matches':'https://www.dongqiudi.com/schedule'}" target="_blank" rel="noopener">
     <div class="match-card-league">${m.league} · ${m.round}</div>
     <div class="match-card-teams">
@@ -688,7 +809,42 @@ function renderMatchCard(m, followedIds) {
       <div class="match-team">${renderTeamLogo(awayTeam, 36)}<span class="match-team-name">${m.away_name}</span></div>
     </div>
     <div class="match-card-date">${m.date.replace(/-/g,'/')} ${m.time}</div>
+    <div class="match-card-stars">${'★'.repeat(stars)}${'☆'.repeat(5-stars)}</div>
+    ${reason ? `<div class="match-card-reason">${reason}</div>` : ''}
   </a>`;
+}
+
+function getMatchReason(m, isMain, stars) {
+  const reasons = [];
+  if (isMain) reasons.push('主队');
+  if (m.importance >= 4) reasons.push('强强对话');
+  if (m.tournament_weight >= 4) reasons.push(m.round || '重要赛事');
+  const daysUntil = (new Date(m.date) - new Date(new Date().toDateString())) / (1000*60*60*24);
+  if (daysUntil === 0) reasons.push('今日开赛');
+  else if (daysUntil === 1) reasons.push('明日开赛');
+  else if (daysUntil > 0 && daysUntil <= 2) reasons.push('临近开赛');
+  return reasons.length > 0 ? reasons.join(' + ') : '';
+}
+
+// Sports data caching
+const SPORTS_CACHE_KEY = 'inneros_sports_cache';
+function getSportsCache() {
+  try { return JSON.parse(localStorage.getItem(SPORTS_CACHE_KEY) || '{}'); } catch(e) { return {}; }
+}
+function setSportsCache(sport, data) {
+  const cache = getSportsCache();
+  cache[sport] = { data, last_synced_at: new Date().toISOString() };
+  localStorage.setItem(SPORTS_CACHE_KEY, JSON.stringify(cache));
+}
+function getSportsLastSynced(sport) {
+  const cache = getSportsCache();
+  return cache[sport]?.last_synced_at || null;
+}
+function needsSportsRefresh(sport) {
+  const last = getSportsLastSynced(sport);
+  if (!last) return true;
+  const elapsed = (Date.now() - new Date(last).getTime()) / (1000*60); // minutes
+  return elapsed > 30; // refresh every 30 min
 }
 
 async function openTeamSelector(sport) {
@@ -1592,7 +1748,7 @@ async function openDetail(id) {
   const date = getEntryDate(e);
   const time = getEntryTime(e);
   let html = `<button class="detail-back" onclick="navigate('${currentPage}')">← 返回</button>`;
-  html += `<div class="detail-actions"><button class="detail-action-btn" onclick="openCapture(${e.id})">✎ 编辑</button><button class="detail-action-btn danger" onclick="confirmDelete(${e.id})">🗑 删除</button></div>`;
+  html += `<div class="detail-actions"><button class="detail-action-btn" onclick="openCapture(${e.id})">＋ 追加记录</button><button class="detail-action-btn danger" onclick="confirmDelete(${e.id})">🗑 删除</button></div>`;
 
   // Hero: poster + title + type badge
   if (e.poster || e.cover) {
@@ -1614,27 +1770,51 @@ async function openDetail(id) {
   if (e.genres && e.genres.length) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">类型</span><span class="detail-meta-value">${e.genres.join(' / ')}</span></div>`;
   if (e.runtime) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">片长</span><span class="detail-meta-value">${e.runtime} 分钟</span></div>`;
   if (e.release_date) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">上映</span><span class="detail-meta-value">${e.release_date}</span></div>`;
+  if (e.publisher) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">出版社</span><span class="detail-meta-value">${e.publisher}</span></div>`;
+  if (e.isbn) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">ISBN</span><span class="detail-meta-value">${e.isbn}</span></div>`;
+  if (e.page_count) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">页数</span><span class="detail-meta-value">${e.page_count}</span></div>`;
   if (e.platform) objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">平台</span><span class="detail-meta-value">${e.platform}</span></div>`;
   if (e.location && e.type === 'place') objHtml += `<div class="detail-meta-item"><span class="detail-meta-label">位置</span><span class="detail-meta-value">${e.location}</span></div>`;
+  if (e.book_description) objHtml += `<div class="detail-meta-item" style="grid-column:1/-1"><span class="detail-meta-label">简介</span><span class="detail-meta-value" style="font-size:13px;line-height:1.6;">${e.book_description.slice(0,300)}${e.book_description.length>300?'...':''}</span></div>`;
   if (objHtml) html += `<div class="detail-section fade-in-delay-1"><div class="detail-section-title">作品资料 · Work Info</div><div class="detail-meta-grid">${objHtml}</div></div>`;
 
   // 我的记录 (Personal data — user's own experience)
   let perHtml = '';
-  if (date) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">${e.type==='movie'?'观看日期':e.type==='book'?'读完日期':e.type==='game'?'通关日期':'日期'}</span><span class="detail-meta-value">${date.replace(/-/g,'/')}</span></div>`;
+  if (date) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">${e.type==='movie'?'观看日期':e.type==='book'?'读完日期':e.type==='game'?'游玩日期':'日期'}</span><span class="detail-meta-value">${date.replace(/-/g,'/')}</span></div>`;
   if (time) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">时间</span><span class="detail-meta-value">${time}</span></div>`;
-  if (e.rating) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">评分</span><span class="detail-meta-value" style="color:#E8B948">${'★'.repeat(e.rating)}${'☆'.repeat(5-e.rating)}</span></div>`;
   if (e.mood) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">心情</span><span class="detail-meta-value">${e.mood}</span></div>`;
   if (e.category) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">分类</span><span class="detail-meta-value">${e.category}</span></div>`;
-  if (e.importance) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">重要程度</span><span class="detail-meta-value">${'●'.repeat(e.importance)}${'○'.repeat(5-e.importance)}</span></div>`;
-  if (e.watched_with) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">同行</span><span class="detail-meta-value">${e.watched_with}</span></div>`;
-  if (e.people && e.people.length) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">同行</span><span class="detail-meta-value">${e.people.join('、')}</span></div>`;
-  if (e.hours) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">游戏时长</span><span class="detail-meta-value">${e.hours} 小时</span></div>`;
-  if (e.rewatch_count) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">重看次数</span><span class="detail-meta-value">${e.rewatch_count}</span></div>`;
+  if (e.reading_status) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">阅读状态</span><span class="detail-meta-value">${e.reading_status==='done'?'已读':e.reading_status==='reading'?'在读':'想读'}</span></div>`;
   if (perHtml) html += `<div class="detail-section fade-in-delay-1"><div class="detail-section-title">我的记录 · My Record</div><div class="detail-meta-grid">${perHtml}</div></div>`;
 
-  // 感想/笔记
-  const tc = e.review || e.content || e.notes || e.note;
-  if (tc) html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">${e.review?'感想 · Review':e.content?'正文':'笔记 · Notes'}</div><div class="detail-review">${tc}</div></div>`;
+  // 我的记忆 (Multiple entries — append model, chronological)
+  const entries = e.entries || [];
+  if (entries.length > 0) {
+    // New model: show all entries chronologically
+    const sorted = [...entries].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+    html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">我的记忆 · Memories (${sorted.length})</div>`;
+    sorted.forEach((en, i) => {
+      const entryDate = en.created_at ? new Date(en.created_at) : null;
+      const dateStr = entryDate ? `${entryDate.getFullYear()}-${String(entryDate.getMonth()+1).padStart(2,'0')}-${String(entryDate.getDate()).padStart(2,'0')}` : '';
+      const timeStr = entryDate ? `${String(entryDate.getHours()).padStart(2,'0')}:${String(entryDate.getMinutes()).padStart(2,'0')}` : '';
+      html += `<div class="memory-entry">`;
+      html += `<div class="memory-entry-header"><span class="memory-entry-num">#${i+1}</span><span class="memory-entry-time">${dateStr} ${timeStr}</span></div>`;
+      if (en.content) html += `<div class="memory-entry-content">${en.content}</div>`;
+      if (en.photos && en.photos.length > 0) {
+        html += `<div class="memory-photo-gallery">`;
+        en.photos.forEach((src, pi) => {
+          html += `<img class="memory-photo" src="${src}" loading="lazy" onclick="this.classList.toggle('expanded')" onerror="this.style.display='none'">`;
+        });
+        html += `</div>`;
+      }
+      html += `</div>`;
+    });
+    html += `</div>`;
+  } else {
+    // Backward compatibility: show old single content
+    const tc = e.review || e.content || e.notes || e.note;
+    if (tc) html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">笔记 · Notes</div><div class="detail-review">${tc}</div></div>`;
+  }
   if (e.quotes) html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">摘录 · Quote</div><div class="detail-review" style="font-style:italic;border-left:3px solid var(--border-strong);padding-left:16px;">${e.quotes}</div></div>`;
   if (e.tags && e.tags.length) html += `<div class="detail-section fade-in-delay-3"><div class="detail-section-title">标签 · Tags</div><div class="detail-tags">${e.tags.map(t=>`<span class="detail-tag">${t}</span>`).join('')}</div></div>`;
   document.getElementById('content').innerHTML = html;
@@ -1647,7 +1827,7 @@ function openCapture(entryId) {
   editingId = entryId;
   const saveBtn = document.getElementById('save-btn');
   if (entryId) {
-    saveBtn.textContent = '更新';
+    saveBtn.textContent = '追加';
     document.getElementById('step-type').style.display = 'none';
     document.getElementById('step-form').style.display = 'block';
     loadEntryForEdit(entryId);
@@ -1658,6 +1838,8 @@ function openCapture(entryId) {
     selectedType = null;
     selectedRating = 0;
     doubanSelectedMovie = null;
+    selectedBook = null;
+    uploadedPhotos = [];
   }
   document.getElementById('capture-modal').classList.add('show');
 }
@@ -1671,6 +1853,7 @@ function backToTypeSelect() {
 function selectType(type) {
   selectedType = type;
   selectedRating = 0;
+  uploadedPhotos = [];
   const meta = TYPE_META[type] || {};
   document.getElementById('modal-title').textContent = meta.label || '记录';
   document.getElementById('step-type').style.display = 'none';
@@ -1689,12 +1872,9 @@ function selectType(type) {
         <div id="douban-results" class="douban-results"></div>
       </div>
       <div class="capture-fields show" id="capture-fields">
-        <div class="field-row"><div class="field-label">片名</div><input type="text" class="field-input" id="capture-title" placeholder="电影名"></div>
-        <div class="field-row" id="rating-row"><div class="field-label">评分</div>
-          <div class="rating-select"><span class="rating-star" data-val="1" onclick="setRating(1)">☆</span><span class="rating-star" data-val="2" onclick="setRating(2)">☆</span><span class="rating-star" data-val="3" onclick="setRating(3)">☆</span><span class="rating-star" data-val="4" onclick="setRating(4)">☆</span><span class="rating-star" data-val="5" onclick="setRating(5)">☆</span></div>
-        </div>
+        <div class="field-row"><div class="field-label">片名</div><input type="text" class="field-input" id="capture-title" placeholder="搜索后自动填充" readonly></div>
         <div class="field-row"><div class="field-label">观后感</div><textarea class="field-textarea" id="capture-review" placeholder="写一些你的想法..."></textarea></div>
-        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="科幻, 哲学, IMAX"></div>
+        ${renderPhotoUpload()}
       </div>`;
     document.getElementById('douban-input').focus();
   } else if (type === 'book') {
@@ -1702,13 +1882,13 @@ function selectType(type) {
       <div class="douban-search">
         <div class="field-label" style="margin-bottom:8px;">🔍 搜索书籍，自动导入信息</div>
         <div class="douban-search-box">
-          <input type="text" class="field-input" id="book-input" placeholder="输入书名，如：百年孤独..." oninput="debouncedBookSearch(this.value)">
+          <input type="text" class="field-input" id="book-input" placeholder="输入书名或ISBN..." oninput="debouncedBookSearch(this.value)">
         </div>
         <div id="douban-results" class="douban-results"></div>
       </div>
       <div class="capture-fields show" id="capture-fields">
-        <div class="field-row"><div class="field-label">书名</div><input type="text" class="field-input" id="capture-title" placeholder="书名"></div>
-        <div class="field-row"><div class="field-label">作者</div><input type="text" class="field-input" id="capture-extra" placeholder="作者"></div>
+        <div class="field-row"><div class="field-label">书名</div><input type="text" class="field-input" id="capture-title" placeholder="搜索后自动填充" readonly></div>
+        <div class="field-row"><div class="field-label">作者</div><input type="text" class="field-input" id="capture-extra" placeholder="搜索后自动填充" readonly></div>
         <div class="field-row"><div class="field-label">阅读状态</div>
           <div class="reading-status">
             <button class="reading-status-btn" onclick="setReadingStatus('want')">想读</button>
@@ -1716,11 +1896,8 @@ function selectType(type) {
             <button class="reading-status-btn selected" onclick="setReadingStatus('done')">已读</button>
           </div>
         </div>
-        <div class="field-row" id="rating-row"><div class="field-label">评分</div>
-          <div class="rating-select"><span class="rating-star" data-val="1" onclick="setRating(1)">☆</span><span class="rating-star" data-val="2" onclick="setRating(2)">☆</span><span class="rating-star" data-val="3" onclick="setRating(3)">☆</span><span class="rating-star" data-val="4" onclick="setRating(4)">☆</span><span class="rating-star" data-val="5" onclick="setRating(5)">☆</span></div>
-        </div>
         <div class="field-row"><div class="field-label">读书笔记</div><textarea class="field-textarea" id="capture-review" placeholder="写一些你的想法..."></textarea></div>
-        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="历史, 文学"></div>
+        ${renderPhotoUpload()}
       </div>`;
     document.getElementById('book-input').focus();
   } else if (type === 'diary') {
@@ -1729,7 +1906,7 @@ function selectType(type) {
         <div class="field-row"><div class="field-label">标题（可选）</div><input type="text" class="field-input" id="capture-title" placeholder="给这天起个名字..."></div>
         <div class="field-row"><div class="field-label">日记内容</div><textarea class="capture-textarea" id="capture-review" placeholder="今天发生了什么？写点什么..." style="min-height:200px;"></textarea></div>
         <div class="field-row"><div class="field-label">心情</div><input type="text" class="field-input" id="capture-extra" placeholder="平静 / 兴奋 / 沉思..."></div>
-        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="日常, 思考"></div>
+        ${renderPhotoUpload()}
       </div>`;
     setTimeout(() => document.getElementById('capture-review')?.focus(), 100);
   } else if (type === 'event') {
@@ -1744,7 +1921,7 @@ function selectType(type) {
           </div>
         </div>
         <div class="field-row"><div class="field-label">地点（可选）</div><input type="text" class="field-input" id="capture-extra" placeholder="地点"></div>
-        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="生活, 转折"></div>
+        ${renderPhotoUpload()}
       </div>`;
     document.getElementById('capture-title').focus();
   } else if (type === 'music') {
@@ -1752,11 +1929,8 @@ function selectType(type) {
       <div class="capture-fields show" id="capture-fields">
         <div class="field-row"><div class="field-label">曲目</div><input type="text" class="field-input" id="capture-title" placeholder="歌曲名"></div>
         <div class="field-row"><div class="field-label">艺人 / 专辑</div><input type="text" class="field-input" id="capture-extra" placeholder="艺人 / 专辑"></div>
-        <div class="field-row" id="rating-row"><div class="field-label">评分</div>
-          <div class="rating-select"><span class="rating-star" data-val="1" onclick="setRating(1)">☆</span><span class="rating-star" data-val="2" onclick="setRating(2)">☆</span><span class="rating-star" data-val="3" onclick="setRating(3)">☆</span><span class="rating-star" data-val="4" onclick="setRating(4)">☆</span><span class="rating-star" data-val="5" onclick="setRating(5)">☆</span></div>
-        </div>
         <div class="field-row"><div class="field-label">感想</div><textarea class="field-textarea" id="capture-review" placeholder="听后感..."></textarea></div>
-        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="深夜, 散步"></div>
+        ${renderPhotoUpload()}
       </div>`;
     document.getElementById('capture-title').focus();
   } else if (type === 'game') {
@@ -1764,11 +1938,8 @@ function selectType(type) {
       <div class="capture-fields show" id="capture-fields">
         <div class="field-row"><div class="field-label">游戏名</div><input type="text" class="field-input" id="capture-title" placeholder="游戏名"></div>
         <div class="field-row"><div class="field-label">平台</div><input type="text" class="field-input" id="capture-extra" placeholder="PS5 / PC / Switch..."></div>
-        <div class="field-row" id="rating-row"><div class="field-label">评分</div>
-          <div class="rating-select"><span class="rating-star" data-val="1" onclick="setRating(1)">☆</span><span class="rating-star" data-val="2" onclick="setRating(2)">☆</span><span class="rating-star" data-val="3" onclick="setRating(3)">☆</span><span class="rating-star" data-val="4" onclick="setRating(4)">☆</span><span class="rating-star" data-val="5" onclick="setRating(5)">☆</span></div>
-        </div>
         <div class="field-row"><div class="field-label">评测</div><textarea class="field-textarea" id="capture-review" placeholder="游戏体验..."></textarea></div>
-        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="RPG, 开放世界"></div>
+        ${renderPhotoUpload()}
       </div>`;
     document.getElementById('capture-title').focus();
   } else if (type === 'place') {
@@ -1776,11 +1947,8 @@ function selectType(type) {
       <div class="capture-fields show" id="capture-fields">
         <div class="field-row"><div class="field-label">地点名</div><input type="text" class="field-input" id="capture-title" placeholder="地点名"></div>
         <div class="field-row"><div class="field-label">位置</div><input type="text" class="field-input" id="capture-extra" placeholder="城市 / 地区"></div>
-        <div class="field-row" id="rating-row"><div class="field-label">评分</div>
-          <div class="rating-select"><span class="rating-star" data-val="1" onclick="setRating(1)">☆</span><span class="rating-star" data-val="2" onclick="setRating(2)">☆</span><span class="rating-star" data-val="3" onclick="setRating(3)">☆</span><span class="rating-star" data-val="4" onclick="setRating(4)">☆</span><span class="rating-star" data-val="5" onclick="setRating(5)">☆</span></div>
-        </div>
         <div class="field-row"><div class="field-label">游记</div><textarea class="field-textarea" id="capture-review" placeholder="记录你的旅行..."></textarea></div>
-        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="旅行, 城市"></div>
+        ${renderPhotoUpload()}
       </div>`;
     document.getElementById('capture-title').focus();
   } else {
@@ -1788,15 +1956,15 @@ function selectType(type) {
       <div class="capture-fields show" id="capture-fields">
         <div class="field-row"><div class="field-label">标题</div><input type="text" class="field-input" id="capture-title" placeholder="标题"></div>
         <div class="field-row"><div class="field-label">内容</div><textarea class="field-textarea" id="capture-review" placeholder="写一些内容..."></textarea></div>
-        <div class="field-row"><div class="field-label">标签</div><input type="text" class="field-input" id="capture-tags" placeholder="标签"></div>
+        ${renderPhotoUpload()}
       </div>`;
     document.getElementById('capture-title').focus();
   }
 }
 
 function resetCaptureForm() {
-  selectedType = null; selectedRating = 0;
-  doubanSelectedMovie = null;
+  selectedType = null; selectedRating = 0; uploadedPhotos = [];
+  doubanSelectedMovie = null; selectedBook = null;
   document.getElementById('workflow-container').innerHTML = '';
 }
 
@@ -1804,20 +1972,19 @@ async function loadEntryForEdit(id) {
   const e = await dbGet(id);
   if (!e) { closeCapture(); return; }
   selectType(e.type);
-  if (e.title) document.getElementById('capture-title').value = e.title;
-  if (e.review) document.getElementById('capture-review').value = e.review;
-  else if (e.content) document.getElementById('capture-review').value = e.content;
-  else if (e.notes) document.getElementById('capture-review').value = e.notes;
-  else if (e.note) document.getElementById('capture-review').value = e.note;
-  if (e.tags) document.getElementById('capture-tags').value = e.tags.join(', ');
-  if (e.rating) setRating(e.rating);
+  // Pre-fill base info only, NOT the review/content (append mode)
+  if (e.title) { const t = document.getElementById('capture-title'); if (t) t.value = e.title; }
   const extraMap = { book:e.author, music:e.artist, game:e.platform, place:e.location, event:e.location, diary:e.mood };
   if (extraMap[e.type] && document.getElementById('capture-extra')) document.getElementById('capture-extra').value = extraMap[e.type];
   doubanSelectedMovie = (e.type === 'movie' && e.poster) ? { img: e.poster, title: e.title, year: e.release_date || '', sub_title: e.original_title || '' } : null;
-  if (e.type === 'movie' && e.title) document.getElementById('capture-title').value = e.title;
-  if (e.type === 'book' && e.author) document.getElementById('capture-extra').value = e.author;
+  selectedBook = (e.type === 'book' && e.cover) ? { cover:e.cover, authors:e.author, publisher:e.publisher, isbn:e.isbn, categories:e.genres, description:e.book_description, pageCount:e.page_count } : null;
   if (e.type === 'event' && e.category) setEventCategory(e.category);
-  document.getElementById('modal-title').textContent = '编辑记录';
+  if (e.type === 'book' && e.reading_status) setReadingStatus(e.reading_status);
+  // Show existing entries count
+  const entryCount = (e.entries || []).length;
+  const reviewEl = document.getElementById('capture-review');
+  if (reviewEl) reviewEl.placeholder = `追加新记录...（已有 ${entryCount} 条记录）`;
+  document.getElementById('modal-title').textContent = '追加记录';
   document.getElementById('back-btn').style.display = 'none';
 }
 
@@ -1835,58 +2002,6 @@ function setEventCategory(cat) {
   event.target.classList.add('selected');
 }
 
-// === Book Search (via Douban) ===
-let bookSearchTimer = null;
-function debouncedBookSearch(val) {
-  clearTimeout(bookSearchTimer);
-  bookSearchTimer = setTimeout(() => searchBook(val), 400);
-}
-async function searchBook(query) {
-  if (!query || query.trim().length < 1) { renderBookResults([]); return; }
-  const resultsEl = document.getElementById('douban-results');
-  if (resultsEl) resultsEl.innerHTML = '<div class="douban-loading">搜索中...</div>';
-  const q = query.trim();
-  const results = [];
-  try {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        data.forEach(d => {
-          if (d.type === 'book' || d.title.includes(query)) results.push(d);
-        });
-      }
-    }
-  } catch(e) {}
-  renderBookResults(results);
-}
-function renderBookResults(results) {
-  const el = document.getElementById('douban-results');
-  if (!el) return;
-  if (!results || results.length === 0) {
-    el.innerHTML = '<div class="douban-loading">没有找到相关书籍，可手动填写</div>';
-    return;
-  }
-  el.innerHTML = results.map((r, i) => `
-    <div class="douban-result-item" onclick="selectBookResult(${i})">
-      <img src="${proxyImage(r.img)}" alt="${r.title}" loading="lazy" onerror="this.style.display='none'">
-      <div class="douban-result-info">
-        <div class="douban-result-title">${r.title}</div>
-        <div class="douban-result-year">${r.year || ''} ${r.sub_title ? '· ' + r.sub_title : ''}</div>
-        <div class="douban-source-badge">来源：豆瓣</div>
-      </div>
-    </div>
-  `).join('');
-  window._bookResults = results;
-}
-function selectBookResult(idx) {
-  const r = window._bookResults && window._bookResults[idx];
-  if (!r) return;
-  document.getElementById('capture-title').value = r.title;
-  if (r.sub_title) document.getElementById('capture-extra').value = r.sub_title;
-  document.querySelectorAll('.douban-result-item').forEach((el, i) => el.classList.toggle('selected', i === idx));
-  showToast('已导入：' + r.title, 'success');
-}
 
 function closeCapture() { document.getElementById('capture-modal').classList.remove('show'); editingId = null; document.getElementById('back-btn').style.display = ''; }
 
@@ -1898,58 +2013,116 @@ function setRating(val) {
 async function saveCapture() {
   const titleEl = document.getElementById('capture-title');
   const reviewEl = document.getElementById('capture-review');
-  const tagsEl = document.getElementById('capture-tags');
   const extraEl = document.getElementById('capture-extra');
   const title = titleEl ? titleEl.value.trim() : '';
-  if (!title && selectedType !== 'diary') { showToast('请输入标题', 'error'); return; }
+  if (!title && selectedType !== 'diary') { showToast('请先搜索并选择作品', 'error'); return; }
   if (!selectedType) { showToast('请选择记录类型', 'error'); return; }
   const review = reviewEl ? reviewEl.value.trim() : '';
-  const tagsStr = tagsEl ? tagsEl.value.trim() : '';
-  const tags = tagsStr ? tagsStr.split(/[,，]/).map(t => t.trim()).filter(Boolean) : [];
   const extra = extraEl ? extraEl.value.trim() : '';
   const now = new Date();
   const today = now.toISOString().slice(0,10);
   const time = now.toTimeString().slice(0,5);
-  const entry = { type:selectedType, title, tags, updated_at:now.toISOString() };
-  if (selectedType === 'movie') {
-    entry.watch_date=today; entry.watch_time=time; entry.review=review;
-    if(selectedRating)entry.rating=selectedRating;
-    if(doubanSelectedMovie){entry.poster=doubanSelectedMovie.img; if(doubanSelectedMovie.year)entry.release_date=doubanSelectedMovie.year; if(doubanSelectedMovie.sub_title)entry.original_title=doubanSelectedMovie.sub_title;}
-  } else if (selectedType === 'book') {
-    if(readingStatus==='done'){entry.finish_date=today; entry.finish_time=time;}
-    else if(readingStatus==='reading'){entry.start_date=today; entry.finish_date=null;}
-    else {entry.start_date=null; entry.finish_date=null;}
-    entry.notes=review; if(extra)entry.author=extra; if(selectedRating)entry.rating=selectedRating;
-  } else if (selectedType === 'diary') {
-    entry.event_date=today; entry.event_time=time;
-    entry.content=review; if(extra)entry.mood=extra;
-    if(!title) entry.title = today.slice(5).replace('-','月')+'日';
-  } else if (selectedType === 'event') {
-    entry.event_date=today; entry.event_time=time;
-    entry.content=review; if(extra)entry.location=extra;
-    if(eventCategory)entry.category=eventCategory;
-  } else if (selectedType === 'music') {
-    entry.date=today; entry.note=review; if(extra)entry.artist=extra; if(selectedRating)entry.rating=selectedRating;
-  } else if (selectedType === 'game') {
-    entry.start_date=today; if(extra)entry.platform=extra; entry.review=review; if(selectedRating)entry.rating=selectedRating;
-  } else if (selectedType === 'place') {
-    entry.date=today; entry.note=review; if(extra)entry.location=extra; if(selectedRating)entry.rating=selectedRating;
-  } else {
-    entry.event_date=today; entry.content=review;
-  }
+  const photos = [...uploadedPhotos];
+
+  // Build the new entry for entries[] (append model)
+  const newEntry = { id: Date.now(), created_at: now.toISOString(), content: review, photos };
+  if (selectedType === 'movie') newEntry.date = today;
+  else if (selectedType === 'book') newEntry.date = today;
+  else if (selectedType === 'diary') newEntry.date = today;
+  else if (selectedType === 'event') newEntry.date = today;
+  else newEntry.date = today;
+
   if (editingId) {
+    // Append mode: add new entry to existing record
     const ex = await dbGet(editingId);
-    const merged = { ...ex, ...entry };
+    if (!ex) { showToast('记录不存在', 'error'); return; }
+    const entries = ex.entries || [];
+    // Migrate old single content to entries[] if needed
+    if (entries.length === 0) {
+      const oldContent = ex.review || ex.content || ex.notes || ex.note || '';
+      if (oldContent) {
+        entries.push({ id: ex.created_at ? new Date(ex.created_at).getTime() : 0, created_at: ex.created_at || now.toISOString(), content: oldContent, photos: ex.photos || [] });
+      }
+    }
+    entries.push(newEntry);
+    const merged = { ...ex };
+    merged.entries = entries;
+    // Update base fields if changed by search
+    if (selectedType === 'movie' && doubanSelectedMovie) {
+      merged.poster = doubanSelectedMovie.img;
+      if (doubanSelectedMovie.year) merged.release_date = doubanSelectedMovie.year;
+      if (doubanSelectedMovie.sub_title) merged.original_title = doubanSelectedMovie.sub_title;
+    }
+    if (selectedType === 'book' && selectedBook) {
+      merged.cover = selectedBook.cover;
+      merged.author = selectedBook.authors;
+      merged.publisher = selectedBook.publisher;
+      merged.isbn = selectedBook.isbn;
+      merged.genres = selectedBook.categories;
+      merged.book_description = selectedBook.description;
+      merged.page_count = selectedBook.pageCount;
+    }
+    if (selectedType === 'book') {
+      if (readingStatus === 'done') { merged.finish_date = today; merged.reading_status = 'done'; }
+      else if (readingStatus === 'reading') { merged.start_date = today; merged.reading_status = 'reading'; }
+      else { merged.reading_status = 'want'; }
+    }
+    if (selectedType === 'event' && eventCategory) merged.category = eventCategory;
+    if (selectedType === 'diary' && extra) merged.mood = extra;
+    if (selectedType === 'event' && extra) merged.location = extra;
+    if ((selectedType === 'music' || selectedType === 'game' || selectedType === 'place') && extra) {
+      if (selectedType === 'music') merged.artist = extra;
+      if (selectedType === 'game') merged.platform = extra;
+      if (selectedType === 'place') merged.location = extra;
+    }
     merged.id = editingId;
-    merged.created_at = ex?.created_at || new Date().toISOString();
-    merged.updated_at = new Date().toISOString();
+    merged.updated_at = now.toISOString();
     await dbPut(merged);
-    showToast('已更新', 'success');
+    showToast('已追加记录', 'success');
     const editId = editingId;
     closeCapture();
     await openDetail(editId);
   } else {
-    entry.created_at = now.toISOString();
+    // New record
+    const entry = { type: selectedType, title, created_at: now.toISOString(), updated_at: now.toISOString(), entries: [newEntry] };
+    if (selectedType === 'movie') {
+      entry.watch_date = today; entry.watch_time = time;
+      if (doubanSelectedMovie) {
+        entry.poster = doubanSelectedMovie.img;
+        if (doubanSelectedMovie.year) entry.release_date = doubanSelectedMovie.year;
+        if (doubanSelectedMovie.sub_title) entry.original_title = doubanSelectedMovie.sub_title;
+      }
+    } else if (selectedType === 'book') {
+      if (readingStatus === 'done') { entry.finish_date = today; entry.reading_status = 'done'; }
+      else if (readingStatus === 'reading') { entry.start_date = today; entry.reading_status = 'reading'; }
+      else { entry.reading_status = 'want'; }
+      if (selectedBook) {
+        entry.cover = selectedBook.cover;
+        entry.author = selectedBook.authors;
+        entry.publisher = selectedBook.publisher;
+        entry.isbn = selectedBook.isbn;
+        entry.genres = selectedBook.categories;
+        entry.book_description = selectedBook.description;
+        entry.page_count = selectedBook.pageCount;
+      }
+      if (extra) entry.author = extra;
+    } else if (selectedType === 'diary') {
+      entry.event_date = today; entry.event_time = time;
+      if (extra) entry.mood = extra;
+      if (!title) entry.title = today.slice(5).replace('-', '月') + '日';
+    } else if (selectedType === 'event') {
+      entry.event_date = today; entry.event_time = time;
+      if (extra) entry.location = extra;
+      if (eventCategory) entry.category = eventCategory;
+    } else if (selectedType === 'music') {
+      entry.date = today; if (extra) entry.artist = extra;
+    } else if (selectedType === 'game') {
+      entry.start_date = today; if (extra) entry.platform = extra;
+    } else if (selectedType === 'place') {
+      entry.date = today; if (extra) entry.location = extra;
+    } else {
+      entry.event_date = today;
+    }
     await dbAdd(entry);
     showToast('已保存', 'success');
     closeCapture();
