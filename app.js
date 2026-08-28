@@ -234,7 +234,7 @@ let activeScale = 'month';
 
 // === IndexedDB ===
 const DB_NAME = 'memory_os';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let db = null;
 
 function initDB() {
@@ -248,6 +248,11 @@ function initDB() {
         const store = d.createObjectStore('entries', { keyPath:'id', autoIncrement:true });
         store.createIndex('type', 'type', { unique:false });
         store.createIndex('date', 'date', { unique:false });
+      }
+      if (!d.objectStoreNames.contains('teams')) {
+        const teamStore = d.createObjectStore('teams', { keyPath:'id', autoIncrement:true });
+        teamStore.createIndex('sport', 'sport', { unique:false });
+        teamStore.createIndex('provider_team_id', 'provider_team_id', { unique:false });
       }
     };
   });
@@ -293,6 +298,159 @@ function dbClear() {
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
+}
+
+// === P4: Cloud Sync Adapter Interface (Architecture Reservation) ===
+// Future: when Supabase is connected, implement these methods.
+// localIndexedDB remains as cache layer; cloud becomes primary data source.
+// Migration strategy: on first cloud connect, upload all local data, then enable sync.
+const SyncAdapter = {
+  // auth: { login(email,pw), register(email,pw), logout(), getSession() }
+  // sync: { pushEntries(), pullEntries(), pushTeams(), pullTeams() }
+  // storage: { uploadImage(file), getImage(url) }
+  // Current: no-op stubs, all data stays local
+  enabled: false,
+  async init() { return false; },
+  async login() { return null; },
+  async syncAll() { return { pushed:0, pulled:0 }; },
+};
+
+// === Team CRUD (P3: Sports Data Layer) ===
+function dbGetTeams() {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction('teams','readonly').objectStore('teams').getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+function dbAddTeam(team) {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction('teams','readwrite').objectStore('teams').add({ ...team, added_at: new Date().toISOString() });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function dbDeleteTeam(id) {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction('teams','readwrite').objectStore('teams').delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// === Sports Team Database (static registry, replace with API later) ===
+const CS2_TEAMS = [
+  { id:'navi', name:'NAVI', full:'Natus Vincere', color:'#FFE600', text:'#000', region:'EU' },
+  { id:'g2', name:'G2', full:'G2 Esports', color:'#1A1A1A', text:'#FFF', region:'EU' },
+  { id:'faze', name:'FaZe', full:'FaZe Clan', color:'#E63946', text:'#FFF', region:'EU' },
+  { id:'vitality', name:'Vitality', full:'Team Vitality', color:'#FFD700', text:'#000', region:'EU' },
+  { id:'spirit', name:'Spirit', full:'Team Spirit', color:'#C75450', text:'#FFF', region:'EU' },
+  { id:'mouz', name:'MOUZ', full:'MOUZ', color:'#000', text:'#E63946', region:'EU' },
+  { id:'liquid', name:'Liquid', full:'Team Liquid', color:'#0A66C2', text:'#FFF', region:'NA' },
+  { id:'furia', name:'FURIA', full:'FURIA Esports', color:'#000', text:'#FFF', region:'SA' },
+  { id:'astralis', name:'Astralis', full:'Astralis', color:'#1A1A1A', text:'#E63946', region:'EU' },
+  { id:'heroic', name:'Heroic', full:'Heroic', color:'#FF6B35', text:'#FFF', region:'EU' },
+  { id:'cloud9', name:'Cloud9', full:'Cloud9', color:'#1B3A5C', text:'#FFF', region:'NA' },
+  { id:'ence', name:'ENCE', full:'ENCE', color:'#0EAE52', text:'#000', region:'EU' },
+];
+
+const FOOTBALL_TEAMS = [
+  { id:'mci', name:'曼城', full:'Manchester City', color:'#6CABDD', text:'#000', league:'英超' },
+  { id:'ars', name:'阿森纳', full:'Arsenal', color:'#EF0107', text:'#FFF', league:'英超' },
+  { id:'liv', name:'利物浦', full:'Liverpool', color:'#C8102E', text:'#FFF', league:'英超' },
+  { id:'che', name:'切尔西', full:'Chelsea', color:'#034694', text:'#FFF', league:'英超' },
+  { id:'tot', name:'热刺', full:'Tottenham', color:'#132257', text:'#FFF', league:'英超' },
+  { id:'mun', name:'曼联', full:'Manchester United', color:'#DA291C', text:'#FFF', league:'英超' },
+  { id:'rma', name:'皇马', full:'Real Madrid', color:'#FFFFFF', text:'#000', league:'西甲' },
+  { id:'bar', name:'巴萨', full:'FC Barcelona', color:'#A50044', text:'#FFF', league:'西甲' },
+  { id:'atm', name:'马竞', full:'Atletico Madrid', color:'#CB3524', text:'#FFF', league:'西甲' },
+  { id:'bay', name:'拜仁', full:'Bayern Munich', color:'#DC052D', text:'#FFF', league:'德甲' },
+  { id:'bvb', name:'多特', full:'Borussia Dortmund', color:'#FDE100', text:'#000', league:'德甲' },
+  { id:'juv', name:'尤文', full:'Juventus', color:'#000', text:'#FFF', league:'意甲' },
+  { id:'mil', name:'AC米兰', full:'AC Milan', color:'#FB090B', text:'#000', league:'意甲' },
+  { id:'int', name:'国米', full:'Inter Milan', color:'#0066CC', text:'#FFF', league:'意甲' },
+  { id:'psg', name:'巴黎', full:'Paris Saint-Germain', color:'#004170', text:'#FFF', league:'法甲' },
+  { id:'sdts', name:'山东泰山', full:'Shandong Taishan', color:'#FF6B00', text:'#FFF', league:'中超' },
+  { id:'shhg', name:'上海海港', full:'Shanghai Port', color:'#E60012', text:'#FFF', league:'中超' },
+  { id:'bjgg', name:'北京国安', full:'Beijing Guoan', color:'#0066B3', text:'#FFF', league:'中超' },
+];
+
+// === Sports Data Adapter ===
+// Unified match model: { id, sport, home_id, home_name, home_color, home_text, away_id, away_name, away_color, away_text, date, time, status, league, round, home_score, away_score, importance, tournament_weight }
+// status: 'upcoming' | 'live' | 'finished'
+
+const CS2_SCHEDULE = [
+  { home_id:'navi', away_id:'g2', date:nextDate(2), time:'22:00', league:'IEM Cologne', round:'半决赛', importance:5, tournament_weight:5, status:'upcoming' },
+  { home_id:'faze', away_id:'vitality', date:nextDate(3), time:'18:00', league:'ESL Pro League', round:'小组赛', importance:3, tournament_weight:3, status:'upcoming' },
+  { home_id:'spirit', away_id:'mouz', date:nextDate(3), time:'21:00', league:'BLAST Premier', round:'小组赛', importance:3, tournament_weight:3, status:'upcoming' },
+  { home_id:'liquid', away_id:'furia', date:nextDate(4), time:'20:00', league:'IEM Qualifier', round:'淘汰赛', importance:4, tournament_weight:3, status:'upcoming' },
+  { home_id:'navi', away_id:'faze', date:nextDate(-1), time:'22:00', league:'IEM Cologne', round:'四分之一决赛', home_score:2, away_score:0, importance:4, tournament_weight:5, status:'finished' },
+  { home_id:'g2', away_id:'liquid', date:nextDate(-2), time:'20:00', league:'ESL Pro League', round:'小组赛', home_score:16, away_score:14, importance:2, tournament_weight:3, status:'finished' },
+  { home_id:'vitality', away_id:'spirit', date:nextDate(-3), time:'21:00', league:'BLAST Premier', round:'小组赛', home_score:1, away_score:2, importance:2, tournament_weight:3, status:'finished' },
+  { home_id:'astralis', away_id:'heroic', date:nextDate(5), time:'19:00', league:'ESL Pro League', round:'小组赛', importance:2, tournament_weight:3, status:'upcoming' },
+  { home_id:'cloud9', away_id:'ence', date:nextDate(6), time:'23:00', league:'BLAST Showdown', round:'淘汰赛', importance:3, tournament_weight:2, status:'upcoming' },
+];
+
+const FOOTBALL_SCHEDULE = [
+  { home_id:'mci', away_id:'ars', date:nextDate(0), time:'23:30', league:'英超', round:'第3轮', importance:5, tournament_weight:4, status:'upcoming' },
+  { home_id:'rma', away_id:'bar', date:nextDate(1), time:'04:00', league:'西甲', round:'国家德比', importance:5, tournament_weight:5, status:'upcoming' },
+  { home_id:'bay', away_id:'bvb', date:nextDate(1), time:'00:30', league:'德甲', round:'国家德比', importance:5, tournament_weight:4, status:'upcoming' },
+  { home_id:'liv', away_id:'che', date:nextDate(2), time:'23:00', league:'英超', round:'第4轮', importance:4, tournament_weight:4, status:'upcoming' },
+  { home_id:'juv', away_id:'int', date:nextDate(3), time:'03:45', league:'意甲', round:'都灵德比', importance:4, tournament_weight:4, status:'upcoming' },
+  { home_id:'psg', away_id:'mil', date:nextDate(4), time:'04:00', league:'欧冠', round:'小组赛', importance:4, tournament_weight:5, status:'upcoming' },
+  { home_id:'sdts', away_id:'shhg', date:nextDate(2), time:'19:35', league:'中超', round:'第18轮', importance:4, tournament_weight:3, status:'upcoming' },
+  { home_id:'mun', away_id:'tot', date:nextDate(5), time:'23:30', league:'英超', round:'北伦敦德比', importance:4, tournament_weight:4, status:'upcoming' },
+  { home_id:'mci', away_id:'liv', date:nextDate(-1), time:'23:00', league:'英超', round:'第2轮', home_score:2, away_score:1, importance:4, tournament_weight:4, status:'finished' },
+  { home_id:'bar', away_id:'rma', date:nextDate(-7), time:'04:00', league:'西甲', round:'国家德比', home_score:1, away_score:1, importance:5, tournament_weight:5, status:'finished' },
+  { home_id:'sdts', away_id:'bjgg', date:nextDate(-3), time:'19:35', league:'中超', round:'第17轮', home_score:3, away_score:1, importance:3, tournament_weight:3, status:'finished' },
+];
+
+function nextDate(offset) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  return d.toISOString().slice(0,10);
+}
+
+function getTeamById(id, sport) {
+  if (sport === 'cs2') return CS2_TEAMS.find(t => t.id === id);
+  return FOOTBALL_TEAMS.find(t => t.id === id);
+}
+
+function getUnifiedMatches(sport) {
+  const schedule = sport === 'cs2' ? CS2_SCHEDULE : FOOTBALL_SCHEDULE;
+  return schedule.map(m => {
+    const home = getTeamById(m.home_id, sport) || { name:m.home_id, color:'#666', text:'#FFF' };
+    const away = getTeamById(m.away_id, sport) || { name:m.away_id, color:'#666', text:'#FFF' };
+    return { ...m, sport, home_name:home.name, home_color:home.color, home_text:home.text, away_name:away.name, away_color:away.color, away_text:away.text };
+  });
+}
+
+function getMatchesForTeams(teamIds, sport) {
+  if (!teamIds || teamIds.length === 0) return [];
+  return getUnifiedMatches(sport).filter(m =>
+    teamIds.includes(m.home_id) || teamIds.includes(m.away_id)
+  );
+}
+
+// === Match Score Algorithm ===
+// Score = main_team_weight + importance + tournament_weight + opponent_strength + proximity + user_preference
+function calculateMatchScore(match, followedTeamIds) {
+  let score = 0;
+  const isMain = followedTeamIds.includes(match.home_id) || followedTeamIds.includes(match.away_id);
+  if (isMain) score += 10;
+  score += (match.importance || 1);
+  score += (match.tournament_weight || 1);
+  const daysUntil = (new Date(match.date) - new Date(new Date().toDateString())) / (1000*60*60*24);
+  if (daysUntil >= 0 && daysUntil <= 7) score += (5 - daysUntil * 0.7);
+  if (match.status === 'live') score += 5;
+  return score;
+}
+
+function renderTeamLogo(team, size) {
+  const s = size || 48;
+  const fontSize = Math.round(s * 0.35);
+  const initials = team.name.slice(0, 3).toUpperCase();
+  return `<span class="team-logo" style="width:${s}px;height:${s}px;background:${team.color};color:${team.text};border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:${fontSize}px;font-weight:700;font-family:var(--font-sans);flex-shrink:0;">${initials}</span>`;
 }
 
 // === Seed ===
@@ -381,8 +539,8 @@ async function navigate(page) {
       case 'random': await renderRandom(); break;
       case 'year-review': await renderYearReview(); break;
       case 'settings': await renderSettings(); break;
-      case 'res-cs': renderResourceCS(); break;
-      case 'res-football': renderResourceFootball(); break;
+      case 'res-cs': await renderResourceCS(); break;
+      case 'res-football': await renderResourceFootball(); break;
       case 'res-ai': renderResourceAI(); break;
       case 'res-links': renderResourceLinks(); break;
       case 'knowledge': renderKnowledge(); break;
@@ -396,23 +554,19 @@ async function navigate(page) {
 }
 
 // === Resources: CS Esports ===
-function renderResourceCS() {
-  const featuredMatch = { name:'IEM Cologne 2026', t1:'NAVI', t1Flag:'🇺🇦', t2:'G2', t2Flag:'🇩🇪', date:'8月30日 22:00', prize:'$1,000,000', status:'即将开始', url:'https://www.hltv.org/events' };
-  const upcomingMatches = [
-    { t1:'FaZe', t1Flag:'🇪🇺', t2:'Vitality', t2Flag:'🇫🇷', event:'ESL Pro League', time:'明日 18:00', status:'预告' },
-    { t1:'Spirit', t1Flag:'🇷🇺', t2:'MOUZ', t2Flag:'🇪🇪', event:'BLAST Premier', time:'明日 21:00', status:'预告' },
-    { t1:'Liquid', t1Flag:'🇺🇸', t2:'FURIA', t2Flag:'🇧🇷', event:'IEM Qualifier', time:'后天 20:00', status:'预告' },
-  ];
-  const recentResults = [
-    { t1:'NAVI', t1Flag:'🇺🇦', score1:2, t2:'FaZe', t2Flag:'🇪🇺', score2:0, event:'IEM Cologne' },
-    { t1:'G2', t1Flag:'🇩🇪', score1:16, t2:'Liquid', t2Flag:'🇺🇸', score2:14, event:'ESL Pro League' },
-  ];
-  const links = [
-    { title:'HLTV', url:'https://www.hltv.org', icon:'🏆', desc:'CS2赛事排名、比赛日程、选手数据' },
-    { title:'Liquipedia CS', url:'https://liquipedia.net/counterstrike', icon:'📖', desc:'CS赛事百科、战队信息、选手资料' },
-    { title:'FACEIT', url:'https://www.faceit.com', icon:'🎮', desc:'CS2竞技平台，排位赛和锦标赛' },
-    { title:'ESL Play', url:'https://play.esl.com', icon:'⚡', desc:'ESL联赛报名和比赛管理' },
-  ];
+async function renderResourceCS() {
+  const followedTeams = await dbGetTeams();
+  const csFollowed = followedTeams.filter(t => t.sport === 'cs2');
+  const followedIds = csFollowed.map(t => t.provider_team_id);
+  const allMatches = getUnifiedMatches('cs2');
+  const myMatches = getMatchesForTeams(followedIds, 'cs2');
+  const myUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => a.date.localeCompare(b.date));
+  const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
+  const allUpcoming = allMatches.filter(m => m.status === 'upcoming').sort((a,b) => {
+    const sa = calculateMatchScore(a, followedIds), sb = calculateMatchScore(b, followedIds);
+    return sb - sa;
+  });
+
   let html = `
     <div class="page-header">
       <div class="page-title">CS赛事 · CS Esports</div>
@@ -422,67 +576,79 @@ function renderResourceCS() {
         <button class="scale-btn" onclick="window.open('https://www.hltv.org/ranking/teams','_blank')">战队排名</button>
       </div>
     </div>`;
-  // Featured match — hero card
-  html += `
-    <div class="featured-match" onclick="window.open('${featuredMatch.url}','_blank')">
+
+  // My teams section
+  html += `<div class="my-teams-bar"><div class="my-teams-label">⚡ 我关注的主队</div><div class="my-teams-list" id="cs-my-teams">`;
+  if (csFollowed.length > 0) {
+    csFollowed.forEach(t => {
+      const team = CS2_TEAMS.find(c => c.id === t.provider_team_id) || { name:t.name, color:t.color||'#666', text:'#FFF' };
+      html += `<div class="my-team-chip" style="border-color:${team.color}44;">
+        ${renderTeamLogo(team, 28)}
+        <span class="my-team-name">${team.name}</span>
+        <button class="my-team-remove" onclick="event.stopPropagation();removeTeam(${t.id},'cs2')">✕</button>
+      </div>`;
+    });
+  }
+  html += `<button class="add-team-btn" onclick="openTeamSelector('cs2')">+ 添加主队</button>`;
+  html += `</div></div>`;
+
+  // My team's upcoming matches (if any)
+  if (myUpcoming.length > 0) {
+    html += `<div class="res-section-title">我的主队赛程 · My Schedule</div><div class="match-list">`;
+    myUpcoming.forEach(m => {
+      html += renderMatchCard(m, followedIds);
+    });
+    html += `</div>`;
+  }
+
+  // My team's recent results
+  if (myRecent.length > 0) {
+    html += `<div class="res-section-title">主队最近结果 · Results</div><div class="match-list">`;
+    myRecent.forEach(m => {
+      html += renderMatchCard(m, followedIds);
+    });
+    html += `</div>`;
+  }
+
+  // Featured match (highest scored)
+  if (allUpcoming.length > 0) {
+    const featured = allUpcoming[0];
+    html += `
+    <div class="featured-match" onclick="window.open('https://www.hltv.org/matches','_blank')">
       <div class="featured-match-tag">
         <span class="featured-match-live">🔥 焦点</span>
-        <span>${featuredMatch.status} · ${featuredMatch.prize}</span>
+        <span>${featured.league} · ${featured.round}</span>
       </div>
-      <div class="featured-match-title">${featuredMatch.name}</div>
+      <div class="featured-match-title">${featured.league}</div>
       <div class="featured-match-teams">
         <div class="featured-team">
-          <div class="featured-team-logo">${featuredMatch.t1Flag}</div>
-          <div class="featured-team-name">${featuredMatch.t1}</div>
+          ${renderTeamLogo(getTeamById(featured.home_id,'cs2'), 72)}
+          <div class="featured-team-name">${featured.home_name}</div>
         </div>
         <div class="featured-vs">VS</div>
         <div class="featured-team">
-          <div class="featured-team-logo">${featuredMatch.t2Flag}</div>
-          <div class="featured-team-name">${featuredMatch.t2}</div>
+          ${renderTeamLogo(getTeamById(featured.away_id,'cs2'), 72)}
+          <div class="featured-team-name">${featured.away_name}</div>
         </div>
       </div>
-      <div class="featured-match-info">${featuredMatch.date} · 点击查看详情</div>
+      <div class="featured-match-info">${featured.date.replace(/-/g,'/')} ${featured.time} · 点击查看详情</div>
     </div>`;
-  // Upcoming matches
-  html += `<div class="res-section-title">即将开始 · Upcoming</div><div class="res-grid" style="grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));">`;
-  upcomingMatches.forEach(m => {
-    html += `<a class="res-card" href="https://www.hltv.org/matches" target="_blank" rel="noopener" style="padding:16px 20px;">
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-        <span style="font-size:11px; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:1px;">${m.event}</span>
-        <span style="font-size:11px; padding:2px 6px; border-radius:4px; background:var(--bg-subtle); color:var(--accent);">${m.status}</span>
-      </div>
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-        <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:20px;">${m.t1Flag}</span><span style="font-size:14px; font-weight:600;">${m.t1}</span></div>
-        <span style="font-size:12px; color:var(--text-tertiary);">vs</span>
-        <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:14px; font-weight:600;">${m.t2}</span><span style="font-size:20px;">${m.t2Flag}</span></div>
-      </div>
-      <div style="font-size:12px; color:var(--text-tertiary); margin-top:8px; text-align:center;">${m.time}</div>
-    </a>`;
+  }
+
+  // All upcoming matches
+  html += `<div class="res-section-title">即将开始 · Upcoming</div><div class="match-list">`;
+  allUpcoming.slice(0, 8).forEach(m => {
+    html += renderMatchCard(m, followedIds);
   });
   html += `</div>`;
-  // Recent results
-  html += `<div class="res-section-title">最近结果 · Results</div><div class="res-link-list">`;
-  recentResults.forEach(r => {
-    const win1 = r.score1 > r.score2;
-    html += `<a class="res-link-item" href="https://www.hltv.org/results" target="_blank" rel="noopener">
-      <div class="res-link-favicon">📊</div>
-      <div class="res-link-info" style="display:flex; align-items:center; justify-content:space-between;">
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span style="font-size:18px;">${r.t1Flag}</span>
-          <span style="font-size:14px; font-weight:${win1?'700':'400'}; color:${win1?'var(--text)':'var(--text-secondary)'};">${r.t1}</span>
-          <span style="font-size:16px; font-weight:700; color:${win1?'var(--success)':'var(--text-tertiary)'}; margin:0 8px;">${r.score1}</span>
-          <span style="font-size:12px; color:var(--text-tertiary);">:</span>
-          <span style="font-size:16px; font-weight:700; color:${!win1?'var(--success)':'var(--text-tertiary)'}; margin:0 8px;">${r.score2}</span>
-          <span style="font-size:14px; font-weight:${!win1?'700':'400'}; color:${!win1?'var(--text)':'var(--text-secondary)'};">${r.t2}</span>
-          <span style="font-size:18px;">${r.t2Flag}</span>
-        </div>
-        <span style="font-size:11px; color:var(--text-tertiary);">${r.event}</span>
-      </div>
-      <span class="res-link-arrow">→</span>
-    </a>`;
-  });
-  html += `</div>`;
+
   // Resource links
+  const links = [
+    { title:'HLTV', url:'https://www.hltv.org', icon:'🏆', desc:'CS2赛事排名、比赛日程、选手数据' },
+    { title:'Liquipedia CS', url:'https://liquipedia.net/counterstrike', icon:'📖', desc:'CS赛事百科、战队信息、选手资料' },
+    { title:'FACEIT', url:'https://www.faceit.com', icon:'🎮', desc:'CS2竞技平台，排位赛和锦标赛' },
+    { title:'ESL Play', url:'https://play.esl.com', icon:'⚡', desc:'ESL联赛报名和比赛管理' },
+  ];
   html += `<div class="res-section-title">赛事资源</div><div class="res-grid">`;
   links.forEach(l => {
     html += `<a class="res-card" href="${l.url}" target="_blank" rel="noopener">
@@ -496,8 +662,121 @@ function renderResourceCS() {
   document.getElementById('content').innerHTML = html;
 }
 
+function renderMatchCard(m, followedIds) {
+  const isMain = followedIds.includes(m.home_id) || followedIds.includes(m.away_id);
+  const homeTeam = { name:m.home_name, color:m.home_color, text:m.home_text };
+  const awayTeam = { name:m.away_name, color:m.away_color, text:m.away_text };
+  let scoreHtml = '';
+  if (m.status === 'finished') {
+    const win1 = m.home_score > m.away_score;
+    scoreHtml = `<div class="match-score">
+      <span class="${win1?'win':'lose'}">${m.home_score}</span>
+      <span class="match-score-sep">:</span>
+      <span class="${!win1?'win':'lose'}">${m.away_score}</span>
+    </div>`;
+  } else if (m.status === 'live') {
+    scoreHtml = `<span class="match-live-badge">LIVE</span>`;
+  } else {
+    scoreHtml = `<span class="match-time">${m.time}</span>`;
+  }
+  const mainClass = isMain ? ' match-card-main' : '';
+  return `<a class="match-card${mainClass}" href="${m.sport==='cs2'?'https://www.hltv.org/matches':'https://www.dongqiudi.com/schedule'}" target="_blank" rel="noopener">
+    <div class="match-card-league">${m.league} · ${m.round}</div>
+    <div class="match-card-teams">
+      <div class="match-team">${renderTeamLogo(homeTeam, 36)}<span class="match-team-name">${m.home_name}</span></div>
+      ${scoreHtml}
+      <div class="match-team">${renderTeamLogo(awayTeam, 36)}<span class="match-team-name">${m.away_name}</span></div>
+    </div>
+    <div class="match-card-date">${m.date.replace(/-/g,'/')} ${m.time}</div>
+  </a>`;
+}
+
+async function openTeamSelector(sport) {
+  const teams = sport === 'cs2' ? CS2_TEAMS : FOOTBALL_TEAMS;
+  const followed = await dbGetTeams();
+  const followedIds = followed.filter(t => t.sport === sport).map(t => t.provider_team_id);
+  let html = `<div class="team-selector-header">选择主队 · ${sport === 'cs2' ? 'CS2 Teams' : 'Football Clubs'}<button class="team-selector-close" onclick="closeTeamSelector()">✕</button></div>`;
+  html += `<input type="text" class="team-search-input" placeholder="搜索战队..." oninput="filterTeamList(this.value)" id="team-search-input">`;
+  html += `<div class="team-selector-grid" id="team-selector-grid">`;
+  teams.forEach(t => {
+    const isFollowed = followedIds.includes(t.id);
+    html += `<div class="team-selector-item${isFollowed?' selected':''}" onclick="toggleTeam('${t.id}','${sport}',this)" data-name="${t.name.toLowerCase()}${(t.full||'').toLowerCase()}">
+      ${renderTeamLogo(t, 40)}
+      <div class="team-selector-name">${t.name}</div>
+      <div class="team-selector-full">${t.full || ''}</div>
+      ${isFollowed ? '<span class="team-selector-check">✓</span>' : '<span class="team-selector-add">+</span>'}
+    </div>`;
+  });
+  html += `</div>`;
+  showTeamSelectorModal(html, sport);
+}
+
+function showTeamSelectorModal(content, sport) {
+  let modal = document.getElementById('team-selector-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'team-selector-modal';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `<div class="modal-content team-selector-content"><div id="team-selector-body"></div></div>`;
+    modal.addEventListener('click', function(e) { if (e.target === modal) closeTeamSelector(); });
+    document.body.appendChild(modal);
+  }
+  document.getElementById('team-selector-body').innerHTML = content;
+  modal.classList.add('show');
+}
+
+function closeTeamSelector() {
+  const modal = document.getElementById('team-selector-modal');
+  if (modal) modal.classList.remove('show');
+}
+
+function filterTeamList(query) {
+  const q = query.toLowerCase().trim();
+  document.querySelectorAll('.team-selector-item').forEach(item => {
+    const name = item.dataset.name || '';
+    item.style.display = name.includes(q) ? '' : 'none';
+  });
+}
+
+async function toggleTeam(teamId, sport, el) {
+  const followed = await dbGetTeams();
+  const existing = followed.find(t => t.sport === sport && t.provider_team_id === teamId);
+  if (existing) {
+    await dbDeleteTeam(existing.id);
+    el.classList.remove('selected');
+    const badge = el.querySelector('.team-selector-check');
+    if (badge) { badge.className = 'team-selector-add'; badge.textContent = '+'; }
+  } else {
+    const team = getTeamById(teamId, sport);
+    if (team) {
+      await dbAddTeam({ provider:'static', provider_team_id:teamId, name:team.name, full:team.full, sport, color:team.color, text:team.text });
+      el.classList.add('selected');
+      const badge = el.querySelector('.team-selector-add');
+      if (badge) { badge.className = 'team-selector-check'; badge.textContent = '✓'; }
+    }
+  }
+}
+
+async function removeTeam(id, sport) {
+  await dbDeleteTeam(id);
+  if (sport === 'cs2') await renderResourceCS();
+  else await renderResourceFootball();
+}
+
 // === Resources: Football ===
-function renderResourceFootball() {
+async function renderResourceFootball() {
+  const followedTeams = await dbGetTeams();
+  const fbFollowed = followedTeams.filter(t => t.sport === 'football');
+  const followedIds = fbFollowed.map(t => t.provider_team_id);
+  const allMatches = getUnifiedMatches('football');
+  const myMatches = getMatchesForTeams(followedIds, 'football');
+  const myUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => a.date.localeCompare(b.date));
+  const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
+  const allUpcoming = allMatches.filter(m => m.status === 'upcoming').sort((a,b) => {
+    const sa = calculateMatchScore(a, followedIds), sb = calculateMatchScore(b, followedIds);
+    return sb - sa;
+  });
+
   const leagues = [
     { name:'英超', nameEn:'Premier League', flag:'🏴', desc:'英格兰超级联赛', url:'https://www.premierleague.com', accent:'#3D195B' },
     { name:'西甲', nameEn:'La Liga', flag:'🇪🇸', desc:'西班牙甲级联赛', url:'https://www.laliga.com', accent:'#E8782C' },
@@ -507,11 +786,6 @@ function renderResourceFootball() {
     { name:'欧冠', nameEn:'Champions League', flag:'🏆', desc:'欧洲冠军联赛', url:'https://www.uefa.com/uefachampionsleague', accent:'#0B1F4A' },
     { name:'欧联', nameEn:'Europa League', flag:'🇪🇺', desc:'欧洲联赛', url:'https://www.uefa.com/uefaeuropaleague', accent:'#FF6B00' },
     { name:'中超', nameEn:'CSL', flag:'🇨🇳', desc:'中国超级联赛', url:'https://www.dongqiudi.com/league/36', accent:'#C8102E' },
-  ];
-  const todayMatches = [
-    { home:'曼城', homeFlag:'🔵', away:'阿森纳', awayFlag:'🔴', time:'23:30', league:'英超', status:'未开始' },
-    { home:'皇马', homeFlag:'⚪', away:'巴萨', awayFlag:'🔴🔵', time:'04:00', league:'西甲', status:'未开始' },
-    { home:'拜仁', homeFlag:'🔴', away:'多特', awayFlag:'🟡', time:'00:30', league:'德甲', status:'未开始' },
   ];
   const links = [
     { title:'懂球帝', url:'https://www.dongqiudi.com', icon:'⚽', desc:'足球新闻、比分、赛事数据' },
@@ -528,26 +802,58 @@ function renderResourceFootball() {
         <button class="scale-btn" onclick="window.open('https://www.transfermarkt.com','_blank')">转会</button>
       </div>
     </div>`;
-  // Today's featured matches
-  html += `<div class="res-section-title">今日焦点 · Today's Matches</div><div class="res-link-list">`;
-  todayMatches.forEach(m => {
-    html += `<a class="res-link-item" href="https://www.dongqiudi.com/schedule" target="_blank" rel="noopener">
-      <div class="res-link-favicon" style="background:${leagues.find(l=>l.name===m.league)?.accent||'var(--bg-subtle)'}22; font-size:14px;">⚽</div>
-      <div class="res-link-info" style="display:flex; align-items:center; justify-content:space-between;">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span style="font-size:14px; font-weight:600;">${m.home}</span>
-          <span style="font-size:11px; color:var(--text-tertiary);">vs</span>
-          <span style="font-size:14px; font-weight:600;">${m.away}</span>
+
+  // My teams section
+  html += `<div class="my-teams-bar"><div class="my-teams-label">⚽ 我关注的主队</div><div class="my-teams-list" id="fb-my-teams">`;
+  if (fbFollowed.length > 0) {
+    fbFollowed.forEach(t => {
+      const team = FOOTBALL_TEAMS.find(c => c.id === t.provider_team_id) || { name:t.name, color:t.color||'#666', text:'#FFF' };
+      html += `<div class="my-team-chip" style="border-color:${team.color}44;">
+        ${renderTeamLogo(team, 28)}
+        <span class="my-team-name">${team.name}</span>
+        <button class="my-team-remove" onclick="event.stopPropagation();removeTeam(${t.id},'football')">✕</button>
+      </div>`;
+    });
+  }
+  html += `<button class="add-team-btn" onclick="openTeamSelector('football')">+ 添加主队</button>`;
+  html += `</div></div>`;
+
+  // My team's upcoming matches
+  if (myUpcoming.length > 0) {
+    html += `<div class="res-section-title">我的主队赛程 · My Schedule</div><div class="match-list">`;
+    myUpcoming.forEach(m => { html += renderMatchCard(m, followedIds); });
+    html += `</div>`;
+  }
+  // My team's recent results
+  if (myRecent.length > 0) {
+    html += `<div class="res-section-title">主队最近结果 · Results</div><div class="match-list">`;
+    myRecent.forEach(m => { html += renderMatchCard(m, followedIds); });
+    html += `</div>`;
+  }
+  // Featured match (highest scored)
+  if (allUpcoming.length > 0) {
+    const featured = allUpcoming[0];
+    html += `
+    <div class="featured-match" onclick="window.open('https://www.dongqiudi.com/schedule','_blank')">
+      <div class="featured-match-tag">
+        <span class="featured-match-live">🔥 焦点</span>
+        <span>${featured.league} · ${featured.round}</span>
+      </div>
+      <div class="featured-match-title">${featured.league}</div>
+      <div class="featured-match-teams">
+        <div class="featured-team">
+          ${renderTeamLogo(getTeamById(featured.home_id,'football'), 72)}
+          <div class="featured-team-name">${featured.home_name}</div>
         </div>
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span style="font-size:11px; padding:2px 8px; border-radius:4px; background:var(--bg-subtle); color:var(--accent);">${m.league}</span>
-          <span style="font-size:13px; font-weight:600; color:var(--text); font-variant-numeric:tabular-nums;">${m.time}</span>
+        <div class="featured-vs">VS</div>
+        <div class="featured-team">
+          ${renderTeamLogo(getTeamById(featured.away_id,'football'), 72)}
+          <div class="featured-team-name">${featured.away_name}</div>
         </div>
       </div>
-      <span class="res-link-arrow">→</span>
-    </a>`;
-  });
-  html += `</div>`;
+      <div class="featured-match-info">${featured.date.replace(/-/g,'/')} ${featured.time} · 点击查看详情</div>
+    </div>`;
+  }
   // League grid — prominent
   html += `<div class="res-section-title">热门联赛 · Leagues</div><div class="league-grid">`;
   leagues.forEach(l => {
@@ -746,6 +1052,25 @@ async function renderToday() {
   const weekdays = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
   const todayDisplay = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日`;
   let html = `<div class="today-header"><div class="today-date">${todayDisplay}<span class="day">${weekdays[now.getDay()]} · 今天</span></div><div class="today-stats"><div class="today-stat">今日 <strong>${todayEntries.length}</strong> 条</div><div class="today-stat">共 <strong>${all.length}</strong> 条记忆</div><div class="today-stat">电影 <strong>${totalMovies}</strong> · 书籍 <strong>${totalBooks}</strong></div></div></div>`;
+
+  // 我的赛程 (P3: My Schedule on homepage)
+  const followedTeams = await dbGetTeams();
+  if (followedTeams.length > 0) {
+    const cs2Ids = followedTeams.filter(t=>t.sport==='cs2').map(t=>t.provider_team_id);
+    const fbIds = followedTeams.filter(t=>t.sport==='football').map(t=>t.provider_team_id);
+    const cs2Matches = getMatchesForTeams(cs2Ids, 'cs2').filter(m=>m.status==='upcoming');
+    const fbMatches = getMatchesForTeams(fbIds, 'football').filter(m=>m.status==='upcoming');
+    const allMyMatches = [...cs2Matches, ...fbMatches].sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+    if (allMyMatches.length > 0) {
+      html += `<div class="my-schedule-section card-enter"><div class="section-label">⚡ 我的赛程 · My Schedule</div><div class="match-list">`;
+      allMyMatches.slice(0, 5).forEach(m => {
+        const allIds = [...cs2Ids, ...fbIds];
+        html += renderMatchCard(m, allIds);
+      });
+      html += `</div></div>`;
+    }
+  }
+
   if (todayEntries.length > 0) {
     html += '<div class="today-entries">';
     todayEntries.forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.06}s" onclick="openDetail(${e.id})">${renderEntryCard(e)}</div>`; });
@@ -1217,9 +1542,17 @@ async function renderSettings() {
       </div>
     </div>
     <div class="settings-section">
+      <div class="section-label">云端同步 · Cloud Sync (P4 架构预留)</div>
+      <div class="settings-card">
+        <div class="settings-row"><div><div class="settings-row-label">同步状态</div><div class="settings-row-desc">尚未连接云端，数据仅存储在本地 IndexedDB</div></div><div class="settings-row-value" style="color:var(--text-tertiary);">未启用</div></div>
+        <div class="settings-row"><div><div class="settings-row-label">未来架构</div><div class="settings-row-desc">Supabase Auth + PostgreSQL + Storage + RLS<br>本地 IndexedDB 作为缓存层，云端为主数据源</div></div><div class="settings-row-value" style="color:var(--text-tertiary);">规划中</div></div>
+        <div class="settings-row"><div><div class="settings-row-label">迁移策略</div><div class="settings-row-desc">启用云端时，自动迁移本地数据，不删除现有记录</div></div><div class="settings-row-value" style="color:var(--text-tertiary);">✓</div></div>
+      </div>
+    </div>
+    <div class="settings-section">
       <div class="section-label">关于</div>
       <div class="settings-card">
-        <div class="settings-row"><div class="settings-row-label">Personal Memory OS</div><div class="settings-row-value">Phase 1 · Local</div></div>
+        <div class="settings-row"><div class="settings-row-label">Personal Memory OS</div><div class="settings-row-value">Phase 3 · P3</div></div>
         <div class="settings-row"><div class="settings-row-label">存储方式</div><div class="settings-row-value">IndexedDB · 本地</div></div>
         <div class="settings-row"><div class="settings-row-label">数据不会离开你的设备</div><div class="settings-row-value">✓</div></div>
       </div>
