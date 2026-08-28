@@ -9,11 +9,17 @@ const TYPE_META = {
   book:   { emoji:'📖', label:'书籍', color:'var(--c-book)' },
   music:  { emoji:'🎵', label:'音乐', color:'var(--c-music)' },
   game:   { emoji:'🎮', label:'游戏', color:'var(--c-game)' },
+  custom: { emoji:'📝', label:'自定义', color:'var(--c-event)' },
   place:  { emoji:'📍', label:'地点', color:'var(--c-place)' },
   event:  { emoji:'✦', label:'事件', color:'var(--c-event)' },
   photo:  { emoji:'📷', label:'照片', color:'var(--c-photo)' },
   diary:  { emoji:'📝', label:'日记', color:'var(--c-event)' },
 };
+function localDate(value = new Date()) {
+  const offset = value.getTimezoneOffset() * 60000;
+  return new Date(value.getTime() - offset).toISOString().slice(0, 10);
+}
+function localTime(value = new Date()) { return value.toTimeString().slice(0, 5); }
 
 // === Genre → Color Palettes for poster fallbacks ===
 const GENRE_PALETTES = {
@@ -57,10 +63,7 @@ function blobToDataURL(blob) {
 
 async function downloadImageAsDataURL(url) {
   if (!url || url.startsWith('data:') || url.startsWith('blob:')) return url;
-  const isDouban = url.includes('doubanio.com') || url.includes('douban.com');
-  const proxies = isDouban
-    ? [`/img?url=${encodeURIComponent(url)}`]
-    : [
+  const proxies = [
         `https://images.weserv.nl/?url=${encodeURIComponent(url.replace(/^https?:\/\//, ''))}`,
         `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
         `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
@@ -82,12 +85,49 @@ async function downloadImageAsDataURL(url) {
   return null;
 }
 
-// === Douban API ===
-let doubanSearchTimer = null;
-let doubanSelectedMovie = null;
+// === Public provider adapters (no API keys) ===
+// UI talks only to this normalized layer so a provider can be replaced later.
+let workSearchTimer = null;
+let selectedMovie = null;
+let selectedMusic = null;
+let selectedGame = null;
+let workSearchResults = [];
+const ContentProvider = {
+  async searchMovie(query) {
+    const res = await fetch(`https://itunes.apple.com/search?media=movie&entity=movie&limit=8&term=${encodeURIComponent(query)}`);
+    if (!res.ok) throw new Error('电影数据源暂时不可用');
+    return (await res.json()).results.map(item => ({
+      external_id: String(item.trackId), title: item.trackName || item.collectionName || '', original_title: item.trackName || '',
+      poster: item.artworkUrl100?.replace('100x100bb', '600x600bb') || '', release_date: (item.releaseDate || '').slice(0, 10),
+      director: item.artistName || '', genres: item.primaryGenreName ? [item.primaryGenreName] : [], description: item.longDescription || item.shortDescription || '', provider: 'itunes',
+    }));
+  },
+  async searchBook(query) {
+    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=8`);
+    if (!res.ok) throw new Error('图书数据源暂时不可用');
+    return (await res.json()).items?.map(item => ({
+      external_id: item.id, title: item.volumeInfo.title || '', authors: (item.volumeInfo.authors || []).join(', '), publisher: item.volumeInfo.publisher || '',
+      publishedDate: item.volumeInfo.publishedDate || '', cover: item.volumeInfo.imageLinks?.thumbnail?.replace('http://', 'https://') || '',
+      isbn: item.volumeInfo.industryIdentifiers?.find(x => x.type === 'ISBN_13')?.identifier || item.volumeInfo.industryIdentifiers?.[0]?.identifier || '',
+      categories: item.volumeInfo.categories || [], description: item.volumeInfo.description || '', pageCount: item.volumeInfo.pageCount || 0, provider: 'google-books',
+    })) || [];
+  },
+  async searchMusic(query) {
+    const res = await fetch(`https://itunes.apple.com/search?media=music&entity=song&limit=8&term=${encodeURIComponent(query)}`);
+    if (!res.ok) throw new Error('音乐数据源暂时不可用');
+    return (await res.json()).results.map(item => ({ external_id:String(item.trackId), title:item.trackName || '', artist:item.artistName || '', album:item.collectionName || '', poster:item.artworkUrl100?.replace('100x100bb', '600x600bb') || '', release_date:(item.releaseDate || '').slice(0,10), genres:item.primaryGenreName?[item.primaryGenreName]:[], provider:'itunes' }));
+  },
+  async searchGame(query) {
+    const res = await fetch('https://www.freetogame.com/api/games');
+    if (!res.ok) throw new Error('游戏数据源暂时不可用');
+    const q = query.toLowerCase();
+    return (await res.json()).filter(item => item.title.toLowerCase().includes(q)).slice(0, 8).map(item => ({ external_id:String(item.id), title:item.title, platform:item.platform || '', genres:[item.genre, item.platform].filter(Boolean), description:item.short_description || '', cover:item.thumbnail || '', provider:'freetogame' }));
+  },
+};
 
 // === Photo Upload State ===
 let uploadedPhotos = [];
+let photoFailures = [];
 
 function renderPhotoUpload() {
   return `<div class="field-row">
@@ -106,18 +146,25 @@ async function handlePhotoSelect(input) {
   const files = Array.from(input.files);
   for (const file of files) {
     if (file.size > 10 * 1024 * 1024) { showToast('图片不能超过10MB: ' + file.name, 'error'); continue; }
-    const dataUrl = await fileToDataURL(file);
-    if (dataUrl) uploadedPhotos.push(dataUrl);
+    const pending = { name:file.name, progress:0, pending:true };
+    uploadedPhotos.push(pending); renderPhotoPreviews();
+    try {
+      const dataUrl = await fileToDataURL(file, progress => { pending.progress = progress; renderPhotoPreviews(); });
+      const index = uploadedPhotos.indexOf(pending);
+      if (index >= 0 && dataUrl) uploadedPhotos[index] = dataUrl;
+      else throw new Error('图片读取失败');
+    } catch (e) { uploadedPhotos = uploadedPhotos.filter(p => p !== pending); photoFailures.push(file); showToast(`图片上传失败：${file.name}`, 'error'); }
   }
   input.value = '';
   renderPhotoPreviews();
 }
 
-function fileToDataURL(file) {
-  return new Promise(resolve => {
+function fileToDataURL(file, onProgress = () => {}) {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result);
-    reader.onerror = () => resolve(null);
+    reader.onerror = () => reject(reader.error);
+    reader.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
     reader.readAsDataURL(file);
   });
 }
@@ -126,12 +173,15 @@ function renderPhotoPreviews() {
   const container = document.getElementById('photo-preview-list');
   if (!container) return;
   container.innerHTML = uploadedPhotos.map((src, i) =>
-    `<div class="photo-preview-item">
+    src?.pending ? `<div class="photo-preview-item"><span class="photo-upload-progress">${src.progress || 0}%</span></div>` : `<div class="photo-preview-item">
       <img src="${src}" onclick="this.parentElement.classList.toggle('expanded')">
       <button class="photo-remove-btn" onclick="removePhoto(${i})">✕</button>
     </div>`
   ).join('');
+  if (photoFailures.length) container.insertAdjacentHTML('beforeend', `<button class="error-state-retry" onclick="retryFailedPhotos()">重试 ${photoFailures.length} 张失败图片</button>`);
 }
+
+function retryFailedPhotos() { const files = photoFailures.splice(0); handlePhotoSelect({ files, value:'' }); }
 
 function removePhoto(idx) {
   uploadedPhotos.splice(idx, 1);
@@ -146,23 +196,7 @@ let selectedBook = null;
 async function searchGoogleBooks(query) {
   const q = query.trim();
   if (!q) return [];
-  try {
-    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=8`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    if (data.items) return data.items.map(item => ({
-      id: item.id,
-      title: item.volumeInfo.title || '',
-      authors: (item.volumeInfo.authors || []).join(', '),
-      publisher: item.volumeInfo.publisher || '',
-      publishedDate: item.volumeInfo.publishedDate || '',
-      cover: item.volumeInfo.imageLinks?.thumbnail?.replace('http://', 'https://') || item.volumeInfo.imageLinks?.smallThumbnail?.replace('http://', 'https://') || '',
-      isbn: item.volumeInfo.industryIdentifiers?.[0]?.identifier || '',
-      categories: item.volumeInfo.categories || [],
-      description: item.volumeInfo.description || '',
-      pageCount: item.volumeInfo.pageCount || 0,
-    }));
-  } catch(e) {}
+  try { return await ContentProvider.searchBook(q); } catch(e) { showProviderError(e.message); }
   return [];
 }
 
@@ -204,68 +238,54 @@ function selectBookResult(idx) {
   if (coverPreview && b.cover) coverPreview.innerHTML = `<img src="${b.cover}" style="width:60px;height:80px;object-fit:cover;border-radius:4px;">`;
 }
 
-async function searchDoubanMovieRaw(query) {
-  const q = query.trim();
-  if (!q) return [];
-  try {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    if (Array.isArray(data)) return data;
-  } catch(e) {}
-  return [];
+function showProviderError(message) {
+  const el = document.getElementById('douban-results');
+  if (el) el.innerHTML = `<div class="error-state">${message}<button class="error-state-retry" onclick="retryWorkSearch()">重试</button></div>`;
 }
-
-async function searchDoubanMovie(query) {
-  if (!query || query.trim().length < 1) { renderDoubanResults([]); return; }
+async function searchWork(type, query) {
+  if (!query?.trim()) { renderWorkResults(type, []); return; }
   const resultsEl = document.getElementById('douban-results');
   if (resultsEl) resultsEl.innerHTML = '<div class="douban-loading">搜索中...</div>';
-  const data = await searchDoubanMovieRaw(query);
-  renderDoubanResults(data);
+  try { workSearchResults = await ContentProvider[`search${type[0].toUpperCase()+type.slice(1)}`](query.trim()); renderWorkResults(type, workSearchResults); }
+  catch (e) { showProviderError(e.message || '搜索失败，请重试'); }
 }
-
-function debouncedDoubanSearch(val) {
-  clearTimeout(doubanSearchTimer);
-  doubanSearchTimer = setTimeout(() => searchDoubanMovie(val), 400);
-}
-
-function renderDoubanResults(results) {
+function debouncedWorkSearch(type, value) { clearTimeout(workSearchTimer); workSearchTimer = setTimeout(() => searchWork(type, value), 400); }
+function retryWorkSearch() { const input = document.querySelector('[data-work-search]'); if (input) searchWork(input.dataset.workSearch, input.value); }
+function renderWorkResults(type, results) {
   const el = document.getElementById('douban-results');
   if (!el) return;
   if (!results || results.length === 0) {
-    el.innerHTML = '<div class="douban-loading">没有找到相关电影</div>';
+    el.innerHTML = '<div class="douban-loading">没有找到相关结果，请换一个关键词</div>';
     return;
   }
   el.innerHTML = results.map((r, i) => `
-    <div class="douban-result-item" onclick="selectDoubanMovie(${i})">
-      <img src="${proxyImage(r.img)}" alt="${r.title}" loading="lazy" onerror="this.style.display='none'">
+    <div class="douban-result-item" onclick="selectWorkResult('${type}',${i})">
+      ${(r.poster || r.cover) ? `<img src="${proxyImage(r.poster || r.cover)}" alt="${r.title}" loading="lazy" onerror="this.style.display='none'">` : '<div class="douban-result-cover placeholder">✦</div>'}
       <div class="douban-result-info">
         <div class="douban-result-title">${r.title}</div>
-        <div class="douban-result-year">${r.year || ''} ${r.sub_title ? '· ' + r.sub_title : ''}</div>
-        <div class="douban-source-badge">来源：豆瓣电影</div>
+        <div class="douban-result-year">${r.artist || r.authors || r.director || r.platform || ''} ${r.release_date || r.publishedDate ? '· ' + (r.release_date || r.publishedDate).slice(0,4) : ''}</div>
+        <div class="douban-source-badge">来源：${r.provider}</div>
       </div>
     </div>
   `).join('');
-  window._doubanResults = results;
 }
-
-async function selectDoubanMovie(idx) {
-  const r = window._doubanResults && window._doubanResults[idx];
+async function selectWorkResult(type, idx) {
+  const r = workSearchResults[idx];
   if (!r) return;
-  doubanSelectedMovie = { ...r };
+  if (type === 'movie') selectedMovie = { ...r }; else if (type === 'music') selectedMusic = { ...r }; else if (type === 'game') selectedGame = { ...r };
   document.getElementById('capture-title').value = r.title;
+  const extra = document.getElementById('capture-extra'); if (extra) extra.value = r.artist || r.platform || '';
   document.querySelectorAll('.douban-result-item').forEach((el, i) => {
     el.classList.toggle('selected', i === idx);
   });
-  showToast('正在下载海报...', 'success');
-  const dataUrl = await downloadImageAsDataURL(r.img);
+  showToast('正在缓存封面...', 'success');
+  const imageKey = r.poster ? 'poster' : 'cover';
+  const dataUrl = await downloadImageAsDataURL(r[imageKey]);
   if (dataUrl) {
-    doubanSelectedMovie.img = dataUrl;
-    showToast('已导入：' + r.title + '，海报已缓存，可直接保存', 'success');
-  } else {
-    doubanSelectedMovie.img = r.img;
-    showToast('已导入：' + r.title + '（海报加载失败，将使用备用显示）', 'success');
+    r[imageKey] = dataUrl;
+    if (type === 'movie') selectedMovie = { ...r }; else if (type === 'music') selectedMusic = { ...r }; else if (type === 'game') selectedGame = { ...r };
   }
+  showToast('已导入：' + r.title, 'success');
 }
 
 async function fixSeedPosters() {
@@ -282,23 +302,15 @@ async function fixSeedPosters() {
       if (!imgUrl) continue;
       let dataUrl = null;
       if (imgUrl.includes('tmdb')) {
-        const results = await searchDoubanMovieRaw(entry.title);
-        if (results && results.length > 0) {
-          const match = results.find(r => r.title.includes(entry.title)) || results[0];
-          if (match.year && !entry.release_date) entry.release_date = match.year;
-          if (match.sub_title && !entry.original_title) entry.original_title = match.sub_title;
-          dataUrl = await downloadImageAsDataURL(match.img);
-        }
+        const results = await ContentProvider.searchMovie(entry.title);
+        const match = results.find(r => r.title.includes(entry.title)) || results[0];
+        if (match) { if (match.release_date && !entry.release_date) entry.release_date = match.release_date; if (match.original_title && !entry.original_title) entry.original_title = match.original_title; dataUrl = await downloadImageAsDataURL(match.poster); }
       } else {
         dataUrl = await downloadImageAsDataURL(imgUrl);
         if (!dataUrl && entry.type === 'movie' && entry.title) {
-          const results = await searchDoubanMovieRaw(entry.title);
-          if (results && results.length > 0) {
-            const match = results.find(r => r.title.includes(entry.title)) || results[0];
-            if (match.year && !entry.release_date) entry.release_date = match.year;
-            if (match.sub_title && !entry.original_title) entry.original_title = match.sub_title;
-            dataUrl = await downloadImageAsDataURL(match.img);
-          }
+          const results = await ContentProvider.searchMovie(entry.title);
+          const match = results.find(r => r.title.includes(entry.title)) || results[0];
+          if (match) { if (match.release_date && !entry.release_date) entry.release_date = match.release_date; if (match.original_title && !entry.original_title) entry.original_title = match.original_title; dataUrl = await downloadImageAsDataURL(match.poster); }
         }
       }
       if (dataUrl) {
@@ -345,7 +357,6 @@ const SEED_ENTRIES = [
 // === State ===
 let currentPage = 'today';
 let selectedType = null;
-let selectedRating = 0;
 let editingId = null;
 let activeFilters = new Set(['all']);
 let activeScale = 'month';
@@ -535,7 +546,9 @@ function getTeamById(id, sport) {
 }
 
 function getUnifiedMatches(sport) {
-  const schedule = sport === 'cs2' ? CS2_SCHEDULE : FOOTBALL_SCHEDULE;
+  const cache = getSportsCache()[sport];
+  const schedule = cache?.data && !needsSportsRefresh(sport) ? cache.data : (sport === 'cs2' ? CS2_SCHEDULE : FOOTBALL_SCHEDULE);
+  if (!cache || needsSportsRefresh(sport)) setSportsCache(sport, schedule);
   return schedule.map(m => {
     const home = getTeamById(m.home_id, sport) || { name:m.home_id, color:'#666', text:'#FFF' };
     const away = getTeamById(m.away_id, sport) || { name:m.away_id, color:'#666', text:'#FFF' };
@@ -590,7 +603,7 @@ function renderPosterWall(entry) {
   const extraInfo = entry.director || entry.author || '';
   let inner = `<div class="poster-fallback"><span class="pp-icon">${meta.emoji}</span><span class="pp-title">${entry.title}</span>${extraInfo ? `<span class="pp-meta">${extraInfo}</span>`:''}</div>`;
   if (entry.poster) inner += `<img src="${proxyImage(entry.poster)}" alt="${entry.title}" loading="lazy" onerror="this.style.display='none'">`;
-  return `<div class="poster-img" style="background:linear-gradient(135deg,${c1},${c2})">${inner}${entry.rating ? `<div class="poster-rating">★ ${entry.rating}.0</div>`:''}</div>`;
+  return `<div class="poster-img" style="background:linear-gradient(135deg,${c1},${c2})">${inner}</div>`;
 }
 
 function renderEntryPoster(entry) {
@@ -676,11 +689,10 @@ async function renderResourceCS() {
   const followedTeams = await dbGetTeams();
   const csFollowed = followedTeams.filter(t => t.sport === 'cs2');
   const followedIds = csFollowed.map(t => t.provider_team_id);
-  const allMatches = getUnifiedMatches('cs2');
   const myMatches = getMatchesForTeams(followedIds, 'cs2');
   const myUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => a.date.localeCompare(b.date));
   const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
-  const allUpcoming = allMatches.filter(m => m.status === 'upcoming').sort((a,b) => {
+  const allUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => {
     const sa = calculateMatchScore(a, followedIds), sb = calculateMatchScore(b, followedIds);
     return sb - sa;
   });
@@ -688,6 +700,7 @@ async function renderResourceCS() {
   let html = `
     <div class="page-header">
       <div class="page-title">CS赛事 · CS Esports</div>
+      <div class="page-subtitle">${getSportsLastSynced('cs2') ? `上次同步 ${new Date(getSportsLastSynced('cs2')).toLocaleString()}` : '等待首次同步'} · <button class="link-btn" onclick="refreshSports('cs2')">刷新</button></div>
     </div>`;
 
   // My teams section
@@ -698,11 +711,10 @@ async function renderResourceCS() {
       html += `<div class="my-team-chip" style="border-color:${team.color}44;">
         ${renderTeamLogo(team, 28)}
         <span class="my-team-name">${team.name}</span>
-        <button class="my-team-remove" onclick="event.stopPropagation();removeTeam(${t.id},'cs2')">✕</button>
       </div>`;
     });
   }
-  html += `<button class="add-team-btn" onclick="openTeamSelector('cs2')">+ 添加主队</button>`;
+  html += `<button class="add-team-btn" onclick="navigate('settings')">在设置中管理关注战队</button>`;
   html += `</div></div>`;
 
   // My team's upcoming matches (if any)
@@ -748,30 +760,7 @@ async function renderResourceCS() {
     </div>`;
   }
 
-  // All upcoming matches
-  html += `<div class="res-section-title">即将开始 · Upcoming</div><div class="match-list">`;
-  allUpcoming.slice(0, 8).forEach(m => {
-    html += renderMatchCard(m, followedIds);
-  });
-  html += `</div>`;
-
-  // Resource links
-  const links = [
-    { title:'HLTV', url:'https://www.hltv.org', icon:'🏆', desc:'CS2赛事排名、比赛日程、选手数据' },
-    { title:'Liquipedia CS', url:'https://liquipedia.net/counterstrike', icon:'📖', desc:'CS赛事百科、战队信息、选手资料' },
-    { title:'FACEIT', url:'https://www.faceit.com', icon:'🎮', desc:'CS2竞技平台，排位赛和锦标赛' },
-    { title:'ESL Play', url:'https://play.esl.com', icon:'⚡', desc:'ESL联赛报名和比赛管理' },
-  ];
-  html += `<div class="res-section-title">赛事资源</div><div class="res-grid">`;
-  links.forEach(l => {
-    html += `<a class="res-card" href="${l.url}" target="_blank" rel="noopener">
-      <div class="res-card-icon" style="background:rgba(107,91,149,0.12)">${l.icon}</div>
-      <div class="res-card-title">${l.title}</div>
-      <div class="res-card-desc">${l.desc}</div>
-      <div class="res-card-meta"><span class="res-card-tag">CS2</span><span>外部链接</span></div>
-    </a>`;
-  });
-  html += `</div>`;
+  if (!csFollowed.length) html += `<div class="empty-state"><div class="empty-state-icon">🎮</div><div class="empty-state-title">先关注一支战队</div><div class="empty-state-desc">设置关注后，这里只展示与你有关的下一场和最近比赛。</div><button class="placeholder-cta" onclick="navigate('settings')">打开 Sports 设置</button></div>`;
   document.getElementById('content').innerHTML = html;
 }
 
@@ -916,17 +905,21 @@ async function removeTeam(id, sport) {
   if (sport === 'cs2') await renderResourceCS();
   else await renderResourceFootball();
 }
+async function refreshSports(sport) {
+  setSportsCache(sport, getUnifiedMatches(sport));
+  showToast('已更新本地赛事缓存', 'success');
+  if (sport === 'cs2') await renderResourceCS(); else await renderResourceFootball();
+}
 
 // === Resources: Football ===
 async function renderResourceFootball() {
   const followedTeams = await dbGetTeams();
   const fbFollowed = followedTeams.filter(t => t.sport === 'football');
   const followedIds = fbFollowed.map(t => t.provider_team_id);
-  const allMatches = getUnifiedMatches('football');
   const myMatches = getMatchesForTeams(followedIds, 'football');
   const myUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => a.date.localeCompare(b.date));
   const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
-  const allUpcoming = allMatches.filter(m => m.status === 'upcoming').sort((a,b) => {
+  const allUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => {
     const sa = calculateMatchScore(a, followedIds), sb = calculateMatchScore(b, followedIds);
     return sb - sa;
   });
@@ -950,6 +943,7 @@ async function renderResourceFootball() {
   let html = `
     <div class="page-header">
       <div class="page-title">足球 · Football</div>
+      <div class="page-subtitle">${getSportsLastSynced('football') ? `上次同步 ${new Date(getSportsLastSynced('football')).toLocaleString()}` : '等待首次同步'} · <button class="link-btn" onclick="refreshSports('football')">刷新</button></div>
     </div>`;
 
   // My teams section
@@ -960,11 +954,10 @@ async function renderResourceFootball() {
       html += `<div class="my-team-chip" style="border-color:${team.color}44;">
         ${renderTeamLogo(team, 28)}
         <span class="my-team-name">${team.name}</span>
-        <button class="my-team-remove" onclick="event.stopPropagation();removeTeam(${t.id},'football')">✕</button>
       </div>`;
     });
   }
-  html += `<button class="add-team-btn" onclick="openTeamSelector('football')">+ 添加主队</button>`;
+  html += `<button class="add-team-btn" onclick="navigate('settings')">在设置中管理主队</button>`;
   html += `</div></div>`;
 
   // My team's upcoming matches
@@ -1003,28 +996,7 @@ async function renderResourceFootball() {
       <div class="featured-match-info">${featured.date.replace(/-/g,'/')} ${featured.time}</div>
     </div>`;
   }
-  // League grid — prominent
-  html += `<div class="res-section-title">热门联赛 · Leagues</div><div class="league-grid">`;
-  leagues.forEach(l => {
-    html += `<div class="league-card" style="border-color:${l.accent}22;">
-      <div class="league-card-flag">${l.flag}</div>
-      <div class="league-card-name" style="color:${l.accent};">${l.name}</div>
-      <div class="league-card-name-en">${l.nameEn}</div>
-      <div class="league-card-desc">${l.desc}</div>
-    </div>`;
-  });
-  html += `</div>`;
-  // Data resources
-  html += `<div class="res-section-title">数据资源 · Data</div><div class="res-grid">`;
-  links.forEach(l => {
-    html += `<a class="res-card" href="${l.url}" target="_blank" rel="noopener">
-      <div class="res-card-icon" style="background:rgba(90,139,173,0.12)">${l.icon}</div>
-      <div class="res-card-title">${l.title}</div>
-      <div class="res-card-desc">${l.desc}</div>
-      <div class="res-card-meta"><span class="res-card-tag">足球</span><span>外部链接</span></div>
-    </a>`;
-  });
-  html += `</div>`;
+  if (!fbFollowed.length) html += `<div class="empty-state"><div class="empty-state-icon">⚽</div><div class="empty-state-title">先设置你的主队</div><div class="empty-state-desc">设置主队后，这里只展示相关的赛程和比赛结果。</div><button class="placeholder-cta" onclick="navigate('settings')">打开 Sports 设置</button></div>`;
   document.getElementById('content').innerHTML = html;
 }
 
@@ -1181,12 +1153,11 @@ function renderEntryCard(e, showYear = false) {
   const meta = TYPE_META[e.type] || TYPE_META.event;
   const date = getEntryDate(e);
   const time = getEntryTime(e);
-  const rating = e.rating ? `<span class="entry-rating">${'★'.repeat(e.rating)}${'☆'.repeat(5-e.rating)}</span>` : '';
   const yearLabel = showYear && date ? `<span>${date.slice(0,4)}</span>` : '';
   let poster = renderEntryPoster(e);
   let preview = e.review || e.content || e.notes || e.note || '';
   const tagsHtml = e.tags && e.tags.length ? `<span>${e.tags.slice(0,3).join(' · ')}</span>` : '';
-  return `<div class="entry-card type-${e.type}"><div class="entry-time">${time || ''}</div><div class="entry-icon">${meta.emoji}</div><div class="entry-body"><div class="entry-title">${e.title}</div>${preview ? `<div class="entry-content-preview">${preview}</div>`:''}<div class="entry-meta">${rating}${yearLabel}${tagsHtml}</div></div>${poster}</div>`;
+  return `<div class="entry-card type-${e.type}"><div class="entry-time">${time || ''}</div><div class="entry-icon">${meta.emoji}</div><div class="entry-body"><div class="entry-title">${e.title}</div>${preview ? `<div class="entry-content-preview">${preview}</div>`:''}<div class="entry-meta">${yearLabel}${tagsHtml}</div></div>${poster}</div>`;
 }
 
 // === Today ===
@@ -1339,7 +1310,6 @@ async function renderLibraryTab(tab) {
 
   if (tab === 'movie') {
     window._movieItems = items;
-    const avgRating = items.length ? (items.reduce((s,m)=>s+(m.rating||0),0)/items.length).toFixed(1) : '0.0';
     const thisYear = items.filter(m => (getEntryDate(m)||'').slice(0,4) === String(new Date().getFullYear())).length;
     let html = `
       <div class="lib-toolbar">
@@ -1347,16 +1317,9 @@ async function renderLibraryTab(tab) {
           <svg class="lib-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" class="lib-search-input" id="movie-search" placeholder="搜索电影名、导演..." oninput="filterMovieWall()">
         </div>
-        <div class="lib-filter-chips">
-          <button class="lib-filter-chip active" data-min-rating="0" onclick="setMovieRatingFilter(0,this)">全部</button>
-          <button class="lib-filter-chip" data-min-rating="5" onclick="setMovieRatingFilter(5,this)">★ 5</button>
-          <button class="lib-filter-chip" data-min-rating="4" onclick="setMovieRatingFilter(4,this)">★ 4+</button>
-          <button class="lib-filter-chip" data-min-rating="3" onclick="setMovieRatingFilter(3,this)">★ 3+</button>
-        </div>
       </div>
       <div class="lib-stats-bar">
         <div class="lib-stat"><span class="lib-stat-num">${items.length}</span><span class="lib-stat-label">部</span></div>
-        <div class="lib-stat"><span class="lib-stat-num">${avgRating}</span><span class="lib-stat-label">平均评分</span></div>
         <div class="lib-stat"><span class="lib-stat-num">${thisYear}</span><span class="lib-stat-label">今年看过</span></div>
       </div>`;
     content.innerHTML = html + '<div id="movie-wall-content"></div>';
@@ -1380,7 +1343,7 @@ async function renderLibraryTab(tab) {
   } else if (tab === 'music') {
     let html = '<div class="books-grid">';
     items.forEach(m => {
-      html += `<div class="book-card" onclick="openDetail(${m.id})"><div class="entry-icon" style="width:64px;height:64px;border-radius:8px;background:rgba(201,123,99,0.12);color:var(--c-music);font-size:28px;">🎵</div><div class="book-info"><div class="book-title">${m.title}</div><div class="book-author">${m.artist||''}</div><div class="book-date">${(m.date||'').replace(/-/g,'/')}</div>${m.rating?`<div class="book-rating" style="color:var(--c-music)">${'★'.repeat(m.rating)}${'☆'.repeat(5-m.rating)}</div>`:''}</div></div>`;
+      html += `<div class="book-card" onclick="openDetail(${m.id})"><div class="entry-icon" style="width:64px;height:64px;border-radius:8px;background:rgba(201,123,99,0.12);color:var(--c-music);font-size:28px;">🎵</div><div class="book-info"><div class="book-title">${m.title}</div><div class="book-author">${m.artist||''}</div><div class="book-date">${(m.date||'').replace(/-/g,'/')}</div></div></div>`;
     });
     content.innerHTML = html ? html + '</div>' : '<div class="empty-state"><div class="empty-state-icon">🎵</div><div class="empty-state-title">还没有音乐记录</div><div class="empty-state-desc">点击 + 按钮，记录你听过的音乐</div></div>';
   } else if (tab === 'game') {
@@ -1389,13 +1352,13 @@ async function renderLibraryTab(tab) {
       const coverHtml = g.cover
         ? `<img class="book-cover" src="${proxyImage(g.cover)}" alt="${g.title}" loading="lazy" onerror="this.style.display='none'">`
         : `<div class="book-cover" style="background:rgba(90,139,173,0.12);display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--c-game);">🎮</div>`;
-      html += `<div class="book-card" onclick="openDetail(${g.id})">${coverHtml}<div class="book-info"><div class="book-title">${g.title}</div><div class="book-author">${g.platform||''}</div><div class="book-date">${g.finish_date?'通关于 '+g.finish_date.replace(/-/g,'/'):'进行中 · '+g.hours+'h'}</div>${g.rating?`<div class="book-rating" style="color:var(--c-game)">${'★'.repeat(g.rating)}${'☆'.repeat(5-g.rating)}</div>`:''}</div></div>`;
+      html += `<div class="book-card" onclick="openDetail(${g.id})">${coverHtml}<div class="book-info"><div class="book-title">${g.title}</div><div class="book-author">${g.platform||''}</div><div class="book-date">${g.finish_date?'完成于 '+g.finish_date.replace(/-/g,'/'):'进行中'}</div></div></div>`;
     });
     content.innerHTML = html + '</div>' || '<div class="search-empty">还没有游戏记录</div>';
   } else if (tab === 'place') {
     let html = '<div class="books-grid">';
     items.forEach(p => {
-      html += `<div class="book-card type-place" onclick="openDetail(${p.id})"><div class="entry-icon" style="width:64px;height:90px;border-radius:6px;background:rgba(201,169,97,0.15);color:var(--c-place);font-size:28px;display:flex;align-items:center;justify-content:center;">📍</div><div class="book-info"><div class="book-title">${p.title}</div><div class="book-author">${p.location||''}</div><div class="book-date">${(p.date||'').replace(/-/g,'/')}</div>${p.rating?`<div class="book-rating" style="color:var(--c-place)">${'★'.repeat(p.rating)}${'☆'.repeat(5-p.rating)}</div>`:''}</div></div>`;
+      html += `<div class="book-card type-place" onclick="openDetail(${p.id})"><div class="entry-icon" style="width:64px;height:90px;border-radius:6px;background:rgba(201,169,97,0.15);color:var(--c-place);font-size:28px;display:flex;align-items:center;justify-content:center;">📍</div><div class="book-info"><div class="book-title">${p.title}</div><div class="book-author">${p.location||''}</div><div class="book-date">${(p.date||'').replace(/-/g,'/')}</div></div></div>`;
     });
     content.innerHTML = html ? html + '</div>' : '<div class="empty-state"><div class="empty-state-icon">📍</div><div class="empty-state-title">还没有地点记录</div><div class="empty-state-desc">点击 + 按钮，记录你去过的地方</div></div>';
   }
@@ -1425,8 +1388,6 @@ function renderMovieWallContent(items) {
 
 function filterMovieWall() {
   const q = (document.getElementById('movie-search')?.value || '').toLowerCase().trim();
-  const activeChip = document.querySelector('.lib-filter-chip.active');
-  const minRating = activeChip ? parseInt(activeChip.dataset.minRating) : 0;
   let filtered = window._movieItems || [];
   if (q) filtered = filtered.filter(m => {
     return (m.title||'').toLowerCase().includes(q) ||
@@ -1434,14 +1395,7 @@ function filterMovieWall() {
            (m.director||'').toLowerCase().includes(q) ||
            (m.genres||[]).some(g => g.toLowerCase().includes(q));
   });
-  if (minRating > 0) filtered = filtered.filter(m => (m.rating || 0) >= minRating);
   renderMovieWallContent(filtered);
-}
-
-function setMovieRatingFilter(rating, btn) {
-  document.querySelectorAll('.lib-filter-chip').forEach(c => c.classList.remove('active'));
-  btn.classList.add('active');
-  filterMovieWall();
 }
 
 // === Book Wall Content Renderer ===
@@ -1495,7 +1449,7 @@ function renderBookCard(b, delay) {
       ? '<span class="book-status-badge reading">在读</span>'
       : '<span class="book-status-badge want">想读</span>';
   const dateStr = b.finish_date ? '读完于 ' + b.finish_date.replace(/-/g,'/') : b.start_date ? '开始于 ' + b.start_date.replace(/-/g,'/') : '未开始';
-  return `<div class="book-card card-enter" style="animation-delay:${delay||'0'}s" onclick="openDetail(${b.id})">${coverHtml}<div class="book-info">${statusBadge}<div class="book-title">${b.title}</div><div class="book-author">${b.author||''}</div><div class="book-date">${dateStr}</div>${b.rating?`<div class="book-rating">${'★'.repeat(b.rating)}${'☆'.repeat(5-b.rating)}</div>`:''}</div></div>`;
+  return `<div class="book-card card-enter" style="animation-delay:${delay||'0'}s" onclick="openDetail(${b.id})">${coverHtml}<div class="book-info">${statusBadge}<div class="book-title">${b.title}</div><div class="book-author">${b.author||''}</div><div class="book-date">${dateStr}</div></div></div>`;
 }
 
 function filterBookWall(status, btn) {
@@ -1572,11 +1526,6 @@ async function renderYearReview(yearOverride) {
   const typeCounts = {};
   yearEntries.forEach(e => { typeCounts[e.type] = (typeCounts[e.type] || 0) + 1; });
 
-  // Rating stats
-  const ratedItems = yearEntries.filter(e => e.rating);
-  const avgRating = ratedItems.length ? (ratedItems.reduce((s,e) => s + e.rating, 0) / ratedItems.length).toFixed(1) : '—';
-  const topRated = sortEntries(ratedItems).slice(0, 5);
-
   // Monthly activity
   const monthMap = {};
   for (let i = 0; i < 12; i++) monthMap[i] = 0;
@@ -1600,7 +1549,6 @@ async function renderYearReview(yearOverride) {
       <div class="yr-hero-content">
         <div class="yr-hero-year">${year}</div>
         <div class="yr-hero-summary">${yearEntries.length} 条记忆 · ${movies.length} 部电影 · ${books.length} 本书 · ${events.length} 条记录</div>
-        <div class="yr-hero-rating">平均评分 ${avgRating} ★</div>
       </div>
     </div>`;
 
@@ -1629,21 +1577,6 @@ async function renderYearReview(yearOverride) {
     html += `<div class="yr-chart-bar" title="${mn}: ${monthMap[i]} 条"><div class="yr-chart-fill" style="height:${Math.max(h,3)}%;animation-delay:${i*0.04}s"></div><div class="yr-chart-label">${mn.replace('月','')}</div></div>`;
   });
   html += `</div></div>`;
-
-  // Top rated
-  if (topRated.length > 0) {
-    html += `<div class="yr-section card-enter"><div class="detail-section-title">评分最高 · Top Rated</div><div class="yr-top-list">`;
-    topRated.forEach((e, i) => {
-      const meta = TYPE_META[e.type] || TYPE_META.event;
-      html += `<div class="yr-top-item" onclick="openDetail(${e.id})">
-        <div class="yr-top-rank">${i+1}</div>
-        ${e.poster ? `<img class="yr-top-poster" src="${proxyImage(e.poster)}" alt="${e.title}" loading="lazy" onerror="this.style.display='none'">` : `<div class="yr-top-poster" style="background:${meta.color}22;display:flex;align-items:center;justify-content:center;font-size:20px;">${meta.emoji}</div>`}
-        <div class="yr-top-info"><div class="yr-top-title">${e.title}</div><div class="yr-top-meta">${meta.label} · ${(getEntryDate(e)||'').replace(/-/g,'/')}</div></div>
-        <div class="yr-top-rating">${'★'.repeat(e.rating)}</div>
-      </div>`;
-    });
-    html += `</div></div>`;
-  }
 
   // Type breakdown
   const typeEntries = Object.entries(typeCounts).sort((a,b) => b[1] - a[1]);
@@ -1688,6 +1621,14 @@ async function renderSettings() {
         <div class="settings-row"><div><div class="settings-row-label">修复海报缓存</div><div class="settings-row-desc">重新下载所有海报图片并本地缓存</div></div><button class="btn btn-ghost" onclick="fixPostersManual()">修复</button></div>
         <div class="settings-row"><div><div class="settings-row-label">导出数据</div><div class="settings-row-desc">下载 JSON 格式的完整记忆档案</div></div><button class="btn btn-ghost" onclick="exportData()">导出</button></div>
         <div class="settings-row"><div><div class="settings-row-label" style="color:var(--danger);">清除所有数据</div><div class="settings-row-desc">删除全部记忆，不可恢复</div></div><button class="btn btn-ghost" style="color:var(--danger);" onclick="confirmClearData()">清除</button></div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="section-label">Sports 关注管理</div>
+      <div class="settings-card">
+        <div class="settings-row"><div><div class="settings-row-label">足球主队</div><div class="settings-row-desc">搜索、选择和管理你的足球主队；资源页只显示相关赛事。</div></div><button class="btn btn-ghost" onclick="openTeamSelector('football')">管理</button></div>
+        <div class="settings-row"><div><div class="settings-row-label">CS2 关注战队</div><div class="settings-row-desc">搜索、选择和管理你关注的 CS2 战队。</div></div><button class="btn btn-ghost" onclick="openTeamSelector('cs2')">管理</button></div>
+        <div class="settings-row"><div><div class="settings-row-label">赛事缓存</div><div class="settings-row-desc">本地缓存每个项目的最后同步时间；手动刷新不会请求付费服务。</div></div><div class="settings-row-value">本地</div></div>
       </div>
     </div>
     <div class="settings-section">
@@ -1829,10 +1770,11 @@ function openCapture(entryId) {
     document.getElementById('step-type').style.display = 'block';
     document.getElementById('step-form').style.display = 'none';
     selectedType = null;
-    selectedRating = 0;
-    doubanSelectedMovie = null;
+    selectedMovie = null;
     selectedBook = null;
-    uploadedPhotos = [];
+    selectedMusic = null;
+    selectedGame = null;
+    uploadedPhotos = []; photoFailures = [];
   }
   document.getElementById('capture-modal').classList.add('show');
 }
@@ -1845,22 +1787,21 @@ function backToTypeSelect() {
 
 function selectType(type) {
   selectedType = type;
-  selectedRating = 0;
-  uploadedPhotos = [];
+  uploadedPhotos = []; photoFailures = [];
   const meta = TYPE_META[type] || {};
   document.getElementById('modal-title').textContent = meta.label || '记录';
   document.getElementById('step-type').style.display = 'none';
   document.getElementById('step-form').style.display = 'block';
   const container = document.getElementById('workflow-container');
-  const today = new Date().toISOString().slice(0,10);
-  const now = new Date().toTimeString().slice(0,5);
+  const today = localDate();
+  const now = localTime();
 
   if (type === 'movie') {
     container.innerHTML = `
       <div class="douban-search">
         <div class="field-label" style="margin-bottom:8px;">🔍 搜索电影，自动导入信息</div>
         <div class="douban-search-box">
-          <input type="text" class="field-input" id="douban-input" placeholder="输入电影名，如：奥本海默..." oninput="debouncedDoubanSearch(this.value)">
+          <input type="text" class="field-input" id="douban-input" data-work-search="movie" placeholder="输入电影名，如：奥本海默..." oninput="debouncedWorkSearch('movie',this.value)">
         </div>
         <div id="douban-results" class="douban-results"></div>
       </div>
@@ -1914,24 +1855,27 @@ function selectType(type) {
           </div>
         </div>
         <div class="field-row"><div class="field-label">地点（可选）</div><input type="text" class="field-input" id="capture-extra" placeholder="地点"></div>
+        <div class="field-row"><div class="field-label">发生时间</div><input type="datetime-local" class="field-input" id="capture-event-at" value="${today}T${now}"></div>
         ${renderPhotoUpload()}
       </div>`;
     document.getElementById('capture-title').focus();
   } else if (type === 'music') {
     container.innerHTML = `
+      <div class="douban-search"><div class="field-label" style="margin-bottom:8px;">🔍 搜索歌曲，自动导入资料</div><div class="douban-search-box"><input type="text" class="field-input" data-work-search="music" placeholder="歌曲、专辑或艺人" oninput="debouncedWorkSearch('music',this.value)"></div><div id="douban-results" class="douban-results"></div></div>
       <div class="capture-fields show" id="capture-fields">
-        <div class="field-row"><div class="field-label">曲目</div><input type="text" class="field-input" id="capture-title" placeholder="歌曲名"></div>
-        <div class="field-row"><div class="field-label">艺人 / 专辑</div><input type="text" class="field-input" id="capture-extra" placeholder="艺人 / 专辑"></div>
+        <div class="field-row"><div class="field-label">曲目</div><input type="text" class="field-input" id="capture-title" placeholder="搜索后自动填充" readonly></div>
+        <div class="field-row"><div class="field-label">艺人</div><input type="text" class="field-input" id="capture-extra" placeholder="搜索后自动填充" readonly></div>
         <div class="field-row"><div class="field-label">感想</div><textarea class="field-textarea" id="capture-review" placeholder="听后感..."></textarea></div>
         ${renderPhotoUpload()}
       </div>`;
     document.getElementById('capture-title').focus();
   } else if (type === 'game') {
     container.innerHTML = `
+      <div class="douban-search"><div class="field-label" style="margin-bottom:8px;">🔍 搜索游戏，自动导入资料</div><div class="douban-search-box"><input type="text" class="field-input" data-work-search="game" placeholder="输入游戏名" oninput="debouncedWorkSearch('game',this.value)"></div><div id="douban-results" class="douban-results"></div></div>
       <div class="capture-fields show" id="capture-fields">
-        <div class="field-row"><div class="field-label">游戏名</div><input type="text" class="field-input" id="capture-title" placeholder="游戏名"></div>
-        <div class="field-row"><div class="field-label">平台</div><input type="text" class="field-input" id="capture-extra" placeholder="PS5 / PC / Switch..."></div>
-        <div class="field-row"><div class="field-label">评测</div><textarea class="field-textarea" id="capture-review" placeholder="游戏体验..."></textarea></div>
+        <div class="field-row"><div class="field-label">游戏名</div><input type="text" class="field-input" id="capture-title" placeholder="搜索后自动填充" readonly></div>
+        <div class="field-row"><div class="field-label">平台</div><input type="text" class="field-input" id="capture-extra" placeholder="搜索后自动填充" readonly></div>
+        <div class="field-row"><div class="field-label">体验</div><textarea class="field-textarea" id="capture-review" placeholder="游戏体验..."></textarea></div>
         ${renderPhotoUpload()}
       </div>`;
     document.getElementById('capture-title').focus();
@@ -1956,8 +1900,8 @@ function selectType(type) {
 }
 
 function resetCaptureForm() {
-  selectedType = null; selectedRating = 0; uploadedPhotos = [];
-  doubanSelectedMovie = null; selectedBook = null;
+  selectedType = null; uploadedPhotos = []; photoFailures = [];
+  selectedMovie = null; selectedBook = null; selectedMusic = null; selectedGame = null;
   document.getElementById('workflow-container').innerHTML = '';
 }
 
@@ -1969,7 +1913,7 @@ async function loadEntryForEdit(id) {
   if (e.title) { const t = document.getElementById('capture-title'); if (t) t.value = e.title; }
   const extraMap = { book:e.author, music:e.artist, game:e.platform, place:e.location, event:e.location, diary:e.mood };
   if (extraMap[e.type] && document.getElementById('capture-extra')) document.getElementById('capture-extra').value = extraMap[e.type];
-  doubanSelectedMovie = (e.type === 'movie' && e.poster) ? { img: e.poster, title: e.title, year: e.release_date || '', sub_title: e.original_title || '' } : null;
+  selectedMovie = (e.type === 'movie' && e.poster) ? { poster: e.poster, title: e.title, release_date: e.release_date || '', original_title: e.original_title || '' } : null;
   selectedBook = (e.type === 'book' && e.cover) ? { cover:e.cover, authors:e.author, publisher:e.publisher, isbn:e.isbn, categories:e.genres, description:e.book_description, pageCount:e.page_count } : null;
   if (e.type === 'event' && e.category) setEventCategory(e.category);
   if (e.type === 'book' && e.reading_status) setReadingStatus(e.reading_status);
@@ -1998,11 +1942,6 @@ function setEventCategory(cat) {
 
 function closeCapture() { document.getElementById('capture-modal').classList.remove('show'); editingId = null; document.getElementById('back-btn').style.display = ''; }
 
-function setRating(val) {
-  selectedRating = val;
-  document.querySelectorAll('.rating-star').forEach(s => { const v = parseInt(s.dataset.val); s.classList.toggle('active', v <= val); s.textContent = v <= val ? '★' : '☆'; });
-}
-
 async function saveCapture() {
   const titleEl = document.getElementById('capture-title');
   const reviewEl = document.getElementById('capture-review');
@@ -2013,9 +1952,11 @@ async function saveCapture() {
   const review = reviewEl ? reviewEl.value.trim() : '';
   const extra = extraEl ? extraEl.value.trim() : '';
   const now = new Date();
-  const today = now.toISOString().slice(0,10);
-  const time = now.toTimeString().slice(0,5);
-  const photos = [...uploadedPhotos];
+  const eventAtEl = document.getElementById('capture-event-at');
+  const eventAt = eventAtEl?.value ? new Date(eventAtEl.value) : now;
+  const today = localDate(eventAt);
+  const time = localTime(eventAt);
+  const photos = uploadedPhotos.filter(p => typeof p === 'string');
 
   // Build the new entry for entries[] (append model)
   const newEntry = { id: Date.now(), created_at: now.toISOString(), content: review, photos };
@@ -2041,10 +1982,8 @@ async function saveCapture() {
     const merged = { ...ex };
     merged.entries = entries;
     // Update base fields if changed by search
-    if (selectedType === 'movie' && doubanSelectedMovie) {
-      merged.poster = doubanSelectedMovie.img;
-      if (doubanSelectedMovie.year) merged.release_date = doubanSelectedMovie.year;
-      if (doubanSelectedMovie.sub_title) merged.original_title = doubanSelectedMovie.sub_title;
+    if (selectedType === 'movie' && selectedMovie) {
+      Object.assign(merged, { poster:selectedMovie.poster, release_date:selectedMovie.release_date, original_title:selectedMovie.original_title, director:selectedMovie.director, genres:selectedMovie.genres, description:selectedMovie.description, provider:selectedMovie.provider, external_id:selectedMovie.external_id });
     }
     if (selectedType === 'book' && selectedBook) {
       merged.cover = selectedBook.cover;
@@ -2064,8 +2003,8 @@ async function saveCapture() {
     if (selectedType === 'diary' && extra) merged.mood = extra;
     if (selectedType === 'event' && extra) merged.location = extra;
     if ((selectedType === 'music' || selectedType === 'game' || selectedType === 'place') && extra) {
-      if (selectedType === 'music') merged.artist = extra;
-      if (selectedType === 'game') merged.platform = extra;
+      if (selectedType === 'music') Object.assign(merged, selectedMusic || { artist:extra });
+      if (selectedType === 'game') Object.assign(merged, selectedGame || { platform:extra });
       if (selectedType === 'place') merged.location = extra;
     }
     merged.id = editingId;
@@ -2080,11 +2019,7 @@ async function saveCapture() {
     const entry = { type: selectedType, title, created_at: now.toISOString(), updated_at: now.toISOString(), entries: [newEntry] };
     if (selectedType === 'movie') {
       entry.watch_date = today; entry.watch_time = time;
-      if (doubanSelectedMovie) {
-        entry.poster = doubanSelectedMovie.img;
-        if (doubanSelectedMovie.year) entry.release_date = doubanSelectedMovie.year;
-        if (doubanSelectedMovie.sub_title) entry.original_title = doubanSelectedMovie.sub_title;
-      }
+      if (selectedMovie) Object.assign(entry, selectedMovie);
     } else if (selectedType === 'book') {
       if (readingStatus === 'done') { entry.finish_date = today; entry.reading_status = 'done'; }
       else if (readingStatus === 'reading') { entry.start_date = today; entry.reading_status = 'reading'; }
@@ -2098,7 +2033,6 @@ async function saveCapture() {
         entry.book_description = selectedBook.description;
         entry.page_count = selectedBook.pageCount;
       }
-      if (extra) entry.author = extra;
     } else if (selectedType === 'diary') {
       entry.event_date = today; entry.event_time = time;
       if (extra) entry.mood = extra;
@@ -2108,9 +2042,9 @@ async function saveCapture() {
       if (extra) entry.location = extra;
       if (eventCategory) entry.category = eventCategory;
     } else if (selectedType === 'music') {
-      entry.date = today; if (extra) entry.artist = extra;
+      entry.date = today; Object.assign(entry, selectedMusic || {});
     } else if (selectedType === 'game') {
-      entry.start_date = today; if (extra) entry.platform = extra;
+      entry.start_date = today; Object.assign(entry, selectedGame || {});
     } else if (selectedType === 'place') {
       entry.date = today; if (extra) entry.location = extra;
     } else {
