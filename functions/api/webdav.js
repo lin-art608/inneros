@@ -33,7 +33,9 @@ export async function onRequestPost(context) {
 
   try {
     if (op === 'test') {
-      const res = await fetch(url, { method: 'PROPFIND', headers: { ...headers, 'Depth': '0' } });
+      // 探测父目录而非备份文件本身：首次使用时文件尚不存在，坚果云对"父目录缺失"按协议返回 409
+      const parent = url.replace(/\/[^/]*\/?$/, '/') || url;
+      const res = await fetch(parent, { method: 'PROPFIND', headers: { ...headers, 'Depth': '0' } });
       return json({ ok: res.ok, status: res.status });
     }
 
@@ -74,6 +76,7 @@ export function friendlyError(status) {
     403: '该账号没有 WebDAV 权限（检查应用密码是否被撤销）',
     405: '地址应指向一个文件路径（以 .json 结尾），而不是目录',
     520: '坚果云风控拦截了云服务器请求：线上版暂无法直连坚果云，请在本地版（localhost）使用云同步，或改用不拦截数据中心 IP 的 WebDAV 服务',
+    409: '目标目录暂时冲突，请再点一次（上传会自动创建目录）',
   };
   return tips[status] || `WebDAV ${status}`;
 }
