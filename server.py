@@ -93,8 +93,43 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Methods', 'GET')
         super().end_headers()
 
+    API_ORIGIN = 'https://inneros.pages.dev'
+
+    def _proxy_api(self):
+        # 本地版反代线上 API：云端账户/同步后端只有 Cloudflare 能访问 D1，
+        # 本地 UI 请求同源 /api/auth、/api/sync，由这里转发到 inneros.pages.dev
+        length = int(self.headers.get('Content-Length') or 0)
+        body = self.rfile.read(length) if length else None
+        req = urllib.request.Request(self.API_ORIGIN + self.path, data=body, method=self.command)
+        for h in ('Content-Type', 'Cookie', 'Accept'):
+            v = self.headers.get(h)
+            if v:
+                req.add_header(h, v)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                status, payload = resp.status, resp.read()
+                set_cookies = resp.headers.get_all('Set-Cookie') or []
+        except urllib.error.HTTPError as e:
+            status, payload = e.code, e.read()
+            set_cookies = e.headers.get_all('Set-Cookie') or []
+        except Exception as e:
+            self._send_json({'error': '线上 API 不可达: ' + str(e)}, 502)
+            return
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Cache-Control', 'no-cache')
+        for sc in set_cookies:
+            # 去掉 Domain 属性，让会话 Cookie 落在 localhost/局域网地址上
+            parts = [p for p in sc.split(';') if not p.strip().lower().startswith('domain=')]
+            self.send_header('Set-Cookie', ';'.join(parts))
+        self.end_headers()
+        if body is not None or payload:
+            self.wfile.write(payload)
+
     def do_GET(self):
-        if self.path.startswith('/img?url='):
+        if self.path.startswith('/api/auth') or self.path.startswith('/api/sync'):
+            self._proxy_api()
+        elif self.path.startswith('/img?url='):
             self.handle_image_proxy()
         elif self.path.startswith('/api/sports'):
             self.handle_sports()
@@ -279,7 +314,9 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
         }
 
     def do_POST(self):
-        if self.path.startswith('/api/webdav'):
+        if self.path.startswith('/api/auth') or self.path.startswith('/api/sync'):
+            self._proxy_api()
+        elif self.path.startswith('/api/webdav'):
             self.handle_webdav()
         else:
             self.send_error(404)

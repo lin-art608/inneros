@@ -7,7 +7,21 @@
 
 ## [Unreleased]
 
-（暂无）
+### S1（进行中）：多账户云同步 v2 —— D1 + 操作日志协议
+
+#### Added（2026-08-29 深夜，S1 后端阶段）
+- `functions/_lib.js`：D1 schema 自动建表（7 张表，IF NOT EXISTS 幂等）、PBKDF2-SHA256(10万次) 密码哈希、httpOnly 会话 Cookie（90天）
+- `functions/api/auth/[action].js`：注册/登录/登出/me（重复邮箱 409、错误凭据 401）
+- `functions/api/sync/[action].js`：操作日志同步协议——push 幂等批量（op_id 去重）+ 墓碑删除 + 冲突双版本保留（_conflicts）+ 附件行级存储；pull 按设备游标增量回放（排除本机操作）
+- `server.py`：/api/auth、/api/sync 反代线上 API（本地版与线上版行为一致，Cookie 域名自动改写）
+- 架构决策：照片客户端压缩后存 D1 attachments 表（一图一行，记忆主行只存图片 id）；R2 为 v1.1 可选升级（免费档需绑卡，§12 有摩擦，由用户决定）
+- 用户一次性操作：CF Dashboard 创建 D1 数据库并绑定到 Pages 项目（变量名 DB）
+
+#### 实测（wrangler 本地 D1 模拟，全部通过）
+- 注册→登录→me→登出→me(401)；错误密码 401；重复注册 409
+- 设备A push（upsert+append）→ 设备B pull 增量可见；本机操作不回放给自己
+- 删除墓碑不被旧快照复活；重复 push 幂等跳过；旧时间戳并发编辑保留进 _conflicts
+- 附件 base64 行级存储/读回
 
 ## [2026-08-29] 测试连接 409 修复：探测目标改为父目录（密码已验证正确）
 

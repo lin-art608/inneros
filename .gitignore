@@ -9,3 +9,14 @@ node_modules/
 # WebDAV 本地模拟测试产生的数据（用户数据不进仓库）
 .audit-doc/webdav_root/
 .audit-doc/*.log
+
+# Wrangler 本地模拟产物（测试数据库不入仓库）
+.wrangler/
+
+# ZCode 会话计划缓存
+.zcode/
+
+# 测试临时产物（含会话令牌，绝不入库）
+.audit-doc/cookies.txt
+.audit-doc/b1.txt
+.audit-doc/h1.txt
