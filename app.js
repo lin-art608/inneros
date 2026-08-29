@@ -422,8 +422,17 @@ let captureOpen = false;        // 记录弹窗层
 
 // === IndexedDB ===
 const DB_NAME = 'memory_os';
-const DB_VERSION = 3; // v3: 新增 meta 存储层（云同步状态：last_synced_at / device_id）
+const DB_VERSION = 4; // v4: ops 操作日志队列 + 全量 UUID 迁移（多设备同步前提）
 let db = null;
+
+// uuid：优先 crypto.randomUUID；局域网 http 等非安全上下文用随机兜底
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = crypto.getRandomValues(new Uint8Array(1))[0] % 16;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
 function initDB() {
   return new Promise((resolve, reject) => {
@@ -443,7 +452,28 @@ function initDB() {
         teamStore.createIndex('provider_team_id', 'provider_team_id', { unique:false });
       }
       if (!d.objectStoreNames.contains('meta')) {
-        d.createObjectStore('meta', { keyPath:'key' }); // 云同步元数据（V1.2 P4 准备）
+        d.createObjectStore('meta', { keyPath:'key' }); // 云同步元数据
+      }
+      if (!d.objectStoreNames.contains('ops')) {
+        d.createObjectStore('ops', { keyPath:'op_id' }); // 操作日志队列（待推送的本地变更）
+      }
+      if (e.oldVersion < 4) {
+        // UUID 一次性迁移：数字自增 id 多设备必冲突；子条目 Date.now() id 同理
+        const tx = e.target.transaction;
+        for (const storeName of ['entries', 'teams']) {
+          const store = tx.objectStore(storeName);
+          store.getAll().onsuccess = function() {
+            (this.result || []).forEach(rec => {
+              if (typeof rec.id !== 'number') return;
+              (rec.entries || []).forEach(en => { if (typeof en.id === 'number') en.id = uuid(); });
+              const legacy = rec.id;
+              store.delete(legacy);
+              rec.legacy_id = legacy;
+              rec.id = uuid();
+              store.put(rec);
+            });
+          };
+        }
       }
     };
   });
@@ -762,7 +792,7 @@ async function seedIfEmpty() {
   const all = await dbGetAll();
   if (all.length === 0) {
     for (const entry of SEED_ENTRIES) {
-      await dbAdd({ ...entry, created_at:new Date().toISOString(), updated_at:new Date().toISOString() });
+      await dbAdd({ ...entry, seed:true, created_at:new Date().toISOString(), updated_at:new Date().toISOString() });
     }
   }
   localStorage.setItem('memory_os_seeded', '1');
@@ -1266,14 +1296,18 @@ async function toggleTeamOnline(idx, sport, el) {
   if (teamSelectorFollowed.has(t.id)) {
     const all = await dbGetTeams();
     const existing = all.find(x => x.sport === sport && (x.provider_team_id === t.id || x.tsdb_id === t.id));
-    if (existing) await dbDeleteTeam(existing.id);
+    if (existing) {
+      try { if (authState.loggedIn) { await opAppend('delete_memory', String(existing.id), { updated_at: new Date().toISOString() }); syncNow(); } } catch (e) { console.warn(e); }
+      await dbDeleteTeam(existing.id);
+    }
     teamSelectorFollowed.delete(t.id);
     if (el) { el.classList.remove('selected'); const b = el.querySelector('.ts-online-btn'); if (b) b.textContent = '＋ 关注'; }
     showToast(`已取消关注 ${t.name}`, 'success');
   } else {
     // provider 随数据源（thesportsdb/liquipedia）；liquipedia 无 tsdb_id，赛程经名称键匹配
     const provider = t.provider || 'thesportsdb';
-    await dbAddTeam({ provider, provider_team_id:t.id, tsdb_id:provider === 'thesportsdb' ? t.id : null, name:t.name, full:t.full || t.name, sport, color:'#6C8ED4', text:'#FFF', badge:t.badge || '' });
+    const rid = await dbAddTeam({ provider, provider_team_id:t.id, tsdb_id:provider === 'thesportsdb' ? t.id : null, name:t.name, full:t.full || t.name, sport, color:'#6C8ED4', text:'#FFF', badge:t.badge || '' });
+    try { if (authState.loggedIn) { const rec = { id:String(rid), sport, name:t.name, full:t.full || t.name, provider, badge:t.badge || '' }; await enqueueMemoryUpsert(rec); syncNow(); } } catch (e) { console.warn(e); }
     teamSelectorFollowed.add(t.id);
     if (el) { el.classList.add('selected'); const b = el.querySelector('.ts-online-btn'); if (b) b.textContent = '✓ 已关注'; }
     showToast(`已关注 ${t.name}`, 'success');
@@ -1284,6 +1318,7 @@ async function toggleTeam(teamId, sport, el) {
   const followed = await dbGetTeams();
   const existing = followed.find(t => t.sport === sport && (t.provider_team_id === teamId || t.tsdb_id === teamId));
   if (existing) {
+    try { if (authState.loggedIn) { await opAppend('delete_memory', String(existing.id), { updated_at: new Date().toISOString() }); syncNow(); } } catch (e) { console.warn(e); }
     await dbDeleteTeam(existing.id);
     if (existing.tsdb_id) teamSelectorFollowed.delete(existing.tsdb_id);
     if (existing.provider_team_id) teamSelectorFollowed.delete(existing.provider_team_id);
@@ -1295,7 +1330,8 @@ async function toggleTeam(teamId, sport, el) {
     if (team) {
       // V1.2 §6.1：注册表球队带 tsdb_id（TheSportsDB 真实 id）+ badge（真实队标），
       // 真实赛程通过 tsdb_id 匹配，队标经 /img 代理展示。
-      await dbAddTeam({ provider:'static', provider_team_id:teamId, tsdb_id:team.tsdb_id || null, name:team.name, full:team.full, sport, color:team.color, text:team.text, badge:team.badge || '' });
+      const rid = await dbAddTeam({ provider:'static', provider_team_id:teamId, tsdb_id:team.tsdb_id || null, name:team.name, full:team.full, sport, color:team.color, text:team.text, badge:team.badge || '' });
+      try { if (authState.loggedIn) { const rec = { id:String(rid), sport, name:team.name, full:team.full, provider:'static', badge:team.badge || '' }; await enqueueMemoryUpsert(rec); syncNow(); } } catch (e) { console.warn(e); }
       teamSelectorFollowed.add(teamId);
       if (team.tsdb_id) teamSelectorFollowed.add(team.tsdb_id);
       el.classList.add('selected');
@@ -1320,13 +1356,15 @@ async function addManualTeam(sport) {
   if (followed.some(t => t.sport === sport && t.provider_team_id === safeId)) {
     showToast('已关注该球队', 'error'); return;
   }
-  await dbAddTeam({ provider:'manual', provider_team_id:safeId, name, full:name, sport, color:'#6C8ED4', text:'#FFF' });
+  const rid = await dbAddTeam({ provider:'manual', provider_team_id:safeId, name, full:name, sport, color:'#6C8ED4', text:'#FFF' });
+  try { if (authState.loggedIn) { const rec = { id:String(rid), sport, name, full:name, provider:'manual' }; await enqueueMemoryUpsert(rec); syncNow(); } } catch (e) { console.warn(e); }
   if (input) input.value = '';
   showToast(`已关注 ${name}`, 'success');
   await openTeamSelector(sport); // 刷新关注状态
 }
 
 async function removeTeam(id, sport) {
+  try { if (authState.loggedIn) { await opAppend('delete_memory', String(id), { updated_at: new Date().toISOString() }); syncNow(); } } catch (e) { console.warn(e); }
   await dbDeleteTeam(id);
   if (sport === 'cs2') await renderResourceCS();
   else await renderResourceFootball();
@@ -2068,8 +2106,21 @@ async function renderSettings() {
   all.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
   const cfg = getSyncConfig();
   const lastSynced = await dbGetMeta('last_synced_at');
+  const lastCloud = await dbGetMeta('last_cloud_sync');
   let html = `
     <div class="page-header"><div class="page-title">设置 · Settings</div></div>
+    <div class="settings-section">
+      <div class="section-label">账户 · Account</div>
+      <div class="settings-card">
+        ${authState.loggedIn ? `
+          <div class="settings-row"><div><div class="settings-row-label">✓ 已登录：${authState.email}</div><div class="settings-row-desc">所有设备自动同步（改动即时 + 每 5 分钟）；删除会同步到所有设备。</div></div></div>
+          <div class="settings-row"><div><div class="settings-row-label">同步状态</div><div class="settings-row-desc" id="cloud-sync-status">${lastCloud ? '✓ 上次同步 ' + new Date(lastCloud).toLocaleString() : '从未同步（保存/删除内容后自动同步）'}</div></div><button class="btn btn-ghost" onclick="syncNow()">立即同步</button></div>
+          <div class="settings-row"><div><div class="settings-row-label">退出登录</div><div class="settings-row-desc">本机数据保留，仅停止云同步。</div></div><button class="btn btn-ghost" onclick="logoutAccount()">退出</button></div>
+        ` : `
+          <div class="settings-row"><div><div class="settings-row-label">${authState.guest ? '访客模式' : '未登录'}</div><div class="settings-row-desc">${authState.guest ? '数据仅存本机。登录后可在所有设备间同步。' : '登录后可在所有设备间同步你的记忆（免费）。'}</div></div><button class="btn btn-ghost" onclick="location.reload()">去登录</button></div>
+        `}
+      </div>
+    </div>
     <div class="settings-section">
       <div class="section-label">数据统计</div>
       <div class="settings-card">
@@ -2096,9 +2147,9 @@ async function renderSettings() {
       </div>
     </div>
     <div class="settings-section">
-      <div class="section-label">云端同步 · WebDAV</div>
+      <div class="section-label">导出备份 · WebDAV（可选）</div>
       <div class="settings-card sync-card">
-        <div class="sync-intro">用你自己的免费 WebDAV 网盘做云端同步（推荐<a href="https://www.jianguoyun.com" target="_blank" rel="noopener">坚果云</a>：注册免费 → 账号信息 → 安全选项 → 添加应用密码）。快照存在你自己的网盘里，InnerOS 服务器不存任何数据；凭据只保存在本机浏览器。<br>⚠️ 坚果云会拦截云服务器 IP：<b>线上版</b>同步坚果云可能报 520，请在<b>本地版</b>（python server.py）使用同步；其他 WebDAV 服务（自建/群晖等）不受影响。</div>
+        <div class="sync-intro">多设备同步请使用上方「账户 · Account」功能（推荐）。本区仅作为<b>手动备份</b>到自有 WebDAV 网盘的可选方式（推荐<a href="https://www.jianguoyun.com" target="_blank" rel="noopener">坚果云</a>）。快照存在你自己的网盘里，InnerOS 服务器不存任何数据；凭据只保存在本机浏览器。<br>⚠️ 坚果云会拦截云服务器 IP：<b>线上版</b>可能报 520，请在<b>本地版</b>使用；自建/群晖等 WebDAV 不受影响。</div>
         <div class="field-row"><div class="field-label">WebDAV 地址</div><input type="url" class="field-input" id="sync-url" placeholder="https://dav.jianguoyun.com/dav/InnerOS/inneros-backup.json" value="${cfg.url || ''}"></div>
         <div class="field-row"><div class="field-label">账号</div><input type="text" class="field-input" id="sync-user" placeholder="登录邮箱" value="${cfg.user || ''}"></div>
         <div class="field-row"><div class="field-label">应用密码</div><input type="password" class="field-input" id="sync-pass" placeholder="网盘生成的应用密码（非登录密码）" value="${cfg.pass || ''}"></div>
@@ -2298,6 +2349,14 @@ async function openDetail(id, fromPop = false) {
     // Backward compatibility: show old single content
     const tc = e.review || e.content || e.notes || e.note;
     if (tc) html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">笔记 · Notes</div><div class="detail-review">${tc}</div></div>`;
+  }
+  if (e._conflicts && e._conflicts.length) {
+    html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">⚠️ 冲突版本 · Conflicts（${e._conflicts.length}）</div>`;
+    e._conflicts.forEach(c => {
+      const d = c.data || {};
+      html += `<div class="memory-entry"><div class="memory-entry-header"><span class="memory-entry-time">${String(c.updated_at || '').replace('T', ' ').slice(0, 16)}</span></div><div class="memory-entry-content">${[d.title, d.author, d.director, (d.content || '').slice(0, 80)].filter(Boolean).join(' · ') || '（内容差异）'}</div></div>`;
+    });
+    html += `</div>`;
   }
   if (e.quotes) html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">摘录 · Quote</div><div class="detail-review" style="font-style:italic;border-left:3px solid var(--border-strong);padding-left:16px;">${e.quotes}</div></div>`;
   if (e.tags && e.tags.length) html += `<div class="detail-section fade-in-delay-3"><div class="detail-section-title">标签 · Tags</div><div class="detail-tags">${e.tags.map(t=>`<span class="detail-tag">${t}</span>`).join('')}</div></div>`;
@@ -2520,7 +2579,7 @@ async function saveCapture() {
   const photos = uploadedPhotos.filter(p => typeof p === 'string');
 
   // Build the new entry for entries[] (append model)
-  const newEntry = { id: Date.now(), created_at: now.toISOString(), content: review, photos };
+  const newEntry = { id: uuid(), created_at: now.toISOString(), content: review, photos, photo_ids: [] };
   if (selectedType === 'movie') newEntry.date = today;
   else if (selectedType === 'book') newEntry.date = today;
   else if (selectedType === 'diary') newEntry.date = today;
@@ -2576,6 +2635,14 @@ async function saveCapture() {
     merged.updated_at = now.toISOString();
     await dbPut(merged);
     showToast('已追加记录', 'success');
+    // 云同步：追加条目 + 基础信息变更
+    try {
+      if (authState.loggedIn) {
+        await enqueueEntryAppend(merged.id, newEntry);
+        if (selectedMovie || selectedBook) await enqueueMemoryUpsert(merged);
+        syncNow();
+      }
+    } catch (e) { console.warn('同步入队失败', e); }
     const editId = editingId;
     closeCapture();
     await openDetail(editId);
@@ -2618,8 +2685,15 @@ async function saveCapture() {
     } else {
       entry.event_date = today;
     }
+    if (!entry.id) entry.id = uuid();
     await dbAdd(entry);
     showToast('已保存', 'success');
+    // 云同步：登记 upsert + 首条 append + 附件（未登录自动跳过）
+    try {
+      await enqueueMemoryUpsert(entry);
+      await enqueueEntryAppend(entry.id, newEntry);
+      if (authState.loggedIn) syncNow();
+    } catch (e) { console.warn('同步入队失败', e); }
     closeCapture();
     await navigate(currentPage);
   }
@@ -2628,6 +2702,8 @@ async function saveCapture() {
 // === Delete ===
 function confirmDelete(id) {
   showConfirm('🗑️', '删除记录', '确定要删除这条记忆吗？此操作不可恢复。', async () => {
+    // 云同步：写删除墓碑（其他设备拉取后同步删除，不会被旧数据复活）
+    try { if (authState.loggedIn) { await opAppend('delete_memory', String(id), { updated_at: new Date().toISOString() }); syncNow(); } } catch (e) { console.warn(e); }
     await dbDelete(id);
     showToast('已删除', 'success');
     await navigate(currentPage);
@@ -2751,10 +2827,339 @@ function handleSwipeGesture() {
   }
 }
 
+// ============================================================
+// 多账户云同步 v2（D1 + 操作日志协议）
+// 鉴权（Cookie 会话）+ 操作队列（IndexedDB ops）+ 增量双向同步
+// ============================================================
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = crypto.getRandomValues(new Uint8Array(1))[0] % 16;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
+let authState = { checked: false, loggedIn: false, email: null, guest: false, offline: false };
+let syncInflight = false;
+let bootCloudKeys = new Set(); // 首次引导拉取时收集云端已有数据的去重键
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, ...opts });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+async function checkAuth() {
+  authState.checked = true;
+  try {
+    const r = await api('/api/auth/me');
+    authState.loggedIn = r.ok;
+    authState.email = r.ok ? r.data.email : null;
+    authState.offline = false;
+  } catch (e) {
+    // 网络不可达 ≠ 未登录：按离线访客放行，联网后 syncNow 自动续传
+    authState.loggedIn = false;
+    authState.offline = true;
+  }
+  return authState;
+}
+
+function showAuthScreen() { document.getElementById('auth-screen').style.display = 'flex'; }
+function hideAuthScreen() { document.getElementById('auth-screen').style.display = 'none'; }
+
+function switchAuthTab(tab) {
+  document.getElementById('tab-login').classList.toggle('active', tab === 'login');
+  document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+  document.getElementById('login-form').style.display = tab === 'login' ? 'block' : 'none';
+  document.getElementById('register-form').style.display = tab === 'register' ? 'block' : 'none';
+}
+
+function authError(id, msg) { const el = document.getElementById(id); if (el) { el.textContent = msg; el.classList.add('show'); } }
+
+async function handleLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) return authError('login-error', '请填写邮箱和密码');
+  document.getElementById('login-error').classList.remove('show');
+  const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+  if (!r.ok) return authError('login-error', r.data.error || '登录失败');
+  await afterAuth(r.data.email || email);
+}
+
+async function handleRegister() {
+  const email = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  if (!email || !password) return authError('reg-error', '请填写邮箱和密码');
+  document.getElementById('reg-error').classList.remove('show');
+  const r = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) });
+  if (!r.ok) return authError('reg-error', r.data.error || '注册失败');
+  await afterAuth(r.data.email || email);
+}
+
+function enterGuest() {
+  authState.guest = true;
+  localStorage.setItem('inneros_guest', '1');
+  hideAuthScreen();
+  showToast('访客模式：数据仅存本机，可在设置中随时登录开启同步', '');
+  navigate('today');
+}
+
+async function afterAuth(email) {
+  authState.loggedIn = true;
+  authState.email = email;
+  authState.guest = false;
+  authState.offline = false;
+  localStorage.removeItem('inneros_guest');
+  hideAuthScreen();
+  showToast('欢迎，' + email, 'success');
+  try {
+    await ensureSyncBootstrap();
+    startAutoSync();
+    await syncNow();
+  } catch (e) { console.warn('首次同步失败（稍后自动重试）', e); }
+  await navigate('today');
+}
+
+async function logoutAccount() {
+  await api('/api/auth/logout', { method: 'POST' });
+  localStorage.removeItem('inneros_guest');
+  location.reload();
+}
+
+// ---- 设备标识 ----
+function getDeviceId() {
+  let id = localStorage.getItem('inneros_device_id');
+  if (!id) { id = uuid(); localStorage.setItem('inneros_device_id', id); }
+  return id;
+}
+function getDeviceName() {
+  let n = localStorage.getItem('inneros_device_name');
+  if (!n) {
+    const ua = navigator.userAgent;
+    n = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : '电脑';
+    localStorage.setItem('inneros_device_name', n);
+  }
+  return n;
+}
+
+// ---- 操作日志队列 ----
+function opAppend(kind, entity_id, payload) {
+  const op = { op_id: uuid(), kind, entity_id: String(entity_id), payload, created_at: new Date().toISOString() };
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('ops', 'readwrite');
+    tx.objectStore('ops').put(op);
+    tx.oncomplete = () => resolve(op);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+function opsGetAll() {
+  return new Promise((resolve, reject) => {
+    const r = db.transaction('ops').objectStore('ops').getAll();
+    r.onsuccess = () => resolve(r.result || []);
+    r.onerror = () => reject(r.error);
+  });
+}
+function opDelete(op_id) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('ops', 'readwrite');
+    tx.objectStore('ops').delete(op_id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// ---- 记录 → 操作（保存/删除时调用；未登录不入队）----
+function memoryDataSnapshot(rec) {
+  const data = { ...rec };
+  delete data.id; delete data.legacy_id; delete data._conflicts; delete data.updated_at;
+  return data;
+}
+async function enqueueMemoryUpsert(rec) {
+  if (!authState.loggedIn) return;
+  const updated_at = new Date().toISOString();
+  rec.updated_at = updated_at;
+  const kind = (rec.kind === 'team' || rec.sport) ? 'team' : 'memory';
+  await opAppend('upsert_memory', rec.id, { kind, data: memoryDataSnapshot(rec), updated_at, deleted: 0 });
+}
+function compressImage(dataURL, maxDim = 1280, q = 0.8) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const sc = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * sc));
+        c.height = Math.max(1, Math.round(img.height * sc));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', q));
+      } catch (e) { resolve(dataURL); }
+    };
+    img.onerror = () => resolve(dataURL);
+    img.src = dataURL;
+  });
+}
+// 照片 → 附件操作（一图一 op；压缩后入库，原图仅留本地）
+async function enqueueAttachments(memoryId, photos) {
+  const ids = [];
+  if (!authState.loggedIn) return ids;
+  for (const p of photos || []) {
+    if (typeof p !== 'string' || !p.startsWith('data:')) continue;
+    const compressed = await compressImage(p);
+    const m = compressed.match(/^data:([^;]+);base64,(.*)$/);
+    if (!m || m[2].length > 900000) { console.warn('照片过大跳过云端同步', m && m[2].length); continue; }
+    const attId = uuid();
+    await opAppend('upsert_attachment', attId, { memory_id: memoryId, bytes: m[2].length, hash: m[2].length + '-' + m[2].slice(0, 32), mime: m[1], data: m[2], created_at: new Date().toISOString() });
+    ids.push(attId);
+  }
+  return ids;
+}
+async function enqueueEntryAppend(memoryId, entry) {
+  if (!authState.loggedIn) return;
+  const photo_ids = await enqueueAttachments(memoryId, entry.photos || []);
+  entry.photo_ids = photo_ids;
+  await opAppend('append_entry', memoryId, { memory_id: memoryId, entry: { id: entry.id, content: entry.content || '', photo_ids, created_at: entry.created_at || new Date().toISOString() } });
+}
+
+// ---- 同步引擎 ----
+function setCloudSyncStatus(text, isError) {
+  const el = document.getElementById('cloud-sync-status');
+  if (el) { el.textContent = text; el.style.color = isError ? 'var(--danger)' : ''; }
+}
+async function syncNow() {
+  if (!authState.loggedIn || syncInflight) return;
+  syncInflight = true;
+  setCloudSyncStatus('同步中...');
+  try {
+    await pushPendingOps();
+    await pullOps();
+    setCloudSyncStatus('✓ 上次同步 ' + new Date().toLocaleTimeString());
+    await dbPutMeta('last_cloud_sync', new Date().toISOString());
+  } catch (e) {
+    setCloudSyncStatus('✗ 同步失败：' + (e.message || e), true);
+  } finally { syncInflight = false; }
+}
+function startAutoSync() {
+  if (startAutoSync._t) return;
+  startAutoSync._t = setInterval(() => syncNow(), 5 * 60e3);
+  window.addEventListener('online', () => syncNow());
+}
+async function pushPendingOps() {
+  for (let i = 0; i < 60; i++) {
+    const ops = await opsGetAll();
+    if (!ops.length) return;
+    const batch = ops.slice(0, 50);
+    const r = await api('/api/sync/push', {
+      method: 'POST',
+      body: JSON.stringify({ device_id: getDeviceId(), device_name: getDeviceName(), operations: batch.map(o => ({ op_id: o.op_id, kind: o.kind, entity_id: o.entity_id, payload: o.payload, created_at: o.created_at })) }),
+    });
+    if (!r.ok) throw new Error(r.data.error || '推送失败 HTTP ' + r.status);
+    const failed = new Set((r.data.errors || []).map(x => x.op_id));
+    for (const o of batch) if (!failed.has(o.op_id)) await opDelete(o.op_id);
+    if (failed.size) console.warn('push 部分失败', r.data.errors);
+  }
+}
+async function pullOps(collect) {
+  for (let i = 0; i < 60; i++) {
+    const cursor = parseInt(localStorage.getItem('inneros_sync_cursor') || '0', 10) || 0;
+    const r = await api(`/api/sync/pull?cursor=${cursor}&device_id=${encodeURIComponent(getDeviceId())}&device_name=${encodeURIComponent(getDeviceName())}`);
+    if (!r.ok) throw new Error(r.data.error || '拉取失败');
+    const ops = r.data.ops || [];
+    if (ops.length) await replayOps(ops, collect);
+    localStorage.setItem('inneros_sync_cursor', String(r.data.last_seq || 0));
+    if (!r.data.has_more) return;
+  }
+}
+async function replayOps(ops, collect) {
+  let touched = false;
+  for (const op of ops) {
+    const p = op.payload || {};
+    try {
+      if (op.kind === 'upsert_memory') {
+        if (collect) { const d = p.data || {}; bootCloudKeys.add((d.kind === 'team' || d.sport ? 'team@' : (d.type || '') + '@') + (d.title || d.name || '')); }
+        if (p.deleted) { await dbDelete(op.entity_id); touched = true; continue; }
+        const incoming = { ...(p.data || {}), id: op.entity_id };
+        const ex = await dbGet(op.entity_id);
+        if (ex) await dbPut({ ...ex, ...incoming, id: op.entity_id });
+        else await dbPut(incoming);
+        touched = true;
+      } else if (op.kind === 'append_entry') {
+        const e = p.entry || {};
+        let mem = await dbGet(p.memory_id);
+        if (!mem) mem = { id: p.memory_id, type: 'movie', title: '（来自其他设备）', entries: [] };
+        mem.entries = mem.entries || [];
+        if (!mem.entries.some(x => x.id === e.id)) {
+          mem.entries.push({ id: e.id, created_at: e.created_at, content: e.content || '', photos: [], photo_ids: e.photo_ids || [] });
+          touched = true;
+        }
+        await dbPut(mem);
+      } else if (op.kind === 'delete_memory') {
+        await dbDelete(op.entity_id); touched = true;
+      } else if (op.kind === 'delete_entry') {
+        const mem = p.memory_id ? await dbGet(p.memory_id) : null;
+        if (mem) {
+          const before = (mem.entries || []).length;
+          mem.entries = (mem.entries || []).filter(x => x.id !== op.entity_id);
+          if (mem.entries.length !== before) { await dbPut(mem); touched = true; }
+        }
+      } else if (op.kind === 'upsert_attachment') {
+        const mem = await dbGet(p.memory_id);
+        if (mem) {
+          const dataURL = 'data:' + (p.mime || 'image/jpeg') + ';base64,' + (p.data || '');
+          let placed = false;
+          for (const en of (mem.entries || [])) {
+            if ((en.photo_ids || []).includes(op.entity_id)) {
+              en.photos = en.photos || [];
+              if (!en.photos.some(x => x === dataURL)) { en.photos.push(dataURL); placed = true; }
+            }
+          }
+          if (placed) { await dbPut(mem); touched = true; }
+        }
+      }
+    } catch (e) { console.warn('回放失败', op.op_id, e); }
+  }
+  if (touched && ['today', 'timeline', 'library'].includes(currentPage)) await navigate(currentPage, true);
+}
+
+// 首次登录引导：先回放云端（第二台设备即恢复数据），再把本地非 seed 数据推上去
+async function ensureSyncBootstrap() {
+  bootCloudKeys = new Set();
+  await pullOps(true); // collect=true：顺手收集云端已有数据的键，用于 seed 去重
+  if (localStorage.getItem('inneros_bootstrap_done') === '1') { await dedupSeeds(); return; }
+  const all = await dbGetAll();
+  const uploadable = all.filter(r => !r.seed);
+  for (const rec of uploadable) {
+    await enqueueMemoryUpsert(rec);
+    for (const en of (rec.entries || [])) await enqueueEntryAppend(rec.id, en);
+  }
+  const teams = await dbGetTeams();
+  for (const t of teams) await enqueueMemoryUpsert(t);
+  localStorage.setItem('inneros_bootstrap_done', '1');
+  if (uploadable.length || teams.length) showToast('正在首次上传本机数据（' + uploadable.length + ' 条记录）…', '');
+  await dedupSeeds();
+}
+// seed 演示数据去重：本地 seed 记录若与云端已有记录同类型同名 → 删除本地副本（避免第二台设备出现双份）
+async function dedupSeeds() {
+  if (!bootCloudKeys.size) return;
+  const all = await dbGetAll();
+  for (const rec of all) {
+    if (!rec.seed) continue;
+    const key = (rec.type || '') + '@' + (rec.title || '');
+    if (bootCloudKeys.has(key)) await dbDelete(rec.id);
+  }
+}
+
 // === Init ===
 (async function init() {
   try { await initDB(); } catch(e) { console.error('IndexedDB init failed:', e); }
   await seedIfEmpty();
-  fixSeedPosters();
+  await checkAuth();
+  const guest = localStorage.getItem('inneros_guest') === '1' && !authState.loggedIn;
+  authState.guest = guest;
+  if (authState.loggedIn) {
+    try { await ensureSyncBootstrap(); startAutoSync(); syncNow(); } catch (e) { console.warn('启动同步失败（稍后自动重试）', e); }
+  } else if (!guest) {
+    showAuthScreen(); // 未登录且非访客：先登录/注册（访客模式可跳过）
+  }
   await navigate('today');
+  fixSeedPosters();
 })();

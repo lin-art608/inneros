@@ -105,6 +105,8 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
             v = self.headers.get(h)
             if v:
                 req.add_header(h, v)
+        # 透传访问者 UA：CF 对 python-urllib 签名直接 1010 拒绝（Bot Fight Mode）
+        req.add_header('User-Agent', self.headers.get('User-Agent') or 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) InnerOS/1.0')
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 status, payload = resp.status, resp.read()
