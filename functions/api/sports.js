@@ -96,12 +96,15 @@ function normalizeEvent(ev, lm) {
     sport: 'football',
     home_id: ev.idHomeTeam || String(ev.idEvent) + '_h',
     home_name: ev.strHomeTeam || '',
+    home_badge: ev.strHomeTeamBadge || '',
     away_id: ev.idAwayTeam || String(ev.idEvent) + '_a',
     away_name: ev.strAwayTeam || '',
+    away_badge: ev.strAwayTeamBadge || '',
     ts,
     date: ev.dateEvent || '',
     time: (ev.strTime || '').slice(0, 5),
     league: lm ? lm.name : (ev.strLeague || ''),
+    league_id: ev.idLeague || '',
     round,
     status: isFinished ? 'finished' : 'upcoming',
     home_score: ev.intHomeScore == null || ev.intHomeScore === '' ? null : Number(ev.intHomeScore),
@@ -173,8 +176,9 @@ function parseLpTicker(html) {
   const blocks = html.split('<div class="match-info">');
   const matches = [];
   const parseTeam = (seg) => {
-    // 队标取 lightmode 变体（站点 CDN 相对路径需补域名）
-    const img = seg.match(/team-template-lightmode"><a[^>]*><img[^>]*src="([^"]+)"/);
+    // 队标：优先 lightmode/allmode 变体；大量队伍块用无后缀的 team-template-image-icon（2026-08 实测占 ~2/3），必须兜底
+    const img = seg.match(/team-template-(?:lightmode|allmode)"><a[^>]*><img[^>]*src="([^"]+)"/)
+      || seg.match(/team-template-image-icon[^"]*"><a[^>]*><img[^>]*src="([^"]+)"/);
     // name span：text = 队伍短名（NAVI），title 属性 = LP 页面标题（Natus Vincere，与关注匹配键一致）
     const name = seg.match(/<span class="name"[^>]*><a[^>]*title="([^"]*)"[^>]*>([^<]*)<\/a>/);
     return {
@@ -191,10 +195,14 @@ function parseLpTicker(html) {
     if (!home.name && !away.name) continue;
     const tsM = b.match(/timer-object[^>]*data-timestamp="(\d+)"/);
     const ts = tsM ? parseInt(tsM[1], 10) * 1000 : 0;
+    // 赛事名 + Liquipedia 页面链接（含阶段锚点）：赛事页用于"点进赛事看完整赛程/观看"
     const tourM = b.match(/match-info-tournament-name"[^>]*>([\s\S]*?)<\/span>/);
-    const league = tourM ? tourM[1].replace(/<[^>]+>/g, '').trim() : '';
+    const leagueHtml = tourM ? tourM[1] : '';
+    const league = leagueHtml.replace(/<[^>]+>/g, '').trim();
+    const leagueHrefM = leagueHtml.match(/<a[^>]*href="([^"]+)"/);
+    const league_url = leagueHrefM ? (leagueHrefM[1].startsWith('/') ? 'https://liquipedia.net' + leagueHrefM[1] : leagueHrefM[1]) : '';
     const boM = b.match(/\((Bo\d)\)/i);
-    const scores = [...b.matchAll(/match-info-header-scoreholder-score[^\"]*\">\s*(-?\d+)\s*</g)].map(m => m[1]);
+    const scores = [...b.matchAll(/match-info-header-scoreholder-score[^"]*">\s*(-?\d+)\s*</g)].map(m => m[1]);
     // ticker 包含未开赛 + 进行中 + 刚完赛的场次：按时间戳窗口判定状态（Bo3 场次按 3.5h 兜底）
     const now = Date.now();
     let status = 'upcoming';
@@ -215,7 +223,7 @@ function parseLpTicker(html) {
       ts,
       date: d.toISOString().slice(0, 10),
       time: ('0' + d.getUTCHours()).slice(-2) + ':' + ('0' + d.getUTCMinutes()).slice(-2),
-      league, round: boM ? boM[1] : '',
+      league, league_url, round: boM ? boM[1] : '',
       status, home_score, away_score,
       importance: 3, tournament_weight: 3,
     });
@@ -256,6 +264,32 @@ export async function onRequestGet(context) {
         return true;
       }).sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || ''))).slice(0, 80);
       return jsonResponse({ matches });
+    }
+    if (type === 'leagueseason') {
+      // 联赛近期赛程：eventsseason（当前赛季部分场次）+ eventsnextleague（下一场），去重合并
+      // 免费档限制：eventsseason 每赛季仅返回少量场次，非完整赛季——前端如实提示并外链完整赛程
+      const id = (url.searchParams.get('id') || '').trim();
+      if (!id) return jsonResponse({ matches: [] }, 400);
+      const lm = LEAGUE_MAP[id];
+      const seen = new Set();
+      const all = [];
+      const push = (m) => {
+        const key = m.home_id + '|' + m.away_id + '|' + m.date;
+        if (!seen.has(key)) { seen.add(key); all.push(m); }
+      };
+      for (const s of ['2026-2027', '2026']) {
+        try {
+          const d = await tsdb(`https://www.thesportsdb.com/api/v1/json/${TSB_KEY}/eventsseason.php?id=${encodeURIComponent(id)}&s=${s}`);
+          for (const ev of (d.events || [])) push(normalizeEvent(ev, lm));
+        } catch (e) { /* 单赛季失败继续 */ }
+        if (all.length >= 8) break;
+      }
+      try {
+        const d = await tsdb(`https://www.thesportsdb.com/api/v1/json/${TSB_KEY}/eventsnextleague.php?id=${encodeURIComponent(id)}`);
+        for (const ev of (d.events || [])) push(normalizeEvent(ev, lm));
+      } catch (e) { /* 同上 */ }
+      all.sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')));
+      return jsonResponse({ matches: all.slice(0, 40) });
     }
     if (type === 'cs2matches') {
       const matches = await cs2Matches();

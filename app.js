@@ -422,7 +422,7 @@ let captureOpen = false;        // 记录弹窗层
 
 // === IndexedDB ===
 const DB_NAME = 'memory_os';
-const DB_VERSION = 2;
+const DB_VERSION = 3; // v3: 新增 meta 存储层（云同步状态：last_synced_at / device_id）
 let db = null;
 
 function initDB() {
@@ -442,7 +442,26 @@ function initDB() {
         teamStore.createIndex('sport', 'sport', { unique:false });
         teamStore.createIndex('provider_team_id', 'provider_team_id', { unique:false });
       }
+      if (!d.objectStoreNames.contains('meta')) {
+        d.createObjectStore('meta', { keyPath:'key' }); // 云同步元数据（V1.2 P4 准备）
+      }
     };
+  });
+}
+
+// === meta 存取（云同步状态） ===
+function dbGetMeta(key) {
+  return new Promise((resolve) => {
+    const req = db.transaction('meta','readonly').objectStore('meta').get(key);
+    req.onsuccess = () => resolve(req.result ? req.result.value : null);
+    req.onerror = () => resolve(null);
+  });
+}
+function dbPutMeta(key, value) {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction('meta','readwrite').objectStore('meta').put({ key, value });
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
   });
 }
 function dbGetAll() {
@@ -488,19 +507,92 @@ function dbClear() {
   });
 }
 
-// === P4: Cloud Sync Adapter Interface (Architecture Reservation) ===
-// Future: when Supabase is connected, implement these methods.
-// localIndexedDB remains as cache layer; cloud becomes primary data source.
-// Migration strategy: on first cloud connect, upload all local data, then enable sync.
+// === Cloud Sync v1：WebDAV（用户自己的坚果云/自建网盘），经 /api/webdav 转发 ===
+// V1.2 §12 合规：不购买付费服务、不提交密钥——凭据仅存用户本机 localStorage，随请求传给转发代理；
+// 数据快照（entries + teams JSON）存在用户自己的网盘里，InnerOS 服务端不存储任何用户数据。
+// 合并策略：逐条按 updated_at/added_at 新者胜；云端文件 inneros-backup.json。
+const SYNC_FILE_DEFAULT = 'InnerOS/inneros-backup.json';
+const SYNC_CONFIG_KEY = 'inneros_sync_config';
+
+function getSyncConfig() {
+  try { return JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY) || '{}'); } catch (e) { return {}; }
+}
+function saveSyncConfig(cfg) {
+  localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(cfg));
+}
+
+async function webdavCall(op, extra = {}) {
+  const cfg = getSyncConfig();
+  const url = (cfg.url || '').trim();
+  if (!url) throw new Error('尚未配置 WebDAV 地址');
+  const res = await fetch('/api/webdav', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op, url, user: cfg.user || '', pass: cfg.pass || '', ...extra }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function buildSnapshot(all, teams) {
+  return JSON.stringify({
+    version: 1,
+    app: 'InnerOS',
+    exported_at: new Date().toISOString(),
+    entries: all,
+    teams,
+  });
+}
+
+// 逐条合并：updated_at（无则 added_at/created_at）新者胜；本地与云端 id 冲突时保留较新
+function mergeSnapshot(remote) {
+  const incoming = (remote.entries || []);
+  const incomingTeams = (remote.teams || []);
+  let addedCount = 0, updatedCount = 0;
+  const stamp = (x) => x.updated_at || x.created_at || (x.date ? x.date + 'T00:00:00' : '');
+  return dbGetAll().then(async (local) => {
+    const localById = new Map(local.map(x => [x.id, x]));
+    for (const item of incoming) {
+      const cur = localById.get(item.id);
+      if (!cur) { await dbPut(item); addedCount++; }
+      else if (String(stamp(item) || '') > String(stamp(cur) || '')) { await dbPut(item); updatedCount++; }
+    }
+    const localTeams = await dbGetTeams();
+    const teamKey = (t) => `${t.sport}|${t.provider_team_id}`;
+    const localTeamKeys = new Set(localTeams.map(teamKey));
+    for (const t of incomingTeams) {
+      if (!localTeamKeys.has(teamKey(t))) await dbAddTeam(t);
+    }
+    return { addedCount, updatedCount, teamsAdded: incomingTeams.length };
+  });
+}
+
 const SyncAdapter = {
-  // auth: { login(email,pw), register(email,pw), logout(), getSession() }
-  // sync: { pushEntries(), pullEntries(), pushTeams(), pullTeams() }
-  // storage: { uploadImage(file), getImage(url) }
-  // Current: no-op stubs, all data stays local
-  enabled: false,
-  async init() { return false; },
-  async login() { return null; },
-  async syncAll() { return { pushed:0, pulled:0 }; },
+  // v1：WebDAV 文件快照同步（替代原 Supabase 预留桩；接口语义保持 push/pull/test）
+  enabled: false, // 连接成功后置 true
+  async test() {
+    const r = await webdavCall('test');
+    if (!r.ok) throw new Error(`连接失败（${r.status}），检查地址/账号/应用密码`);
+    this.enabled = true;
+    return true;
+  },
+  async push() {
+    const [all, teams] = await Promise.all([dbGetAll(), dbGetTeams()]);
+    const r = await webdavCall('put', { data: buildSnapshot(all, teams) });
+    if (!r.ok) throw new Error(`上传失败（${r.status}）`);
+    const at = new Date().toISOString();
+    await dbPutMeta('last_synced_at', at);
+    return { at, count: all.length };
+  },
+  async pull() {
+    const r = await webdavCall('get');
+    if (!r.exists) throw new Error('云端还没有备份文件，请先「上传到云端」');
+    const merged = await mergeSnapshot(r.snapshot || {});
+    const at = new Date().toISOString();
+    await dbPutMeta('last_synced_at', at);
+    return { at, ...merged };
+  },
 };
 
 // === Team CRUD (P3: Sports Data Layer) ===
@@ -771,18 +863,36 @@ async function navigate(page, fromPop = false) {
 }
 
 // === Resources: CS Esports ===
+// CS 赛事分组：按"赛事"聚合（league_url 去锚点优先，无链接时按联赛名去阶段后缀），
+// 阶段 = 联赛名 " - " 之后的部分（Group A / Playoffs / 半决赛…），供赛事详情页分组展示
+function groupCSMatches(matches) {
+  const groups = new Map();
+  for (const m of matches) {
+    const base = ((m.league_url || m.league || '').split('#')[0]) || m.league;
+    if (!groups.has(base)) {
+      groups.set(base, { key: base, name: (m.league.split(' - ')[0] || m.league), url: m.league_url || '', matches: [], stages: new Map() });
+    }
+    const g = groups.get(base);
+    g.matches.push(m);
+    if (!g.stages.has(m.league)) g.stages.set(m.league, []);
+    g.stages.get(m.league).push(m);
+  }
+  return [...groups.values()];
+}
+
 async function renderResourceCS() {
   const synced = await ensureCS2Matches(); // Liquipedia 真实赛程；失败保留缓存
   const followedTeams = await dbGetTeams();
   const csFollowed = followedTeams.filter(t => t.sport === 'cs2');
   const followedIds = csFollowed.flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
+  const all = getUnifiedMatches('cs2');
   const myMatches = cs2MatchesForFollowed(csFollowed);
+  const live = all.filter(m => m.status === 'live').sort((a,b) => a.ts - b.ts);
   const myUpcoming = myMatches.filter(m => m.status === 'upcoming' || m.status === 'live').sort((a,b) => a.date.localeCompare(b.date));
-  const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
-  const allUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => {
-    const sa = calculateMatchScore(a, followedIds), sb = calculateMatchScore(b, followedIds);
-    return sb - sa;
-  });
+  const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 3);
+  // 进行中的赛事：未来场次 + 正在直播的归属赛事（过去场次不计入赛事列表，弱化历史）
+  const tournaments = groupCSMatches(all.filter(m => m.status !== 'finished'))
+    .sort((a,b) => Math.min(...a.matches.map(m=>m.ts||Infinity)) - Math.min(...b.matches.map(m=>m.ts||Infinity)));
 
   let html = `
     <div class="page-header">
@@ -790,8 +900,8 @@ async function renderResourceCS() {
       <div class="page-subtitle">${getSportsLastSynced('cs2') ? `上次同步 ${new Date(getSportsLastSynced('cs2')).toLocaleString()}` : '等待首次同步'} · <button class="link-btn" onclick="refreshSports('cs2')">刷新</button></div>
     </div>`;
 
-  // My teams section
-  html += `<div class="my-teams-bar"><div class="my-teams-label">⚡ 我关注的主队</div><div class="my-teams-list" id="cs-my-teams">`;
+  // 我关注的战队 chips（按用户要求：资源页不放添加按钮，添加入口在 设置 → Sports 关注管理）
+  html += `<div class="my-teams-bar"><div class="my-teams-label">⚡ 我关注的战队</div><div class="my-teams-list" id="cs-my-teams">`;
   if (csFollowed.length > 0) {
     csFollowed.forEach(t => {
       const team = CS2_TEAMS.find(c => c.id === t.provider_team_id) || { name:t.name, color:t.color||'#666', text:'#FFF', badge:t.badge };
@@ -800,60 +910,90 @@ async function renderResourceCS() {
         <span class="my-team-name">${team.name}</span>
       </div>`;
     });
+  } else {
+    html += `<span class="my-teams-empty">尚未关注，可在 <button class="link-btn" onclick="navigate('settings')">设置 → Sports 关注管理</button> 添加</span>`;
   }
-  html += `<button class="add-team-btn" onclick="openTeamSelector('cs2')">＋ 添加主队</button>`;
   html += `</div></div>`;
 
-  // My team's upcoming matches (if any)
+  // 🔴 正在直播（全局，不只关注队——用户要求列出正在进行的比赛方便点进去看）
+  if (live.length > 0) {
+    html += `<div class="res-section-title">🔴 正在直播 · LIVE NOW</div><div class="match-list">`;
+    live.forEach(m => { html += renderMatchCard(m, followedIds); });
+    html += `</div>`;
+  }
+
+  // 🏆 进行中的赛事（点进赛事看阶段赛程）
+  if (tournaments.length > 0) {
+    html += `<div class="res-section-title">🏆 进行中的赛事 · Ongoing Tournaments</div><div class="tournament-grid">`;
+    tournaments.forEach((t, i) => {
+      const tLive = t.matches.filter(m => m.status === 'live').length;
+      const next = [...t.matches].filter(m => m.status === 'upcoming').sort((a,b) => a.ts - b.ts)[0];
+      const stages = [...t.stages.keys()].map(s => s.split(' - ').slice(1).join(' - ') || s);
+      html += `<div class="tournament-card card-enter" style="animation-delay:${i*0.05}s" onclick="openTournamentDetail('${encodeURIComponent(t.key)}')">
+        <div class="tournament-card-name">${t.name}</div>
+        <div class="tournament-card-stages">${stages.slice(0, 3).map(s => `<span class="tournament-stage-chip">${s}</span>`).join('')}${stages.length > 3 ? `<span class="tournament-stage-chip">+${stages.length-3}</span>` : ''}</div>
+        <div class="tournament-card-meta">
+          ${tLive > 0 ? `<span class="match-live-badge">${tLive} 场直播中</span>` : ''}
+          <span>${t.matches.length} 场</span>
+          ${next ? `<span>下一场 ${next.date.slice(5).replace('-','/')} ${next.time}</span>` : ''}
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // 关注战队即将开赛
   if (myUpcoming.length > 0) {
-    html += `<div class="res-section-title">我的主队赛程 · My Schedule</div><div class="match-list">`;
-    myUpcoming.forEach(m => {
-      html += renderMatchCard(m, followedIds);
-    });
+    html += `<div class="res-section-title">⏰ 我的战队赛程 · My Schedule</div><div class="match-list">`;
+    myUpcoming.forEach(m => { html += renderMatchCard(m, followedIds); });
     html += `</div>`;
   }
 
-  // My team's recent results
+  if (!synced && live.length === 0 && tournaments.length === 0) {
+    html += `<div class="sync-fail-banner">⚠️ 赛程同步失败 · 上次成功 ${getSportsLastSynced('cs2') ? new Date(getSportsLastSynced('cs2')).toLocaleString() : '从未同步'}<button class="link-btn" onclick="refreshSports('cs2')">重试</button></div>`;
+  }
+
+  // 最近结果（按用户要求弱化：放最后、小标题、无星标强调）
   if (myRecent.length > 0) {
-    html += `<div class="res-section-title">主队最近结果 · Results</div><div class="match-list">`;
-    myRecent.forEach(m => {
-      html += renderMatchCard(m, followedIds);
-    });
+    html += `<div class="res-section-title res-section-muted">最近结果 · Recent Results</div><div class="match-list match-list-muted">`;
+    myRecent.forEach(m => { html += renderMatchCard(m, followedIds); });
     html += `</div>`;
-  }
-
-  // Featured match (highest scored)
-  if (allUpcoming.length > 0) {
-    const featured = allUpcoming[0];
-    html += `
-    <div class="featured-match">
-      <div class="featured-match-tag">
-        <span class="featured-match-live">🔥 焦点</span>
-        <span>${featured.league} · ${featured.round}</span>
-      </div>
-      <div class="featured-match-title">${featured.league}</div>
-      <div class="featured-match-teams">
-        <div class="featured-team">
-          ${renderTeamLogo(findTeamVisual('cs2', featured.home_id, featured.home_name), 72)}
-          <div class="featured-team-name">${featured.home_name}</div>
-        </div>
-        <div class="featured-vs">VS</div>
-        <div class="featured-team">
-          ${renderTeamLogo(findTeamVisual('cs2', featured.away_id, featured.away_name), 72)}
-          <div class="featured-team-name">${featured.away_name}</div>
-        </div>
-      </div>
-      <div class="featured-match-info">${featured.date.replace(/-/g,'/')} ${featured.time}</div>
-    </div>`;
-  }
-
-  if (!csFollowed.length) html += `<div class="empty-state"><div class="empty-state-icon">🎮</div><div class="empty-state-title">先关注一支战队</div><div class="empty-state-desc">关注后，这里只展示与你有关的下一场和最近比赛。</div><button class="placeholder-cta" onclick="openTeamSelector('cs2')">＋ 关注战队</button></div>`;
-  else if (myUpcoming.length === 0 && myRecent.length === 0) {
-    html += !synced
-      ? `<div class="sync-fail-banner">⚠️ 赛程同步失败 · 上次成功 ${getSportsLastSynced('cs2') ? new Date(getSportsLastSynced('cs2')).toLocaleString() : '从未同步'}<button class="link-btn" onclick="refreshSports('cs2')">重试</button></div>`
-      : `<div class="empty-state" style="padding:40px 20px;"><div class="empty-state-title">关注战队近期没有比赛</div><div class="empty-state-desc">Liquipedia 未收录近期对阵，可尝试同步或关注更多战队。</div></div>`;
   }
   document.getElementById('content').innerHTML = html;
+}
+
+// 赛事详情页（页内层级，入历史栈：浏览器返回键返回赛事列表）
+let tournamentOpenKey = null;
+function openTournamentDetail(key, fromPop = false) {
+  const k = decodeURIComponent(key);
+  const all = getUnifiedMatches('cs2');
+  const group = groupCSMatches(all).find(g => g.key === k);
+  if (!group) { if (!fromPop) showToast('赛事数据已更新，请刷新', 'error'); return; }
+  if (!fromPop) history.pushState({ __inneros: true, page: currentPage, tournament: encodeURIComponent(k) }, '');
+  tournamentOpenKey = k;
+  const followedTeams = dbGetTeams();
+  followedTeams.then(teams => {
+    const followedIds = teams.filter(t => t.sport === 'cs2').flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
+    // 阶段排序：直播 > 未开赛 > 已完赛（过去赛程放最后，弱化）
+    const stageOrder = (name) => {
+      const ms = group.stages.get(name) || [];
+      if (ms.some(m => m.status === 'live')) return 0;
+      if (ms.some(m => m.status === 'upcoming')) return 1;
+      return 2;
+    };
+    let html = `<button class="detail-back" onclick="history.back()">← 返回</button>
+      <div class="page-header"><div class="page-title">${group.name}</div></div>`;
+    if (group.url) html += `<div class="tournament-ext-row"><a class="ts-ext-link" href="${group.url.split('#')[0]}" target="_blank" rel="noopener">在 Liquipedia 打开完整赛程/观看 ↗</a></div>`;
+    [...group.stages.keys()].sort((a,b) => stageOrder(a) - stageOrder(b)).forEach(stageName => {
+      const ms = group.stages.get(stageName).slice().sort((a,b) => (a.status === 'finished' ? 1 : 0) - (b.status === 'finished' ? 1 : 0) || a.ts - b.ts);
+      const stageLabel = stageName.split(' - ').slice(1).join(' - ') || stageName;
+      html += `<div class="res-section-title">${stageLabel}</div><div class="match-list">`;
+      ms.forEach(m => { html += renderMatchCard(m, followedIds); });
+      html += `</div>`;
+    });
+    document.getElementById('content').innerHTML = html;
+    window.scrollTo({ top:0, behavior:'smooth' });
+  });
 }
 
 function renderMatchCard(m, followedIds) {
@@ -877,13 +1017,16 @@ function renderMatchCard(m, followedIds) {
   } else {
     scoreHtml = `<span class="match-time">${m.time}</span>`;
   }
-  const mainClass = isMain ? ' match-card-main' : '';
+  // 过去赛程弱化：完赛场次不显示星标/推荐理由，卡片降透明度（用户反馈：历史赛程不要着重显示）
+  const isPast = m.status === 'finished';
+  const mainClass = isMain && !isPast ? ' match-card-main' : '';
+  const pastClass = isPast ? ' match-card-past' : '';
   const score = calculateMatchScore(m, followedIds);
   const stars = Math.min(5, Math.max(1, Math.round(score / 4)));
-  const reason = getMatchReason(m, isMain, stars);
+  const reason = isPast ? '' : getMatchReason(m, isMain, stars);
   const sourceName = m.sport === 'cs2' ? 'Liquipedia' : 'TheSportsDB';
-  const sourceUrl = m.sport === 'cs2' ? 'https://liquipedia.net/counterstrike/Liquipedia:Matches' : 'https://www.thesportsdb.com';
-  return `<div class="match-card${mainClass}">
+  const sourceUrl = m.sport === 'cs2' ? (m.league_url || 'https://liquipedia.net/counterstrike/Liquipedia:Matches') : 'https://www.thesportsdb.com';
+  return `<div class="match-card${mainClass}${pastClass}">
     <div class="match-card-league">${m.league} · ${m.round}</div>
     <div class="match-card-teams">
       <div class="match-team">${renderTeamLogo(homeTeam, 36)}<span class="match-team-name">${m.home_name}</span></div>
@@ -891,7 +1034,7 @@ function renderMatchCard(m, followedIds) {
       <div class="match-team">${renderTeamLogo(awayTeam, 36)}<span class="match-team-name">${m.away_name}</span></div>
     </div>
     <div class="match-card-date">${m.date.replace(/-/g,'/')} ${m.time}</div>
-    <div class="match-card-stars">${'★'.repeat(stars)}${'☆'.repeat(5-stars)}</div>
+    ${!isPast ? `<div class="match-card-stars">${'★'.repeat(stars)}${'☆'.repeat(5-stars)}</div>` : ''}
     ${reason ? `<div class="match-card-reason">${reason}</div>` : ''}
     <a class="match-card-source" href="${sourceUrl}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-size:11px;color:#8a8f98;text-decoration:none;">数据来源 · ${sourceName}</a>
   </div>`;
@@ -1198,43 +1341,82 @@ async function refreshSports(sport) {
 }
 
 // === Resources: Football ===
+// 足球联赛赛程（五大联赛 + 欧冠 + 中超，tab 检索；TheSportsDB 免费档每联赛仅少量场次，如实展示并外链完整赛程）
+const FB_LEAGUE_TABS = [
+  { id:'4328', name:'英超', db:'https://www.thesportsdb.com/league/4328' },
+  { id:'4335', name:'西甲', db:'https://www.thesportsdb.com/league/4335' },
+  { id:'4331', name:'德甲', db:'https://www.thesportsdb.com/league/4331' },
+  { id:'4332', name:'意甲', db:'https://www.thesportsdb.com/league/4332' },
+  { id:'4334', name:'法甲', db:'https://www.thesportsdb.com/league/4334' },
+  { id:'4480', name:'欧冠', db:'https://www.thesportsdb.com/league/4480' },
+  { id:'4398', name:'中超', db:'https://www.thesportsdb.com/league/4398' },
+];
+let fbLeagueCache = {}; // { leagueId: { ts, matches } }
+let fbSelectedLeague = '4328';
+
+async function fetchLeagueSchedule(leagueId) {
+  const hit = fbLeagueCache[leagueId];
+  if (hit && Date.now() - hit.ts < 10 * 60e3) return hit.matches;
+  const res = await fetch(`/api/sports?type=leagueseason&id=${leagueId}`);
+  if (!res.ok) throw new Error('http ' + res.status);
+  const data = await res.json();
+  const matches = data.matches || [];
+  fbLeagueCache[leagueId] = { ts: Date.now(), matches };
+  return matches;
+}
+
+async function selectFbLeague(leagueId, btn) {
+  fbSelectedLeague = leagueId;
+  document.querySelectorAll('.fb-league-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const box = document.getElementById('fb-league-content');
+  if (!box) return;
+  const tab = FB_LEAGUE_TABS.find(t => t.id === leagueId);
+  box.innerHTML = '<div class="douban-loading">加载联赛赛程...</div>';
+  try {
+    const matches = await fetchLeagueSchedule(leagueId);
+    const followedTeams = await dbGetTeams();
+    const followedIds = followedTeams.filter(t => t.sport === 'football').flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
+    if (matches.length === 0) {
+      box.innerHTML = `<div class="empty-state" style="padding:32px 16px;"><div class="empty-state-title">数据源暂未收录该联赛近期赛程</div><div class="empty-state-desc">免费数据源覆盖有限，可到 <a class="ts-ext-link" href="${tab.db}" target="_blank" rel="noopener">TheSportsDB 查看完整赛程 ↗</a></div></div>`;
+      return;
+    }
+    // 按日期分组，完赛的排后面
+    const upcoming = matches.filter(m => m.status !== 'finished').sort((a,b) => (a.ts||0) - (b.ts||0));
+    const finished = matches.filter(m => m.status === 'finished').sort((a,b) => (b.ts||0) - (a.ts||0));
+    let html = '';
+    const renderGroup = (list, label) => {
+      if (!list.length) return;
+      html += `<div class="res-section-title res-section-muted" style="margin-top:8px;">${label}</div><div class="match-list">`;
+      list.forEach(m => { html += renderMatchCard(m, followedIds); });
+      html += `</div>`;
+    };
+    renderGroup(upcoming, '近期赛程');
+    renderGroup(finished.slice(0, 5), '已完赛');
+    html += `<div class="tournament-ext-row"><a class="ts-ext-link" href="${tab.db}" target="_blank" rel="noopener">在 TheSportsDB 打开${tab.name}完整赛程 ↗</a></div>`;
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = `<div class="sync-fail-banner">⚠️ 联赛赛程加载失败<button class="link-btn" onclick="selectFbLeague('${leagueId}')">重试</button></div>`;
+  }
+}
+
 async function renderResourceFootball() {
-  // 拉取真实赛程（TheSportsDB，经 /api/sports 代理）；失败保留上次成功缓存
+  // 拉取真实赛程（关注球队按队取）；失败保留上次成功缓存
   const synced = await ensureFootballMatches();
   const followedTeams = await dbGetTeams();
   const fbFollowed = followedTeams.filter(t => t.sport === 'football');
   const followedIds = fbFollowed.flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
   const myMatches = getMatchesForTeams(followedIds, 'football');
   const myUpcoming = myMatches.filter(m => m.status === 'upcoming' || m.status === 'live').sort((a,b) => a.date.localeCompare(b.date));
-  const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
-  const allUpcoming = myMatches.filter(m => m.status === 'upcoming').sort((a,b) => {
-    const sa = calculateMatchScore(a, followedIds), sb = calculateMatchScore(b, followedIds);
-    return sb - sa;
-  });
+  const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 3);
 
-  const leagues = [
-    { name:'英超', nameEn:'Premier League', flag:'🏴', desc:'英格兰超级联赛', url:'https://www.premierleague.com', accent:'#3D195B' },
-    { name:'西甲', nameEn:'La Liga', flag:'🇪🇸', desc:'西班牙甲级联赛', url:'https://www.laliga.com', accent:'#E8782C' },
-    { name:'德甲', nameEn:'Bundesliga', flag:'🇩🇪', desc:'德国甲级联赛', url:'https://www.bundesliga.com', accent:'#D20515' },
-    { name:'意甲', nameEn:'Serie A', flag:'🇮🇹', desc:'意大利甲级联赛', url:'https://www.legaseriea.it', accent:'#0066CC' },
-    { name:'法甲', nameEn:'Ligue 1', flag:'🇫🇷', desc:'法国甲级联赛', url:'https://www.ligue1.com', accent:'#091C3E' },
-    { name:'欧冠', nameEn:'Champions League', flag:'🏆', desc:'欧洲冠军联赛', url:'https://www.uefa.com/uefachampionsleague', accent:'#0B1F4A' },
-    { name:'欧联', nameEn:'Europa League', flag:'🇪🇺', desc:'欧洲联赛', url:'https://www.uefa.com/uefaeuropaleague', accent:'#FF6B00' },
-    { name:'中超', nameEn:'CSL', flag:'🇨🇳', desc:'中国超级联赛', url:'https://www.dongqiudi.com/league/36', accent:'#C8102E' },
-  ];
-  const links = [
-    { title:'懂球帝', url:'https://www.dongqiudi.com', icon:'⚽', desc:'足球新闻、比分、赛事数据' },
-    { title:'Transfermarkt', url:'https://www.transfermarkt.com', icon:'💸', desc:'球员身价、转会信息、市场价值' },
-    { title:'Sofascore', url:'https://www.sofascore.com', icon:'📊', desc:'实时比分、比赛详情、球员评分' },
-    { title:'FIFA', url:'https://www.fifa.com', icon:'🏆', desc:'国际足联赛事、排名、规则' },
-  ];
   let html = `
     <div class="page-header">
       <div class="page-title">足球 · Football</div>
       <div class="page-subtitle">${getSportsLastSynced('football') ? `上次同步 ${new Date(getSportsLastSynced('football')).toLocaleString()}` : '等待首次同步'} · <button class="link-btn" onclick="refreshSports('football')">刷新</button></div>
     </div>`;
 
-  // My teams section
+  // 我关注的主队 chips（按用户要求：资源页不放添加按钮，添加入口在 设置 → Sports 关注管理）
   html += `<div class="my-teams-bar"><div class="my-teams-label">⚽ 我关注的主队</div><div class="my-teams-list" id="fb-my-teams">`;
   if (fbFollowed.length > 0) {
     fbFollowed.forEach(t => {
@@ -1244,53 +1426,34 @@ async function renderResourceFootball() {
         <span class="my-team-name">${team.name}</span>
       </div>`;
     });
+  } else {
+    html += `<span class="my-teams-empty">尚未关注，可在 <button class="link-btn" onclick="navigate('settings')">设置 → Sports 关注管理</button> 添加</span>`;
   }
-  html += `<button class="add-team-btn" onclick="openTeamSelector('football')">＋ 添加主队</button>`;
   html += `</div></div>`;
 
-  // My team's upcoming matches
+  // 五大联赛 + 欧冠 + 中超 赛程 tab（按联赛检索）
+  html += `<div class="res-section-title">联赛赛程 · Leagues</div>
+    <div class="fb-league-tabs" id="fb-league-tabs">${FB_LEAGUE_TABS.map(t => `<button class="fb-league-tab${t.id === fbSelectedLeague ? ' active' : ''}" onclick="selectFbLeague('${t.id}',this)">${t.name}</button>`).join('')}</div>
+    <div id="fb-league-content"></div>`;
+
+  // 关注球队即将开赛
   if (myUpcoming.length > 0) {
-    html += `<div class="res-section-title">我的主队赛程 · My Schedule</div><div class="match-list">`;
+    html += `<div class="res-section-title">⏰ 我的主队赛程 · My Schedule</div><div class="match-list">`;
     myUpcoming.forEach(m => { html += renderMatchCard(m, followedIds); });
     html += `</div>`;
   }
-  // My team's recent results
+  if (!synced && myUpcoming.length === 0 && myRecent.length === 0) {
+    html += `<div class="sync-fail-banner">⚠️ 赛程同步失败 · 上次成功 ${getSportsLastSynced('football') ? new Date(getSportsLastSynced('football')).toLocaleString() : '从未同步'}<button class="link-btn" onclick="refreshSports('football')">重试</button></div>`;
+  }
+  // 最近结果（弱化：放最后、小标题、无星标）
   if (myRecent.length > 0) {
-    html += `<div class="res-section-title">主队最近结果 · Results</div><div class="match-list">`;
+    html += `<div class="res-section-title res-section-muted">最近结果 · Recent Results</div><div class="match-list match-list-muted">`;
     myRecent.forEach(m => { html += renderMatchCard(m, followedIds); });
     html += `</div>`;
   }
-  // Featured match (highest scored)
-  if (allUpcoming.length > 0) {
-    const featured = allUpcoming[0];
-    html += `
-    <div class="featured-match">
-      <div class="featured-match-tag">
-        <span class="featured-match-live">🔥 焦点</span>
-        <span>${featured.league} · ${featured.round}</span>
-      </div>
-      <div class="featured-match-title">${featured.league}</div>
-      <div class="featured-match-teams">
-        <div class="featured-team">
-          ${renderTeamLogo(findTeamVisual('football', featured.home_id, featured.home_name), 72)}
-          <div class="featured-team-name">${featured.home_name}</div>
-        </div>
-        <div class="featured-vs">VS</div>
-        <div class="featured-team">
-          ${renderTeamLogo(findTeamVisual('football', featured.away_id, featured.away_name), 72)}
-          <div class="featured-team-name">${featured.away_name}</div>
-        </div>
-      </div>
-      <div class="featured-match-info">${featured.date.replace(/-/g,'/')} ${featured.time}</div>
-    </div>`;
-  }
-  if (!fbFollowed.length) html += `<div class="empty-state"><div class="empty-state-icon">⚽</div><div class="empty-state-title">先设置你的主队</div><div class="empty-state-desc">关注主队后，这里只展示相关的赛程和比赛结果。</div><button class="placeholder-cta" onclick="openTeamSelector('football')">＋ 关注主队</button></div>`;
-  else if (myUpcoming.length === 0 && myRecent.length === 0) {
-    html += !synced
-      ? `<div class="sync-fail-banner">⚠️ 赛程同步失败 · 上次成功 ${getSportsLastSynced('football') ? new Date(getSportsLastSynced('football')).toLocaleString() : '从未同步'}<button class="link-btn" onclick="refreshSports('football')">重试</button></div>`
-      : `<div class="empty-state" style="padding:40px 20px;"><div class="empty-state-title">关注球队近期没有比赛</div><div class="empty-state-desc">数据源暂未收录近期赛程，可稍后刷新。</div></div>`;
-  }
   document.getElementById('content').innerHTML = html;
+  // 默认加载当前选中联赛
+  selectFbLeague(fbSelectedLeague);
 }
 
 // === Resources: AI Tools ===
@@ -1901,6 +2064,8 @@ async function renderSettings() {
   const all = await dbGetAll();
   const counts = {};
   all.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
+  const cfg = getSyncConfig();
+  const lastSynced = await dbGetMeta('last_synced_at');
   let html = `
     <div class="page-header"><div class="page-title">设置 · Settings</div></div>
     <div class="settings-section">
@@ -1915,6 +2080,8 @@ async function renderSettings() {
       <div class="settings-card">
         <div class="settings-row"><div><div class="settings-row-label">修复海报缓存</div><div class="settings-row-desc">重新下载所有海报图片并本地缓存</div></div><button class="btn btn-ghost" onclick="fixPostersManual()">修复</button></div>
         <div class="settings-row"><div><div class="settings-row-label">导出数据</div><div class="settings-row-desc">下载 JSON 格式的完整记忆档案</div></div><button class="btn btn-ghost" onclick="exportData()">导出</button></div>
+        <div class="settings-row"><div><div class="settings-row-label">导入备份</div><div class="settings-row-desc">从导出的 JSON 文件恢复（相同记录按更新时间合并，不覆盖较新内容）</div></div><button class="btn btn-ghost" onclick="document.getElementById('import-file').click()">导入</button></div>
+        <input type="file" id="import-file" accept="application/json" style="display:none" onchange="importData(this)">
         <div class="settings-row"><div><div class="settings-row-label" style="color:var(--danger);">清除所有数据</div><div class="settings-row-desc">删除全部记忆，不可恢复</div></div><button class="btn btn-ghost" style="color:var(--danger);" onclick="confirmClearData()">清除</button></div>
       </div>
     </div>
@@ -1927,11 +2094,18 @@ async function renderSettings() {
       </div>
     </div>
     <div class="settings-section">
-      <div class="section-label">云端同步 · Cloud Sync (P4 架构预留)</div>
-      <div class="settings-card">
-        <div class="settings-row"><div><div class="settings-row-label">同步状态</div><div class="settings-row-desc">尚未连接云端，数据仅存储在本地 IndexedDB</div></div><div class="settings-row-value" style="color:var(--text-tertiary);">未启用</div></div>
-        <div class="settings-row"><div><div class="settings-row-label">未来架构</div><div class="settings-row-desc">Supabase Auth + PostgreSQL + Storage + RLS<br>本地 IndexedDB 作为缓存层，云端为主数据源</div></div><div class="settings-row-value" style="color:var(--text-tertiary);">规划中</div></div>
-        <div class="settings-row"><div><div class="settings-row-label">迁移策略</div><div class="settings-row-desc">启用云端时，自动迁移本地数据，不删除现有记录</div></div><div class="settings-row-value" style="color:var(--text-tertiary);">✓</div></div>
+      <div class="section-label">云端同步 · WebDAV</div>
+      <div class="settings-card sync-card">
+        <div class="sync-intro">用你自己的免费 WebDAV 网盘做云端同步（推荐<a href="https://www.jianguoyun.com" target="_blank" rel="noopener">坚果云</a>：注册免费 → 账号信息 → 安全选项 → 添加应用密码）。快照存在你自己的网盘里，InnerOS 服务器不存任何数据；凭据只保存在本机浏览器。</div>
+        <div class="field-row"><div class="field-label">WebDAV 地址</div><input type="url" class="field-input" id="sync-url" placeholder="https://dav.jianguoyun.com/dav/InnerOS/inneros-backup.json" value="${cfg.url || ''}"></div>
+        <div class="field-row"><div class="field-label">账号</div><input type="text" class="field-input" id="sync-user" placeholder="登录邮箱" value="${cfg.user || ''}"></div>
+        <div class="field-row"><div class="field-label">应用密码</div><input type="password" class="field-input" id="sync-pass" placeholder="网盘生成的应用密码（非登录密码）" value="${cfg.pass || ''}"></div>
+        <div class="sync-actions">
+          <button class="btn btn-ghost" onclick="syncTest()">测试连接</button>
+          <button class="btn btn-primary" onclick="syncUpload()">上传到云端</button>
+          <button class="btn btn-ghost" onclick="syncDownload()">从云端恢复</button>
+        </div>
+        <div class="sync-status" id="sync-status">上次同步：${lastSynced ? new Date(lastSynced).toLocaleString() : '从未同步'}</div>
       </div>
     </div>
     <div class="settings-section">
@@ -1948,7 +2122,8 @@ async function renderSettings() {
 // === Export ===
 async function exportData() {
   const all = await dbGetAll();
-  const data = { version:'1.0', export_date:new Date().toISOString(), entries:all };
+  const teams = await dbGetTeams();
+  const data = { version:'1.1', export_date:new Date().toISOString(), entries:all, teams };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1957,6 +2132,69 @@ async function exportData() {
   a.click();
   URL.revokeObjectURL(url);
   showToast('数据已导出', 'success');
+}
+
+// === Import（本地备份恢复；与云端恢复共用 mergeSnapshot，逐条新者胜，不覆盖较新内容） ===
+function importData(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data || !Array.isArray(data.entries)) throw new Error('格式不对');
+      showConfirm('📥', '导入备份', `将合并 ${data.entries.length} 条记录（相同记录按更新时间取较新，不会删除现有内容）。继续吗？`, async () => {
+        const r = await mergeSnapshot(data);
+        showToast(`导入完成：新增 ${r.addedCount}，更新 ${r.updatedCount}`, 'success');
+        await navigate('settings');
+      });
+    } catch (e) {
+      showToast('导入失败：' + e.message, 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// === 云同步操作（设置页按钮） ===
+function collectSyncConfig() {
+  const url = document.getElementById('sync-url')?.value.trim() || '';
+  const user = document.getElementById('sync-user')?.value.trim() || '';
+  const pass = document.getElementById('sync-pass')?.value || '';
+  saveSyncConfig({ url, user, pass });
+  return { url, user, pass };
+}
+function setSyncStatus(text, isError) {
+  const el = document.getElementById('sync-status');
+  if (el) { el.textContent = text; el.style.color = isError ? 'var(--danger)' : ''; }
+}
+async function syncTest() {
+  collectSyncConfig();
+  setSyncStatus('连接中...');
+  try {
+    await SyncAdapter.test();
+    setSyncStatus('✓ 连接成功');
+    showToast('WebDAV 连接成功', 'success');
+  } catch (e) { setSyncStatus('✗ ' + e.message, true); showToast(e.message, 'error'); }
+}
+async function syncUpload() {
+  collectSyncConfig();
+  setSyncStatus('上传中...');
+  try {
+    const r = await SyncAdapter.push();
+    setSyncStatus(`✓ 已上传 ${r.count} 条 · ${new Date(r.at).toLocaleString()}`);
+    showToast('已上传到云端', 'success');
+  } catch (e) { setSyncStatus('✗ ' + e.message, true); showToast(e.message, 'error'); }
+}
+async function syncDownload() {
+  collectSyncConfig();
+  setSyncStatus('拉取中...');
+  try {
+    const r = await SyncAdapter.pull();
+    setSyncStatus(`✓ 已恢复 · 新增 ${r.addedCount}，更新 ${r.updatedCount} · ${new Date(r.at).toLocaleString()}`);
+    showToast(`云端恢复完成：新增 ${r.addedCount}，更新 ${r.updatedCount}`, 'success');
+    await navigate('settings');
+  } catch (e) { setSyncStatus('✗ ' + e.message, true); showToast(e.message, 'error'); }
 }
 
 // === Clear ===
@@ -2448,6 +2686,13 @@ window.addEventListener('popstate', async (e) => {
   const st = e.state || {};
   if (selectorOpenSport && st.selector !== selectorOpenSport) closeTeamSelector(true);
   if (captureOpen && !st.capture) closeCapture(true);
+  // 赛事详情层（CS 页：赛事列表 → 赛事详情）
+  if (tournamentOpenKey != null && (!st.tournament || decodeURIComponent(st.tournament) !== tournamentOpenKey)) {
+    tournamentOpenKey = null;
+    await navigate((st.__inneros && st.page) ? st.page : currentPage, true);
+    return;
+  }
+  if (st.tournament && decodeURIComponent(st.tournament) !== tournamentOpenKey) { openTournamentDetail(st.tournament, true); return; }
   // 详情层：当前状态不再带 detail → 回到来源页面
   if (detailOpenId != null && !st.detail) { await navigate((st.__inneros && st.page) ? st.page : currentPage, true); return; }
   if (st.detail && st.detail !== detailOpenId) { await openDetail(st.detail, true); return; }
@@ -2470,9 +2715,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // === Mobile keyboard adaptation ===
-if ('virtualKeyboard' in navigator) {
-  navigator.virtualKeyboard.overlaysContent = true;
-}
+// 不再启用 virtualKeyboard.overlaysContent（会让键盘直接盖住表单下方内容）。
+// 默认行为：视口随键盘缩放 + focusin 滚动兜底，输入框始终可见、页面可上下滑动。
 document.addEventListener('focusin', function(e) {
   if (e.target.matches('input, textarea')) {
     setTimeout(() => e.target.scrollIntoView({ behavior:'smooth', block:'center' }), 300);

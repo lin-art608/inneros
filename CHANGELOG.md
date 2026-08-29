@@ -9,6 +9,36 @@
 
 （暂无）
 
+## [2026-08-29] V1.3：CS 赛事中心重构 + 联赛赛程检索 + 云同步 v1（WebDAV）
+
+### Fixed
+- **队徽覆盖率 62/98 → 100%**（用户反馈"为什么还有圆形字标"）：实测 Liquipedia ticker 中 ~2/3 队伍块用无后缀的 `team-template-image-icon` 类，原正则只认 `-lightmode` 变体；放宽为 lightmode/allmode → 无后缀兜底，44/44 场次队标全中
+- **手机端键盘遮挡**（用户反馈"输入框遮挡下面内容"）：移除 `virtualKeyboard.overlaysContent=true`（该设置让键盘直接盖住表单且页面不可滚），viewport 加 `interactive-widget=resizes-content`，恢复视口随键盘缩放 + focusin 滚动兜底
+- **资源整合页移除全部添加按钮**（用户明确要求）：CS/足球页不再有"＋添加"入口，仅展示关注 chips；空态文字引导到 设置 → Sports 关注管理（选择器仍在设置页打开）
+
+### Changed
+- **CS 页重构为"赛事中心"**（用户要求列出正在进行的赛事、点进赛事看赛程阶段）：
+  - 新增「🔴 正在直播」段（全局 live 场次）
+  - 新增「🏆 进行中的赛事」卡片：按赛事聚合（阶段 chips / 场次数 / 下一场时间 / 直播数）→ 点进赛事详情页（页内层级 + 入历史栈，返回键回列表）：按阶段（Group A / Playoffs…）分组列出全部场次，顶部「在 Liquipedia 打开完整赛程/观看 ↗」外链
+  - ticker 解析新增 `league_url`（赛事名自带 Liquipedia 页面链接，含阶段锚点）
+  - **过去赛程弱化**：完赛场次不放星标/推荐语、卡片降透明度、「最近结果」缩至 3 场置底；赛事列表不再收录纯历史赛事
+- **足球页新增联赛赛程 tab**（用户要求按五大联赛检索）：英超/西甲/德甲/意甲/法甲/欧冠/中超 chips，各自展示近期赛程 + 已完赛分组 + TheSportsDB 完整赛程外链；客户端 10 分钟缓存
+  - 新接口 `/api/sports?type=leagueseason&id=`：eventsseason（当前赛季）+ eventsnextleague 去重合并
+  - 已知限制：TheSportsDB 免费档每赛季仅返回少量场次（实测英超 6 场），非完整赛季——页面如实提示并外链
+
+### Added
+- **云同步 v1（WebDAV，§12 合规：不购买服务/不提交密钥）**：
+  - 用户自己的免费 WebDAV 网盘（推荐坚果云，注册免费）；`functions/api/webdav.js` + server.py 镜像仅做转发代理，凭据只存用户本机 localStorage、随请求传入，服务端零存储
+  - 设置页「云端同步 · WebDAV」：地址/账号/应用密码 + 测试连接 / 上传到云端 / 从云端恢复；快照存 `InnerOS/inneros-backup.json`
+  - 合并策略：逐条按 updated_at 新者胜，不删除现有内容
+  - IndexedDB 升级 v3：新增 `meta` 存储层（last_synced_at，为多设备同步打底）
+- 设置页新增「导入备份」：本地 JSON 恢复，与云端恢复共用合并逻辑（新者胜，不覆盖较新）
+
+### 实测（本地 server.py + 浏览器端到端）
+- CS：赛事卡（BLAST Open Fall 2026 · Group A/B · 7 场）→ 点进详情分阶段列全部场次 → 返回键回列表 ✓；队徽 44/44 ✓
+- 足球：英超 tab 出近期赛程（利物浦 vs 森林）+ 已完赛 5 场真队徽 ✓
+- 设置页云同步 UI 渲染 ✓；`/api/webdav` 三操作（test/get/put）语法与路由 ✓（真实坚果云连接需用户配置自己的账号）
+
 ## [2026-08-29] 变更记录统一到 CHANGELOG.md
 
 ### Changed

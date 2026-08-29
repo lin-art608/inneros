@@ -17,6 +17,7 @@ import time
 import re
 import json
 import gzip
+import base64
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
@@ -277,6 +278,84 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
             'description': intro,
         }
 
+    def do_POST(self):
+        if self.path.startswith('/api/webdav'):
+            self.handle_webdav()
+        else:
+            self.send_error(404)
+
+    def handle_webdav(self):
+        # 与线上 functions/api/webdav.js 行为一致：转发 WebDAV（用户自己的坚果云/自建网盘），
+        # 凭据仅随请求传入，本地/服务端均不存储（V1.2 §12：不提交密钥）
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            body = json.loads(self.rfile.read(length).decode('utf-8')) if length else {}
+        except Exception:
+            self._send_json({'error': 'bad json'}, 400)
+            return
+        op = body.get('op', '')
+        url = (body.get('url') or '').strip()
+        user = body.get('user') or ''
+        password = body.get('pass') or ''
+        if not url or not url.startswith('https://'):
+            self._send_json({'error': '需要 https:// 开头的 WebDAV 地址'}, 400)
+            return
+        auth = 'Basic ' + base64.b64encode(f'{user}:{password}'.encode('utf-8')).decode('ascii')
+
+        def wdav(method, extra_headers=None, data=None):
+            req = urllib.request.Request(url, method=method)
+            req.add_header('Authorization', auth)
+            req.add_header('User-Agent', 'InnerOS-Sync/1.0')
+            for k, v in (extra_headers or {}).items():
+                req.add_header(k, v)
+            with urllib.request.urlopen(req, data=data, timeout=25) as response:
+                return response.status, response.read()
+
+        try:
+            if op == 'test':
+                status, _ = wdav('PROPFIND', {'Depth': '0'})
+                self._send_json({'ok': 200 <= status < 300, 'status': status})
+                return
+            if op == 'get':
+                try:
+                    status, raw = wdav('GET')
+                except urllib.error.HTTPError as e:
+                    if e.code == 404:
+                        self._send_json({'exists': False})
+                        return
+                    raise
+                try:
+                    self._send_json({'exists': True, 'snapshot': json.loads(raw.decode('utf-8'))})
+                except Exception:
+                    self._send_json({'error': '云端文件不是合法 JSON'}, 422)
+                return
+            if op == 'put':
+                payload = body.get('data')
+                if not isinstance(payload, str):
+                    self._send_json({'error': 'data 需为 JSON 字符串'}, 400)
+                    return
+                data = payload.encode('utf-8')
+                try:
+                    status, _ = wdav('PUT', {'Content-Type': 'application/json'}, data)
+                except urllib.error.HTTPError as e:
+                    if e.code == 409:  # 父目录不存在：MKCOL 一级父目录后重试
+                        parent = re.sub(r'/[^/]*/?$', '/', url)
+                        if parent and parent != url:
+                            try:
+                                wdav('MKCOL')
+                            except Exception:
+                                pass
+                        status, _ = wdav('PUT', {'Content-Type': 'application/json'}, data)
+                    else:
+                        raise
+                self._send_json({'ok': 200 <= status < 300, 'status': status})
+                return
+            self._send_json({'error': 'unknown op'}, 400)
+        except urllib.error.HTTPError as e:
+            self._send_json({'error': f'WebDAV {e.code}'}, e.code)
+        except Exception as e:
+            self._send_json({'error': str(e)}, 502)
+
     def handle_sports(self):
         # 与线上 functions/api/sports.js 行为一致：TheSportsDB 代理（球队搜索 + 真实足球赛程）
         parsed = urllib.parse.urlparse(self.path)
@@ -311,12 +390,15 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
                 'sport': 'football',
                 'home_id': ev.get('idHomeTeam') or f"{ev.get('idEvent')}_h",
                 'home_name': ev.get('strHomeTeam') or '',
+                'home_badge': ev.get('strHomeTeamBadge') or '',
                 'away_id': ev.get('idAwayTeam') or f"{ev.get('idEvent')}_a",
                 'away_name': ev.get('strAwayTeam') or '',
+                'away_badge': ev.get('strAwayTeamBadge') or '',
                 'ts': ts,
                 'date': ev.get('dateEvent') or '',
                 'time': str(ev.get('strTime') or '')[:5],
                 'league': lm[0] if lm else (ev.get('strLeague') or ''),
+                'league_id': ev.get('idLeague') or '',
                 'round': rnd,
                 'status': 'finished' if is_fin else 'upcoming',
                 'home_score': int(hs) if (hs is not None and str(hs) != '') else None,
@@ -387,6 +469,39 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
                     deduped.append(m)
                 deduped.sort(key=lambda m: m.get('ts') or '')
                 self._send_json({'matches': deduped[:80]})
+                return
+            if stype == 'leagueseason':
+                # 联赛近期赛程：eventsseason（免费档仅部分场次）+ eventsnextleague，去重合并；前端外链完整赛程
+                lid = params.get('id', [''])[0].strip()
+                if not lid:
+                    self._send_json({'matches': []}, 400)
+                    return
+                lm = league_map.get(lid)
+                seen, all_events = set(), []
+
+                def push(m):
+                    key = f"{m.get('home_id')}|{m.get('away_id')}|{m.get('date')}"
+                    if key not in seen:
+                        seen.add(key)
+                        all_events.append(m)
+
+                for season in ('2026-2027', '2026'):
+                    try:
+                        d = tsb_fetch(f'eventsseason.php?id={lid}&s={season}')
+                        for ev in (d.get('events') or []):
+                            push(normalize_event(ev, lm))
+                    except Exception:
+                        continue
+                    if len(all_events) >= 8:
+                        break
+                try:
+                    d = tsb_fetch('eventsnextleague.php?id=' + lid)
+                    for ev in (d.get('events') or []):
+                        push(normalize_event(ev, lm))
+                except Exception:
+                    pass
+                all_events.sort(key=lambda m: m.get('ts') or '')
+                self._send_json({'matches': all_events[:40]})
                 return
             if stype == 'cs2matches':
                 self._send_json({'matches': self._lp_cs2_matches()})
@@ -463,7 +578,8 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
     def _parse_lp_ticker(cls, html):
         # 结构 2026-08 实测：match-info 块含 timer-object 时间戳、双方 team-template（队标+短名+LP 页面标题）、赛事名、Bo 赛制
         def parse_team(seg):
-            img = re.search(r'team-template-lightmode"><a[^>]*><img[^>]*src="([^"]+)"', seg)
+            img = (re.search(r'team-template-(?:lightmode|allmode)"><a[^>]*><img[^>]*src="([^"]+)"', seg)
+                   or re.search(r'team-template-image-icon[^"]*"><a[^>]*><img[^>]*src="([^"]+)"', seg))
             name = re.search(r'<span class="name"[^>]*><a[^>]*title="([^"]*)"[^>]*>([^<]*)</a>', seg)
             badge = img.group(1) if img else ''
             if badge.startswith('/'):
@@ -486,7 +602,10 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
             ts_m = re.search(r'timer-object[^>]*data-timestamp="(\d+)"', b)
             ts = int(ts_m.group(1)) * 1000 if ts_m else 0
             tour_m = re.search(r'match-info-tournament-name"[^>]*>([\s\S]*?)</span>', b)
-            league = re.sub(r'<[^>]+>', '', tour_m.group(1)).strip() if tour_m else ''
+            league_html = tour_m.group(1) if tour_m else ''
+            league = re.sub(r'<[^>]+>', '', league_html).strip()
+            href_m = re.search(r'<a[^>]*href="([^"]+)"', league_html)
+            league_url = ('https://liquipedia.net' + href_m.group(1)) if (href_m and href_m.group(1).startswith('/')) else (href_m.group(1) if href_m else '')
             bo_m = re.search(r'\((Bo\d)\)', b, re.I)
             scores = re.findall(r'match-info-header-scoreholder-score[^\"]*\">\s*(-?\d+)\s*<', b)
             status, hs, as_ = 'upcoming', None, None
@@ -504,7 +623,7 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
                 'home_id': home['full'] or home['name'], 'home_name': home['name'], 'home_badge': home['badge'],
                 'away_id': away['full'] or away['name'], 'away_name': away['name'], 'away_badge': away['badge'],
                 'ts': ts, 'date': d.strftime('%Y-%m-%d'), 'time': d.strftime('%H:%M'),
-                'league': league, 'round': bo_m.group(1) if bo_m else '',
+                'league': league, 'league_url': league_url, 'round': bo_m.group(1) if bo_m else '',
                 'status': status, 'home_score': hs, 'away_score': as_,
                 'importance': 3, 'tournament_weight': 3,
             })

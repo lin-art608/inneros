@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
 <meta name="referrer" content="no-referrer">
 <title>InnerOS · 个人数字空间</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -844,7 +844,44 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 .ts-done-btn:hover { opacity:0.85; }
 /* 赛程同步失败横幅（V1.2 §6.3：失败显示上次成功时间 + 重试，不冒充真实数据） */
 .sync-fail-banner { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 16px; border:1px solid rgba(199,84,80,0.35); background:rgba(199,84,80,0.06); color:var(--danger); border-radius:var(--radius-sm); font-size:13px; margin-bottom:24px; }
-@media (max-width: 768px) {
+
+/* === CS 赛事卡片（进行中的赛事 → 点进赛事看阶段赛程） === */
+.tournament-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:14px; margin-bottom:32px; }
+.tournament-card { background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; cursor:pointer; transition:all 0.2s ease; }
+.tournament-card:hover { border-color:var(--border-strong); box-shadow:var(--shadow); transform:translateY(-2px); }
+.tournament-card-name { font-size:15px; font-weight:700; margin-bottom:8px; }
+.tournament-card-stages { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+.tournament-stage-chip { padding:2px 8px; border-radius:4px; background:var(--bg-subtle); font-size:10px; color:var(--text-secondary); }
+.tournament-card-meta { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:11px; color:var(--text-tertiary); }
+.tournament-ext-row { margin:-8px 0 24px; }
+.ts-ext-link { font-size:12px; color:var(--accent); text-decoration:none; }
+.ts-ext-link:hover { text-decoration:underline; }
+
+/* 足球联赛 tab（五大联赛+欧冠+中超检索） */
+.fb-league-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px; }
+.fb-league-tab { padding:7px 16px; border-radius:18px; border:1px solid var(--border); background:var(--bg-elevated); color:var(--text-secondary); font-size:13px; font-weight:500; cursor:pointer; font-family:var(--font-sans); transition:all 0.2s ease; }
+.fb-league-tab:hover { border-color:var(--border-strong); color:var(--text); }
+.fb-league-tab.active { background:var(--text); color:var(--bg); border-color:var(--text); font-weight:600; }
+
+/* 过去赛程弱化（用户要求：历史赛程不着重显示） */
+.res-section-muted { color:var(--text-tertiary); font-size:15px; }
+.match-list-muted { opacity:0.72; }
+.match-card-past { background:var(--bg-subtle); border-color:var(--border); }
+.match-card-past .match-team-name { font-weight:500; color:var(--text-secondary); }
+.match-card-past .match-card-league { text-transform:none; }
+
+/* 关注 chips 空态文本（资源页不放添加按钮） */
+.my-teams-empty { font-size:12px; color:var(--text-tertiary); }
+
+/* 云同步（WebDAV）设置 */
+.sync-intro { font-size:12px; color:var(--text-secondary); line-height:1.7; margin-bottom:14px; }
+.sync-intro a { color:var(--accent); }
+.sync-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+.sync-status { margin-top:12px; font-size:12px; color:var(--text-tertiary); }
+@media (max-width: 640px) {
+  .tournament-grid { grid-template-columns:1fr; }
+  .sync-actions .btn { flex:1; }
+}@media (max-width: 768px) {
   .ts-online-btn { padding:4px 10px; }
   .ts-done-btn { padding:14px; }
 }
