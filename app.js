@@ -1058,7 +1058,9 @@ function renderMatchCard(m, followedIds) {
   const reason = isPast ? '' : getMatchReason(m, isMain, stars);
   const sourceName = m.sport === 'cs2' ? 'Liquipedia' : 'TheSportsDB';
   const sourceUrl = m.sport === 'cs2' ? (m.league_url || 'https://liquipedia.net/counterstrike/Liquipedia:Matches') : 'https://www.thesportsdb.com';
+  const isFav = getFavMatchIds().has(m.id);
   return `<div class="match-card${mainClass}${pastClass}">
+    <button class="match-fav-btn${isFav ? ' fav' : ''}" onclick="event.stopPropagation();toggleFavMatch('${m.id}')" title="收藏到今天首页">★</button>
     <div class="match-card-league">${m.league} · ${m.round}</div>
     <div class="match-card-teams">
       <div class="match-team">${renderTeamLogo(homeTeam, 36)}<span class="match-team-name">${m.home_name}</span></div>
@@ -1669,38 +1671,43 @@ async function renderToday() {
   const todayDisplay = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日`;
   let html = `<div class="today-header"><div class="today-date">${todayDisplay}<span class="day">${weekdays[now.getDay()]} · 今天</span></div><div class="today-stats"><div class="today-stat">今日 <strong>${todayEntries.length}</strong> 条</div><div class="today-stat">共 <strong>${all.length}</strong> 条记忆</div><div class="today-stat">电影 <strong>${totalMovies}</strong> · 书籍 <strong>${totalBooks}</strong></div></div></div>`;
 
-  // 我的赛程 (P3: My Schedule on homepage)
-  const followedTeams = await dbGetTeams();
-  if (followedTeams.length > 0) {
-    // 真实赛程（足球=TheSportsDB，CS2=Liquipedia）；失败只展示缓存，不冒充真实数据
-    const [fbOk, cs2Ok] = await Promise.all([ensureFootballMatches(), ensureCS2Matches()]);
-    const cs2Ids = followedTeams.filter(t=>t.sport==='cs2').flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
-    const fbIds = followedTeams.filter(t=>t.sport==='football').flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
-    const cs2Matches = cs2MatchesForFollowed(followedTeams.filter(t=>t.sport==='cs2')).filter(m=>m.status==='upcoming' || m.status==='live');
-    const fbMatches = getMatchesForTeams(fbIds, 'football').filter(m=>m.status==='upcoming' || m.status==='live');
-    const allMyMatches = [...cs2Matches, ...fbMatches].sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
-    if (allMyMatches.length > 0) {
-      html += `<div class="my-schedule-section card-enter"><div class="section-label">⚡ 我的赛程 · My Schedule</div><div class="match-list">`;
-      allMyMatches.slice(0, 5).forEach(m => {
-        const allIds = [...cs2Ids, ...fbIds];
-        html += renderMatchCard(m, allIds);
-      });
+  // 收藏的赛程（用户在资源页点 ★ 收藏的比赛才会出现在首页）
+  const favIds = getFavMatchIds();
+  if (favIds.size > 0) {
+    const followedTeams = await dbGetTeams();
+    const allIds = followedTeams.flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
+    const allMatches = [...getUnifiedMatches('cs2'), ...getUnifiedMatches('football')];
+    const favMatches = allMatches.filter(m => favIds.has(m.id)).sort((a,b) => (a.ts||0) - (b.ts||0));
+    if (favMatches.length > 0) {
+      html += `<div class="my-schedule-section card-enter"><div class="section-label">⭐ 收藏的赛程 · Favorites</div><div class="match-list">`;
+      favMatches.slice(0, 8).forEach(m => { html += renderMatchCard(m, allIds); });
       html += `</div></div>`;
     }
   }
 
   if (todayEntries.length > 0) {
     html += '<div class="today-entries">';
-    todayEntries.forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.06}s" onclick="openDetail(${e.id})">${renderEntryCard(e)}</div>`; });
+    todayEntries.forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.06}s" onclick="openDetail('${e.id}')">${renderEntryCard(e)}</div>`; });
     html += '</div>';
   } else {
     html += `<div class="empty-state"><div class="empty-state-icon">✦</div><div class="empty-state-title">今天还没有记录</div><div class="empty-state-desc">点击右下角的 + 按钮，开始记录你的第一个记忆</div></div>`;
+  }
+  // 最近添加（按创建时间倒序，跨日期）
+  const recentAdded = all.filter(e => getEntryDate(e) !== todayStr)
+    .sort((a,b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))).slice(0, 5);
+  if (recentAdded.length > 0) {
+    html += `<div class="on-this-day"><div class="section-label"> 最近添加 · Recently Added</div><div class="today-entries">`;
+    recentAdded.forEach((e,i) => {
+      const ca = (e.created_at || '').replace('T',' ').slice(5,16);
+      html += `<div class="card-enter" style="animation-delay:${i*0.06}s" onclick="openDetail('${e.id}')">${renderEntryCard(e, true)}<div class="entry-recent-time">添加于 ${ca}</div></div>`;
+    });
+    html += '</div></div>';
   }
   const monthDay = todayStr.slice(5);
   const pastEntries = all.filter(e => { const d = getEntryDate(e); return d.endsWith(monthDay) && d !== todayStr; });
   if (pastEntries.length > 0) {
     html += `<div class="on-this-day"><div class="section-label">那年今日 · On This Day</div><div class="today-entries">`;
-    sortEntries(pastEntries).forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.06}s" onclick="openDetail(${e.id})">${renderEntryCard(e, true)}</div>`; });
+    sortEntries(pastEntries).forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.06}s" onclick="openDetail('${e.id}')">${renderEntryCard(e, true)}</div>`; });
     html += '</div></div>';
   }
   document.getElementById('content').innerHTML = html;
@@ -1753,7 +1760,10 @@ async function renderTimelineContent() {
     html += `<div class="timeline-group"><div class="timeline-group-header"><div class="timeline-group-date">${label}</div><div class="timeline-group-meta">${ge.length} 条</div></div><div class="timeline-line">`;
     ge.forEach(e => {
       const meta = TYPE_META[e.type] || TYPE_META.event;
-      html += `<div class="timeline-item"><div class="timeline-item-dot" style="border-color:${meta.color}"></div><div onclick="openDetail(${e.id})">${renderEntryCard(e)}</div></div>`;
+      const d = getEntryDate(e);
+      const when = d ? `${+d.slice(5,7)}月${+d.slice(8,10)}日` : '';
+      const time = getEntryTime(e) || String(e.created_at || '').slice(11, 16);
+      html += `<div class="timeline-item"><div class="timeline-item-dot" style="border-color:${meta.color}"></div><div class="tl-when" onclick="openDetail('${e.id}')"><span class="tl-when-date">${when}</span><span class="tl-when-time">${time}</span><span class="tl-when-type">${meta.emoji} ${meta.label}</span></div><div onclick="openDetail('${e.id}')">${renderEntryCard(e)}</div></div>`;
     });
     html += '</div></div>';
   });
@@ -1841,7 +1851,7 @@ async function renderLibraryTab(tab) {
   } else if (tab === 'music') {
     let html = '<div class="books-grid">';
     items.forEach(m => {
-      html += `<div class="book-card" onclick="openDetail(${m.id})"><div class="entry-icon" style="width:64px;height:64px;border-radius:8px;background:rgba(201,123,99,0.12);color:var(--c-music);font-size:28px;">🎵</div><div class="book-info"><div class="book-title">${m.title}</div><div class="book-author">${m.artist||''}</div><div class="book-date">${(m.date||'').replace(/-/g,'/')}</div></div></div>`;
+      html += `<div class="book-card" onclick="openDetail('${m.id}')"><div class="entry-icon" style="width:64px;height:64px;border-radius:8px;background:rgba(201,123,99,0.12);color:var(--c-music);font-size:28px;">🎵</div><div class="book-info"><div class="book-title">${m.title}</div><div class="book-author">${m.artist||''}</div><div class="book-date">${(m.date||'').replace(/-/g,'/')}</div></div></div>`;
     });
     content.innerHTML = html ? html + '</div>' : '<div class="empty-state"><div class="empty-state-icon">🎵</div><div class="empty-state-title">还没有音乐记录</div><div class="empty-state-desc">点击 + 按钮，记录你听过的音乐</div></div>';
   } else if (tab === 'game') {
@@ -1850,13 +1860,13 @@ async function renderLibraryTab(tab) {
       const coverHtml = g.cover
         ? `<img class="book-cover" src="${proxyImage(g.cover)}" alt="${g.title}" loading="lazy" onerror="this.style.display='none'">`
         : `<div class="book-cover" style="background:rgba(90,139,173,0.12);display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--c-game);">🎮</div>`;
-      html += `<div class="book-card" onclick="openDetail(${g.id})">${coverHtml}<div class="book-info"><div class="book-title">${g.title}</div><div class="book-author">${g.platform||''}</div><div class="book-date">${g.finish_date?'完成于 '+g.finish_date.replace(/-/g,'/'):'进行中'}</div></div></div>`;
+      html += `<div class="book-card" onclick="openDetail('${g.id}')">${coverHtml}<div class="book-info"><div class="book-title">${g.title}</div><div class="book-author">${g.platform||''}</div><div class="book-date">${g.finish_date?'完成于 '+g.finish_date.replace(/-/g,'/'):'进行中'}</div></div></div>`;
     });
     content.innerHTML = html + '</div>' || '<div class="search-empty">还没有游戏记录</div>';
   } else if (tab === 'place') {
     let html = '<div class="books-grid">';
     items.forEach(p => {
-      html += `<div class="book-card type-place" onclick="openDetail(${p.id})"><div class="entry-icon" style="width:64px;height:90px;border-radius:6px;background:rgba(201,169,97,0.15);color:var(--c-place);font-size:28px;display:flex;align-items:center;justify-content:center;">📍</div><div class="book-info"><div class="book-title">${p.title}</div><div class="book-author">${p.location||''}</div><div class="book-date">${(p.date||'').replace(/-/g,'/')}</div></div></div>`;
+      html += `<div class="book-card type-place" onclick="openDetail('${p.id}')"><div class="entry-icon" style="width:64px;height:90px;border-radius:6px;background:rgba(201,169,97,0.15);color:var(--c-place);font-size:28px;display:flex;align-items:center;justify-content:center;">📍</div><div class="book-info"><div class="book-title">${p.title}</div><div class="book-author">${p.location||''}</div><div class="book-date">${(p.date||'').replace(/-/g,'/')}</div></div></div>`;
     });
     content.innerHTML = html ? html + '</div>' : '<div class="empty-state"><div class="empty-state-icon">📍</div><div class="empty-state-title">还没有地点记录</div><div class="empty-state-desc">点击 + 按钮，记录你去过的地方</div></div>';
   }
@@ -1877,7 +1887,7 @@ function renderMovieWallContent(items) {
     html += `<div class="year-section card-enter" style="animation-delay:${yi*0.08}s"><div class="year-header"><div class="year-number">${y}</div><div class="year-count">${byYear[y].length} 部</div></div><div class="poster-wall">`;
     byYear[y].forEach((m, mi) => {
       const delay = (yi*0.08 + mi*0.03).toFixed(2);
-      html += `<div class="poster-item card-enter" style="animation-delay:${delay}s" onclick="openDetail(${m.id})">${renderPosterWall(m)}<div class="poster-title">${m.title}</div><div class="poster-meta">${m.director || ''}${m.release_date ? ' · ' + m.release_date : ''}</div></div>`;
+      html += `<div class="poster-item card-enter" style="animation-delay:${delay}s" onclick="openDetail('${m.id}')">${renderPosterWall(m)}<div class="poster-title">${m.title}</div><div class="poster-meta">${m.director || ''}${m.release_date ? ' · ' + m.release_date : ''}</div></div>`;
     });
     html += '</div></div>';
   });
@@ -1947,7 +1957,7 @@ function renderBookCard(b, delay) {
       ? '<span class="book-status-badge reading">在读</span>'
       : '<span class="book-status-badge want">想读</span>';
   const dateStr = b.finish_date ? '读完于 ' + b.finish_date.replace(/-/g,'/') : b.start_date ? '开始于 ' + b.start_date.replace(/-/g,'/') : '未开始';
-  return `<div class="book-card card-enter" style="animation-delay:${delay||'0'}s" onclick="openDetail(${b.id})">${coverHtml}<div class="book-info">${statusBadge}<div class="book-title">${b.title}</div><div class="book-author">${b.author||''}</div><div class="book-date">${dateStr}</div></div></div>`;
+  return `<div class="book-card card-enter" style="animation-delay:${delay||'0'}s" onclick="openDetail('${b.id}')">${coverHtml}<div class="book-info">${statusBadge}<div class="book-title">${b.title}</div><div class="book-author">${b.author||''}</div><div class="book-date">${dateStr}</div></div></div>`;
 }
 
 function filterBookWall(status, btn) {
@@ -1986,7 +1996,7 @@ async function doSearch(query) {
   });
   if (matches.length === 0) { results.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-title">没有找到相关记忆</div><div class="empty-state-desc">试试其他关键词，或者添加新的记录</div></div>'; return; }
   let html = '<div class="search-results">';
-  sortEntries(matches).forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.04}s" onclick="openDetail(${e.id})">${renderEntryCard(e, true)}</div>`; });
+  sortEntries(matches).forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.04}s" onclick="openDetail('${e.id}')">${renderEntryCard(e, true)}</div>`; });
   html += '</div>';
   results.innerHTML = html;
 }
@@ -1998,7 +2008,7 @@ async function renderOnThisDay() {
   const past = sortEntries(all.filter(e => { const d = getEntryDate(e); return d.endsWith('-08-27') && d !== '2026-08-27'; }));
   let html = `<div class="page-header"><div class="page-title">那年今日 · On This Day</div></div><div style="font-size:14px;color:var(--text-secondary);margin-bottom:32px;">8月27日 · 时间纵向切片</div>`;
   if (past.length === 0) html += '<div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-title">还没有这一天的历史记录</div><div class="empty-state-desc">随着你记录更多内容，这里会展示同一天的历史记忆</div></div>';
-  else { html += '<div class="today-entries">'; past.forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.06}s" onclick="openDetail(${e.id})">${renderEntryCard(e, true)}</div>`; }); html += '</div>'; }
+  else { html += '<div class="today-entries">'; past.forEach((e,i) => { html += `<div class="card-enter" style="animation-delay:${i*0.06}s" onclick="openDetail('${e.id}')">${renderEntryCard(e, true)}</div>`; }); html += '</div>'; }
   document.getElementById('content').innerHTML = html;
 }
 
@@ -2007,7 +2017,7 @@ async function renderRandom() {
   const all = await dbGetAll();
   if (all.length === 0) { document.getElementById('content').innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎲</div><div class="empty-state-title">还没有记忆记录</div><div class="empty-state-desc">添加一些记录后，这里会随机展示一条回忆</div></div>'; return; }
   const r = all[Math.floor(Math.random() * all.length)];
-  document.getElementById('content').innerHTML = `<div class="page-header"><div class="page-title">随机回忆 · Random Memory</div><button class="btn btn-ghost" onclick="renderRandom()">换一个 →</button></div><div style="font-size:14px;color:var(--text-secondary);margin-bottom:32px;">给你看看一个你可能已经忘记的时刻</div><div class="card-enter" onclick="openDetail(${r.id})">${renderEntryCard(r, true)}</div>`;
+  document.getElementById('content').innerHTML = `<div class="page-header"><div class="page-title">随机回忆 · Random Memory</div><button class="btn btn-ghost" onclick="renderRandom()">换一个 →</button></div><div style="font-size:14px;color:var(--text-secondary);margin-bottom:32px;">给你看看一个你可能已经忘记的时刻</div><div class="card-enter" onclick="openDetail('${r.id}')">${renderEntryCard(r, true)}</div>`;
 }
 
 // === Year Review ===
@@ -2125,7 +2135,7 @@ async function renderSettings() {
       <div class="section-label">数据统计</div>
       <div class="settings-card">
         <div class="settings-row"><div class="settings-row-label">总记录数</div><div class="settings-row-value">${all.length} 条</div></div>
-        ${Object.entries(counts).map(([t,n]) => { const m = TYPE_META[t]||{emoji:'',label:t}; return `<div class="settings-row"><div class="settings-row-label">${m.emoji} ${m.label}</div><div class="settings-row-value">${n} 条</div></div>`; }).join('')}
+        ${Object.entries(counts).map(([t,n]) => { const m = TYPE_META[t]||{emoji:'',label:t}; return `<div class="settings-row" style="cursor:pointer;" onclick="jumpLibrary('${t}')" title="查看全部${m.label}"><div class="settings-row-label">${m.emoji} ${m.label}</div><div class="settings-row-value">${n} 条 →</div></div>`; }).join('')}
       </div>
     </div>
     <div class="settings-section">
@@ -2271,7 +2281,7 @@ async function openDetail(id, fromPop = false) {
   const date = getEntryDate(e);
   const time = getEntryTime(e);
   let html = `<button class="detail-back" onclick="history.back()">← 返回</button>`;
-  html += `<div class="detail-actions"><button class="detail-action-btn" onclick="openCapture(${e.id})">＋ 追加记录</button><button class="detail-action-btn danger" onclick="confirmDelete(${e.id})">🗑 删除</button></div>`;
+  html += `<div class="detail-actions"><button class="detail-action-btn" onclick="openCapture('${e.id}')">＋ 追加记录</button><button class="detail-action-btn danger" onclick="confirmDelete(${e.id})">🗑 删除</button></div>`;
 
   // V1.2 §7：事件 / 日记 / 地点 详情必须在顶部突出「地点 + 时间」。
   let heroMeta = '';
@@ -3137,6 +3147,23 @@ async function ensureSyncBootstrap() {
   if (uploadable.length || teams.length) showToast('正在首次上传本机数据（' + uploadable.length + ' 条记录）…', '');
   await dedupSeeds();
 }
+// 收藏赛程（首页只显示用户主动收藏的比赛）
+function getFavMatchIds() { try { return new Set(JSON.parse(localStorage.getItem('inneros_fav_matches') || '[]')); } catch (e) { return new Set(); } }
+function toggleFavMatch(id) {
+  const arr = JSON.parse(localStorage.getItem('inneros_fav_matches') || '[]');
+  const i = arr.indexOf(id);
+  if (i >= 0) { arr.splice(i, 1); showToast('已取消收藏', ''); } else { arr.push(id); showToast('已收藏，今天首页可见', 'success'); }
+  localStorage.setItem('inneros_fav_matches', JSON.stringify(arr));
+  if (currentPage === 'res-cs') renderResourceCS();
+  else if (currentPage === 'res-football') renderResourceFootball();
+  else if (currentPage === 'today') navigate('today', true);
+}
+// 设置统计 → 收藏对应页签
+async function jumpLibrary(type) {
+  if (['movie','book','music','game','place'].includes(type)) { await navigate('library'); renderLibraryTab(type); }
+  else { await navigate('timeline'); setFilter(type); }
+}
+
 // seed 演示数据去重：本地 seed 记录若与云端已有记录同类型同名 → 删除本地副本（避免第二台设备出现双份）
 async function dedupSeeds() {
   if (!bootCloudKeys.size) return;
