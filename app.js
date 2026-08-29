@@ -2098,7 +2098,7 @@ async function renderSettings() {
     <div class="settings-section">
       <div class="section-label">云端同步 · WebDAV</div>
       <div class="settings-card sync-card">
-        <div class="sync-intro">用你自己的免费 WebDAV 网盘做云端同步（推荐<a href="https://www.jianguoyun.com" target="_blank" rel="noopener">坚果云</a>：注册免费 → 账号信息 → 安全选项 → 添加应用密码）。快照存在你自己的网盘里，InnerOS 服务器不存任何数据；凭据只保存在本机浏览器。</div>
+        <div class="sync-intro">用你自己的免费 WebDAV 网盘做云端同步（推荐<a href="https://www.jianguoyun.com" target="_blank" rel="noopener">坚果云</a>：注册免费 → 账号信息 → 安全选项 → 添加应用密码）。快照存在你自己的网盘里，InnerOS 服务器不存任何数据；凭据只保存在本机浏览器。<br>⚠️ 坚果云会拦截云服务器 IP：<b>线上版</b>同步坚果云可能报 520，请在<b>本地版</b>（python server.py）使用同步；其他 WebDAV 服务（自建/群晖等）不受影响。</div>
         <div class="field-row"><div class="field-label">WebDAV 地址</div><input type="url" class="field-input" id="sync-url" placeholder="https://dav.jianguoyun.com/dav/InnerOS/inneros-backup.json" value="${cfg.url || ''}"></div>
         <div class="field-row"><div class="field-label">账号</div><input type="text" class="field-input" id="sync-user" placeholder="登录邮箱" value="${cfg.user || ''}"></div>
         <div class="field-row"><div class="field-label">应用密码</div><input type="password" class="field-input" id="sync-pass" placeholder="网盘生成的应用密码（非登录密码）" value="${cfg.pass || ''}"></div>
