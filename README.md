@@ -15,4 +15,3 @@ Personal digital space for memory, resources, sports and life.
 | 文档 | 用途 |
 |------|------|
 | [CHANGELOG.md](CHANGELOG.md) | 变更记录（每轮迭代必更新） |
-| `InnerOS_V1.2_Agent_执行计划.docx` | V1.2 开发要求（P0→P6 施工顺序，外部文档） |
