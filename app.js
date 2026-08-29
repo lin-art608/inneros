@@ -13,6 +13,7 @@ const TYPE_META = {
   place:  { emoji:'📍', label:'地点', color:'var(--c-place)' },
   event:  { emoji:'✦', label:'事件', color:'var(--c-event)' },
   photo:  { emoji:'📷', label:'照片', color:'var(--c-photo)' },
+  quick:  { emoji:'💬', label:'速记', color:'var(--c-music)' },
   diary:  { emoji:'📝', label:'日记', color:'var(--c-event)' },
 };
 function localDate(value = new Date()) {
@@ -537,47 +538,6 @@ function dbClear() {
   });
 }
 
-// === Cloud Sync v1：WebDAV（用户自己的坚果云/自建网盘），经 /api/webdav 转发 ===
-// V1.2 §12 合规：不购买付费服务、不提交密钥——凭据仅存用户本机 localStorage，随请求传给转发代理；
-// 数据快照（entries + teams JSON）存在用户自己的网盘里，InnerOS 服务端不存储任何用户数据。
-// 合并策略：逐条按 updated_at/added_at 新者胜；云端文件 inneros-backup.json。
-const SYNC_FILE_DEFAULT = 'InnerOS/inneros-backup.json';
-const SYNC_CONFIG_KEY = 'inneros_sync_config';
-
-function getSyncConfig() {
-  try { return JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY) || '{}'); } catch (e) { return {}; }
-}
-function saveSyncConfig(cfg) {
-  localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(cfg));
-}
-
-async function webdavCall(op, extra = {}) {
-  const cfg = getSyncConfig();
-  let url = (cfg.url || '').trim();
-  if (!url) throw new Error('尚未配置 WebDAV 地址');
-  // 用户只填了网盘根地址（如坚果云弹窗里的 https://dav.jianguoyun.com/dav/）→ 自动补默认文件路径
-  if (url.endsWith('/')) url += 'InnerOS/inneros-backup.json';
-  const res = await fetch('/api/webdav', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ op, url, user: cfg.user || '', pass: cfg.pass || '', ...extra }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data;
-}
-
-function buildSnapshot(all, teams) {
-  return JSON.stringify({
-    version: 1,
-    app: 'InnerOS',
-    exported_at: new Date().toISOString(),
-    entries: all,
-    teams,
-  });
-}
-
-// 逐条合并：updated_at（无则 added_at/created_at）新者胜；本地与云端 id 冲突时保留较新
 function mergeSnapshot(remote) {
   const incoming = (remote.entries || []);
   const incomingTeams = (remote.teams || []);
@@ -600,32 +560,6 @@ function mergeSnapshot(remote) {
   });
 }
 
-const SyncAdapter = {
-  // v1：WebDAV 文件快照同步（替代原 Supabase 预留桩；接口语义保持 push/pull/test）
-  enabled: false, // 连接成功后置 true
-  async test() {
-    const r = await webdavCall('test');
-    if (!r.ok) throw new Error(`连接失败（${r.status}），检查地址/账号/应用密码`);
-    this.enabled = true;
-    return true;
-  },
-  async push() {
-    const [all, teams] = await Promise.all([dbGetAll(), dbGetTeams()]);
-    const r = await webdavCall('put', { data: buildSnapshot(all, teams) });
-    if (!r.ok) throw new Error(`上传失败（${r.status}）`);
-    const at = new Date().toISOString();
-    await dbPutMeta('last_synced_at', at);
-    return { at, count: all.length };
-  },
-  async pull() {
-    const r = await webdavCall('get');
-    if (!r.exists) throw new Error('云端还没有备份文件，请先「上传到云端」');
-    const merged = await mergeSnapshot(r.snapshot || {});
-    const at = new Date().toISOString();
-    await dbPutMeta('last_synced_at', at);
-    return { at, ...merged };
-  },
-};
 
 // === Team CRUD (P3: Sports Data Layer) ===
 function dbGetTeams() {
@@ -856,7 +790,7 @@ async function navigate(page, fromPop = false) {
 
   // Auto-expand the parent group when navigating to a sub-item
   const groupMap = {
-    today:'memory', timeline:'memory', library:'memory', search:'memory',
+    today:'memory', timeline:'memory', library:'memory', search:'memory', quickchat:'memory',
     onthisday:'memory', random:'memory', 'year-review':'memory',
     'res-cs':'resources', 'res-football':'resources', 'res-ai':'resources', 'res-links':'resources'
   };
@@ -873,6 +807,7 @@ async function navigate(page, fromPop = false) {
   try {
     switch(page) {
       case 'today': await renderToday(); break;
+      case 'quickchat': await renderQuickChat(); break;
       case 'timeline': await renderTimeline(); break;
       case 'library': await renderLibrary('movie'); break;
       case 'search': renderSearch(); break;
@@ -2114,8 +2049,6 @@ async function renderSettings() {
   const all = await dbGetAll();
   const counts = {};
   all.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
-  const cfg = getSyncConfig();
-  const lastSynced = await dbGetMeta('last_synced_at');
   const lastCloud = await dbGetMeta('last_cloud_sync');
   let html = `
     <div class="page-header"><div class="page-title">设置 · Settings</div></div>
@@ -2154,21 +2087,6 @@ async function renderSettings() {
         <div class="settings-row"><div><div class="settings-row-label">足球主队</div><div class="settings-row-desc">搜索、选择和管理你的足球主队；资源页只显示相关赛事。</div></div><button class="btn btn-ghost" onclick="openTeamSelector('football')">管理</button></div>
         <div class="settings-row"><div><div class="settings-row-label">CS2 关注战队</div><div class="settings-row-desc">搜索、选择和管理你关注的 CS2 战队。</div></div><button class="btn btn-ghost" onclick="openTeamSelector('cs2')">管理</button></div>
         <div class="settings-row"><div><div class="settings-row-label">赛事缓存</div><div class="settings-row-desc">本地缓存每个项目的最后同步时间；手动刷新不会请求付费服务。</div></div><div class="settings-row-value">本地</div></div>
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="section-label">导出备份 · WebDAV（可选）</div>
-      <div class="settings-card sync-card">
-        <div class="sync-intro">多设备同步请使用上方「账户 · Account」功能（推荐）。本区仅作为<b>手动备份</b>到自有 WebDAV 网盘的可选方式（推荐<a href="https://www.jianguoyun.com" target="_blank" rel="noopener">坚果云</a>）。快照存在你自己的网盘里，InnerOS 服务器不存任何数据；凭据只保存在本机浏览器。<br>⚠️ 坚果云会拦截云服务器 IP：<b>线上版</b>可能报 520，请在<b>本地版</b>使用；自建/群晖等 WebDAV 不受影响。</div>
-        <div class="field-row"><div class="field-label">WebDAV 地址</div><input type="url" class="field-input" id="sync-url" placeholder="https://dav.jianguoyun.com/dav/InnerOS/inneros-backup.json" value="${cfg.url || ''}"></div>
-        <div class="field-row"><div class="field-label">账号</div><input type="text" class="field-input" id="sync-user" placeholder="登录邮箱" value="${cfg.user || ''}"></div>
-        <div class="field-row"><div class="field-label">应用密码</div><input type="password" class="field-input" id="sync-pass" placeholder="网盘生成的应用密码（非登录密码）" value="${cfg.pass || ''}"></div>
-        <div class="sync-actions">
-          <button class="btn btn-ghost" onclick="syncTest()">测试连接</button>
-          <button class="btn btn-primary" onclick="syncUpload()">上传到云端</button>
-          <button class="btn btn-ghost" onclick="syncDownload()">从云端恢复</button>
-        </div>
-        <div class="sync-status" id="sync-status">上次同步：${lastSynced ? new Date(lastSynced).toLocaleString() : '从未同步'}</div>
       </div>
     </div>
     <div class="settings-section">
@@ -2217,47 +2135,6 @@ function importData(input) {
     }
   };
   reader.readAsText(file);
-}
-
-// === 云同步操作（设置页按钮） ===
-function collectSyncConfig() {
-  const url = document.getElementById('sync-url')?.value.trim() || '';
-  const user = document.getElementById('sync-user')?.value.trim() || '';
-  const pass = document.getElementById('sync-pass')?.value || '';
-  saveSyncConfig({ url, user, pass });
-  return { url, user, pass };
-}
-function setSyncStatus(text, isError) {
-  const el = document.getElementById('sync-status');
-  if (el) { el.textContent = text; el.style.color = isError ? 'var(--danger)' : ''; }
-}
-async function syncTest() {
-  collectSyncConfig();
-  setSyncStatus('连接中...');
-  try {
-    await SyncAdapter.test();
-    setSyncStatus('✓ 连接成功');
-    showToast('WebDAV 连接成功', 'success');
-  } catch (e) { setSyncStatus('✗ ' + e.message, true); showToast(e.message, 'error'); }
-}
-async function syncUpload() {
-  collectSyncConfig();
-  setSyncStatus('上传中...');
-  try {
-    const r = await SyncAdapter.push();
-    setSyncStatus(`✓ 已上传 ${r.count} 条 · ${new Date(r.at).toLocaleString()}`);
-    showToast('已上传到云端', 'success');
-  } catch (e) { setSyncStatus('✗ ' + e.message, true); showToast(e.message, 'error'); }
-}
-async function syncDownload() {
-  collectSyncConfig();
-  setSyncStatus('拉取中...');
-  try {
-    const r = await SyncAdapter.pull();
-    setSyncStatus(`✓ 已恢复 · 新增 ${r.addedCount}，更新 ${r.updatedCount} · ${new Date(r.at).toLocaleString()}`);
-    showToast(`云端恢复完成：新增 ${r.addedCount}，更新 ${r.updatedCount}`, 'success');
-    await navigate('settings');
-  } catch (e) { setSyncStatus('✗ ' + e.message, true); showToast(e.message, 'error'); }
 }
 
 // === Clear ===
@@ -2899,11 +2776,26 @@ async function handleLogin() {
 async function handleRegister() {
   const email = document.getElementById('reg-email').value.trim();
   const password = document.getElementById('reg-password').value;
+  const code = document.getElementById('reg-code') ? document.getElementById('reg-code').value.trim() : '';
   if (!email || !password) return authError('reg-error', '请填写邮箱和密码');
   document.getElementById('reg-error').classList.remove('show');
-  const r = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) });
+  const r = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password, code }) });
   if (!r.ok) return authError('reg-error', r.data.error || '注册失败');
   await afterAuth(r.data.email || email);
+}
+
+// 获取注册验证码（60 秒冷却；需在 CF 环境变量配置 EMAIL_API_KEY（Resend）后生效）
+async function sendRegisterCode() {
+  const email = document.getElementById('reg-email').value.trim();
+  if (!email) return authError('reg-error', '先填写邮箱再获取验证码');
+  const btn = document.getElementById('reg-code-btn');
+  document.getElementById('reg-error').classList.remove('show');
+  const r = await api('/api/auth/send-code', { method: 'POST', body: JSON.stringify({ email }) });
+  if (!r.ok) { authError('reg-error', r.data.error || '验证码发送失败'); return; }
+  showToast('验证码已发送到邮箱（10 分钟有效）', 'success');
+  let left = 60;
+  const tick = () => { if (btn) { btn.disabled = true; btn.textContent = left + 's'; if (left-- <= 0) { btn.disabled = false; btn.textContent = '获取验证码'; return; } setTimeout(tick, 1000); } };
+  tick();
 }
 
 function enterGuest() {
@@ -2985,7 +2877,6 @@ function memoryDataSnapshot(rec) {
   return data;
 }
 async function enqueueMemoryUpsert(rec) {
-  if (!authState.loggedIn) return;
   const updated_at = new Date().toISOString();
   rec.updated_at = updated_at;
   const kind = (rec.kind === 'team' || rec.sport) ? 'team' : 'memory';
@@ -3011,7 +2902,6 @@ function compressImage(dataURL, maxDim = 1280, q = 0.8) {
 // 照片 → 附件操作（一图一 op；压缩后入库，原图仅留本地）
 async function enqueueAttachments(memoryId, photos) {
   const ids = [];
-  if (!authState.loggedIn) return ids;
   for (const p of photos || []) {
     if (typeof p !== 'string' || !p.startsWith('data:')) continue;
     const compressed = await compressImage(p);
@@ -3024,7 +2914,6 @@ async function enqueueAttachments(memoryId, photos) {
   return ids;
 }
 async function enqueueEntryAppend(memoryId, entry) {
-  if (!authState.loggedIn) return;
   const photo_ids = await enqueueAttachments(memoryId, entry.photos || []);
   entry.photo_ids = photo_ids;
   await opAppend('append_entry', memoryId, { memory_id: memoryId, entry: { id: entry.id, content: entry.content || '', photo_ids, created_at: entry.created_at || new Date().toISOString() } });
@@ -3147,6 +3036,88 @@ async function ensureSyncBootstrap() {
   if (uploadable.length || teams.length) showToast('正在首次上传本机数据（' + uploadable.length + ' 条记录）…', '');
   await dedupSeeds();
 }
+// ============================================================
+// 速记 · Quick（代替微信传输助手：随手发文字/照片给自己，全设备同步）
+// ============================================================
+let pendingChatPhotos = [];
+
+async function renderQuickChat() {
+  const all = (await dbGetAll()).filter(r => r.type === 'quick')
+    .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+  let html = `<div class="page-header"><div class="page-title">速记 · Quick</div><div class="page-subtitle">随手发文字 / 照片给自己，登录后全设备同步</div></div>`;
+  html += `<div class="chat-thread" id="chat-thread">`;
+  if (!all.length) {
+    html += `<div class="empty-state" style="padding:40px 16px;"><div class="empty-state-icon">💬</div><div class="empty-state-title">发第一条速记给自己</div><div class="empty-state-desc">下方输入文字或点 📎 加照片，发送即保存并同步。</div></div>`;
+  }
+  for (const mem of all) {
+    const day = (mem.title || '').replace('速记 ', '') || (getEntryDate(mem) || '');
+    html += `<div class="chat-day">${day}</div>`;
+    const sorted = [...(mem.entries || [])].sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+    for (const en of sorted) {
+      const ts = String(en.created_at || '').slice(11, 16);
+      const imgs = (en.photos || []).map(p => `<img class="chat-photo" src="${p}" onclick="this.classList.toggle('expanded')">`).join('');
+      html += `<div class="chat-msg"><div class="chat-bubble">${en.content ? `<div class="chat-text">${escapeHtml(en.content)}</div>` : ''}${imgs}</div><div class="chat-time">${ts}</div></div>`;
+    }
+  }
+  html += `</div><div class="chat-inputbar">
+    <div class="chat-previews" id="chat-previews"></div>
+    <div class="chat-input-row">
+      <label class="chat-attach-btn" title="添加照片">📎<input type="file" accept="image/jpeg,image/png,image/webp" multiple style="display:none" onchange="handleChatPhotos(this)"></label>
+      <input type="text" class="chat-input" id="chat-input" placeholder="给自己发一条…" onkeydown="if(event.key==='Enter')sendQuickMsg()">
+      <button class="chat-send-btn" onclick="sendQuickMsg()">发送</button>
+    </div>
+  </div>`;
+  document.getElementById('content').innerHTML = html;
+  requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
+}
+
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function handleChatPhotos(inp) {
+  for (const f of Array.from(inp.files || [])) {
+    if (f.size > 10 * 1024 * 1024) { showToast('图片不能超过10MB: ' + f.name, 'error'); continue; }
+    try { pendingChatPhotos.push(await fileToDataURL(f)); } catch (e) { showToast('图片读取失败', 'error'); }
+  }
+  inp.value = '';
+  renderChatPreviews();
+}
+function removeChatPhoto(i) {
+  pendingChatPhotos.splice(i, 1);
+  renderChatPreviews();
+}
+function renderChatPreviews() {
+  const prev = document.getElementById('chat-previews');
+  if (prev) prev.innerHTML = pendingChatPhotos.map((p, i) => `<img class="chat-preview" src="${p}" onclick="removeChatPhoto(${i})" title="点击移除">`).join('');
+}
+
+async function sendQuickMsg() {
+  const input = document.getElementById('chat-input');
+  const content = (input ? input.value : '').trim();
+  if (!content && !pendingChatPhotos.length) { showToast('先输入文字或添加照片', ''); return; }
+  const today = localDate();
+  const all = await dbGetAll();
+  let mem = all.find(r => r.type === 'quick' && getEntryDate(r) === today);
+  if (!mem) {
+    mem = { id: uuid(), type: 'quick', title: '速记 ' + today, created_at: new Date().toISOString(), entries: [] };
+  }
+  mem.entries = mem.entries || [];
+  const entry = { id: uuid(), created_at: new Date().toISOString(), content, photos: pendingChatPhotos.slice(), photo_ids: [] };
+  mem.entries.push(entry);
+  mem.updated_at = entry.created_at;
+  await dbPut(mem);
+  try {
+    if (authState.loggedIn) {
+      await enqueueMemoryUpsert(mem);
+      await enqueueEntryAppend(mem.id, entry);
+      syncNow();
+    }
+  } catch (e) { console.warn('速记同步入队失败', e); }
+  pendingChatPhotos = [];
+  renderQuickChat();
+}
+
 // 收藏赛程（首页只显示用户主动收藏的比赛）
 function getFavMatchIds() { try { return new Set(JSON.parse(localStorage.getItem('inneros_fav_matches') || '[]')); } catch (e) { return new Set(); } }
 function toggleFavMatch(id) {

@@ -17,7 +17,6 @@ import time
 import re
 import json
 import gzip
-import base64
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
@@ -318,97 +317,8 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path.startswith('/api/auth') or self.path.startswith('/api/sync'):
             self._proxy_api()
-        elif self.path.startswith('/api/webdav'):
-            self.handle_webdav()
         else:
             self.send_error(404)
-
-    def handle_webdav(self):
-        # 与线上 functions/api/webdav.js 行为一致：转发 WebDAV（用户自己的坚果云/自建网盘），
-        # 凭据仅随请求传入，本地/服务端均不存储（V1.2 §12：不提交密钥）
-        try:
-            length = int(self.headers.get('Content-Length') or 0)
-            body = json.loads(self.rfile.read(length).decode('utf-8')) if length else {}
-        except Exception:
-            self._send_json({'error': 'bad json'}, 400)
-            return
-        op = body.get('op', '')
-        url = (body.get('url') or '').strip()
-        user = body.get('user') or ''
-        password = body.get('pass') or ''
-        loopback = url.startswith('http://127.0.0.1:') or url.startswith('http://localhost:')
-        allowed = url.startswith('https://') or loopback
-        if not url or not allowed:
-            self._send_json({'error': '需要 https:// 开头的 WebDAV 地址'}, 400)
-            return
-        auth = 'Basic ' + base64.b64encode(f'{user}:{password}'.encode('utf-8')).decode('ascii')
-
-        def wdav(method, extra_headers=None, data=None, target=None):
-            req = urllib.request.Request(target or url, method=method)
-            req.add_header('Authorization', auth)
-            req.add_header('User-Agent', 'InnerOS-Sync/1.0')
-            for k, v in (extra_headers or {}).items():
-                req.add_header(k, v)
-            with urllib.request.urlopen(req, data=data, timeout=25) as response:
-                return response.status, response.read()
-
-        def wdav_parent(method, parent_url):
-            return wdav(method, target=parent_url)
-
-        try:
-            if op == 'test':
-                # 探测父目录而非备份文件本身：首次使用时文件尚不存在，坚果云对"父目录缺失"按协议返回 409，
-                # 会把正确的凭据误报为失败（409 应只在上传时出现，上传已带自动建目录）
-                parent = re.sub(r'/[^/]*/?$', '/', url) or url
-                status, _ = wdav('PROPFIND', {'Depth': '0'}, target=parent)
-                self._send_json({'ok': 200 <= status < 300, 'status': status})
-                return
-            if op == 'get':
-                try:
-                    status, raw = wdav('GET')
-                except urllib.error.HTTPError as e:
-                    if e.code == 404:
-                        self._send_json({'exists': False})
-                        return
-                    raise
-                try:
-                    self._send_json({'exists': True, 'snapshot': json.loads(raw.decode('utf-8'))})
-                except Exception:
-                    self._send_json({'error': '云端文件不是合法 JSON'}, 422)
-                return
-            if op == 'put':
-                payload = body.get('data')
-                if not isinstance(payload, str):
-                    self._send_json({'error': 'data 需为 JSON 字符串'}, 400)
-                    return
-                data = payload.encode('utf-8')
-                try:
-                    status, _ = wdav('PUT', {'Content-Type': 'application/json'}, data)
-                except urllib.error.HTTPError as e:
-                    if e.code == 409:  # 父目录不存在：对父目录 MKCOL 后重试（此前误对文件 URL 发 MKCOL，导致建目录失败）
-                        parent = re.sub(r'/[^/]*/?$', '/', url)
-                        if parent and parent != url and parent.endswith('/'):
-                            try:
-                                wdav_parent('MKCOL', parent)
-                            except Exception:
-                                pass
-                        status, _ = wdav('PUT', {'Content-Type': 'application/json'}, data)
-                    else:
-                        raise
-                self._send_json({'ok': 200 <= status < 300, 'status': status})
-                return
-            self._send_json({'error': 'unknown op'}, 400)
-        except urllib.error.HTTPError as e:
-            tips = {
-                401: '账号或应用密码不对（要用网盘生成的应用密码，不是登录密码）',
-                403: '该账号没有 WebDAV 权限（检查应用密码是否被撤销）',
-                405: '地址应指向一个文件路径（以 .json 结尾），而不是目录',
-                520: '坚果云风控拦截了云服务器请求：线上版暂无法直连坚果云，请在本地版（localhost）使用云同步，或改用不拦截数据中心 IP 的 WebDAV 服务',
-                409: '目标目录暂时冲突，请再点一次（上传会自动创建目录）',
-            }
-            self._send_json({'error': tips.get(e.code, f'WebDAV {e.code}')}, e.code)
-        except Exception as e:
-            self._send_json({'error': str(e)}, 502)
 
     def handle_sports(self):
         # 与线上 functions/api/sports.js 行为一致：TheSportsDB 代理（球队搜索 + 真实足球赛程）

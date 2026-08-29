@@ -143,6 +143,11 @@ body {
 .auth-error {
   color:var(--danger); font-size:13px; margin-top:12px; display:none;
 }
+
+.auth-code-btn { padding:12px 14px; border-radius:var(--radius-sm); border:1px solid var(--border); background:none; color:var(--text-secondary); font-size:13px; cursor:pointer; white-space:nowrap; font-family:var(--font-sans); }
+.auth-code-btn:hover { border-color:var(--accent); color:var(--accent); }
+.auth-code-btn:disabled { opacity:0.5; cursor:not-allowed; }
+
 .auth-error.show { display:block; }
 
 /* ============================================================
@@ -213,6 +218,27 @@ body {
 }
 .nav-group#nav-group-resources .nav-subitems .nav-item.active::before { height:20px; }
 
+
+
+/* 速记对话（代替微信传输助手） */
+.chat-thread { display:flex; flex-direction:column; gap:10px; padding-bottom:8px; }
+.chat-day { text-align:center; font-size:11px; color:var(--text-tertiary); margin:14px 0 4px; }
+.chat-msg { display:flex; flex-direction:column; align-items:flex-start; }
+.chat-bubble { max-width:78%; background:var(--bg-elevated); border:1px solid var(--border); border-radius:4px 14px 14px 14px; padding:10px 14px; box-shadow:var(--shadow); }
+.chat-text { font-size:14px; line-height:1.6; white-space:pre-wrap; word-wrap:break-word; }
+.chat-photo { max-width:180px; max-height:180px; border-radius:8px; margin-top:6px; display:block; cursor:pointer; }
+.chat-photo.expanded { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); max-width:90vw; max-height:90vh; z-index:9999; }
+.chat-time { font-size:10px; color:var(--text-tertiary); margin:3px 6px 0; }
+.chat-inputbar { position:sticky; bottom:8px; background:var(--bg); padding:8px 0 4px; z-index:5; }
+.chat-previews { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; }
+.chat-preview { width:54px; height:54px; object-fit:cover; border-radius:8px; border:1px solid var(--border); cursor:pointer; }
+.chat-input-row { display:flex; gap:8px; align-items:center; }
+.chat-attach-btn { width:44px; height:44px; flex-shrink:0; border:1px solid var(--border); border-radius:12px; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; font-size:18px; cursor:pointer; }
+.chat-attach-btn:hover { border-color:var(--accent); }
+.chat-input { flex:1; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:var(--bg-elevated); color:var(--text); font-size:14px; font-family:var(--font-sans); outline:none; }
+.chat-input:focus { border-color:var(--accent); }
+.chat-send-btn { padding:12px 20px; border:none; border-radius:12px; background:var(--text); color:var(--bg); font-size:14px; font-weight:600; cursor:pointer; font-family:var(--font-sans); }
+.chat-send-btn:hover { opacity:0.85; }
 
 /* 时间线朋友圈化：每条直接显示日期/时间/类型 */
 .tl-when { display:flex; align-items:baseline; gap:10px; margin:0 0 6px 48px; font-size:12px; color:var(--text-tertiary); cursor:pointer; }
@@ -1049,6 +1075,13 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
         <div class="auth-label">密码</div>
         <input type="password" class="auth-input" id="reg-password" placeholder="至少 6 位">
       </div>
+      <div class="auth-field">
+        <div class="auth-label">邮箱验证码</div>
+        <div style="display:flex;gap:8px;">
+          <input type="text" class="auth-input" id="reg-code" placeholder="6 位验证码" style="flex:1;" maxlength="6">
+          <button class="auth-btn-ghost auth-code-btn" id="reg-code-btn" onclick="sendRegisterCode()">获取验证码</button>
+        </div>
+      </div>
       <div class="auth-error" id="reg-error"></div>
       <button class="auth-btn auth-btn-primary" onclick="handleRegister()">创建账户</button>
     </div>
@@ -1079,6 +1112,10 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
           <button class="nav-item active" data-page="today" onclick="navigate('today')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             <span class="nav-label"><span class="nav-cn">今天</span><span class="nav-en">Today</span></span>
+          </button>
+          <button class="nav-item" data-page="quickchat" onclick="navigate('quickchat')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            <span class="nav-label"><span class="nav-cn">速记</span><span class="nav-en">Quick</span></span>
           </button>
           <button class="nav-item" data-page="timeline" onclick="navigate('timeline')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>

@@ -51,6 +51,12 @@ const SCHEMA_STATEMENTS = [
     data TEXT DEFAULT '',
     created_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS codes (
+    email TEXT PRIMARY KEY,
+    code TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS operations (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     op_id TEXT UNIQUE NOT NULL,

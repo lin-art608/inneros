@@ -16,11 +16,43 @@ export async function onRequestPost(context) {
 
   await ensureSchema(db);
 
+  if (action === 'send-code') {
+    // 注册验证码：通过 Resend 发送（API Key 存 Cloudflare 环境变量 EMAIL_API_KEY，不进代码）
+    const email = String(body.email || '').trim().toLowerCase();
+    if (!EMAIL_RE.test(email)) return json({ error: '邮箱格式不对' }, 400);
+    const apiKey = env.EMAIL_API_KEY;
+    if (!apiKey) return json({ error: '邮件服务未配置：需在 Cloudflare 环境变量设置 EMAIL_API_KEY（Resend）' }, 503);
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expires = new Date(Date.now() + 10 * 60e3).toISOString();
+    await db.prepare(`INSERT INTO codes(email, code, expires_at, created_at) VALUES(?,?,?,?)
+      ON CONFLICT(email) DO UPDATE SET code = excluded.code, expires_at = excluded.expires_at, created_at = excluded.created_at`)
+      .bind(email, code, expires, new Date().toISOString()).run();
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: 'InnerOS <onboarding@resend.dev>', to: [email], subject: 'InnerOS 注册验证码', text: '你的注册验证码是 ' + code + '，10 分钟内有效。' }),
+    });
+    if (!res.ok) {
+      const errText = (await res.text()).slice(0, 200);
+      return json({ error: '验证码邮件发送失败（' + res.status + '）：' + errText }, 502);
+    }
+    return json({ ok: true, ttl_minutes: 10 });
+  }
+
   if (action === 'register') {
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
     if (!EMAIL_RE.test(email)) return json({ error: '邮箱格式不对' }, 400);
     if (password.length < 6) return json({ error: '密码至少 6 位' }, 400);
+    // 配置了邮件服务 → 强制验证码
+    if (env.EMAIL_API_KEY) {
+      const code = String(body.code || '').trim();
+      const rec = await db.prepare('SELECT code, expires_at FROM codes WHERE email = ?').bind(email).first();
+      if (!rec) return json({ error: '请先获取验证码' }, 400);
+      if (rec.expires_at < new Date().toISOString()) return json({ error: '验证码已过期，请重新获取' }, 400);
+      if (rec.code !== code) return json({ error: '验证码不对' }, 400);
+      await db.prepare('DELETE FROM codes WHERE email = ?').bind(email).run();
+    }
     const exists = await db.prepare('SELECT 1 FROM users WHERE email = ?').bind(email).first();
     if (exists) return json({ error: '该邮箱已注册' }, 409);
     const salt = randomHex(16);
