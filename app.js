@@ -523,8 +523,10 @@ function saveSyncConfig(cfg) {
 
 async function webdavCall(op, extra = {}) {
   const cfg = getSyncConfig();
-  const url = (cfg.url || '').trim();
+  let url = (cfg.url || '').trim();
   if (!url) throw new Error('尚未配置 WebDAV 地址');
+  // 用户只填了网盘根地址（如坚果云弹窗里的 https://dav.jianguoyun.com/dav/）→ 自动补默认文件路径
+  if (url.endsWith('/')) url += 'InnerOS/inneros-backup.json';
   const res = await fetch('/api/webdav', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

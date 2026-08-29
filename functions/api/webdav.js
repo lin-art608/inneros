@@ -66,3 +66,13 @@ export async function onRequestPost(context) {
     return json({ error: String(e && e.message || e) }, 502);
   }
 }
+
+// 常见 WebDAV 错误转友好提示（401=密码错，405=地址指向目录等）
+export function friendlyError(status) {
+  const tips = {
+    401: '账号或应用密码不对（要用网盘生成的应用密码，不是登录密码）',
+    403: '该账号没有 WebDAV 权限（检查应用密码是否被撤销）',
+    405: '地址应指向一个文件路径（以 .json 结尾），而不是目录',
+  };
+  return tips[status] || `WebDAV ${status}`;
+}

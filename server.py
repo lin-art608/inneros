@@ -297,19 +297,24 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
         url = (body.get('url') or '').strip()
         user = body.get('user') or ''
         password = body.get('pass') or ''
-        if not url or not url.startswith('https://'):
+        loopback = url.startswith('http://127.0.0.1:') or url.startswith('http://localhost:')
+        allowed = url.startswith('https://') or loopback
+        if not url or not allowed:
             self._send_json({'error': '需要 https:// 开头的 WebDAV 地址'}, 400)
             return
         auth = 'Basic ' + base64.b64encode(f'{user}:{password}'.encode('utf-8')).decode('ascii')
 
-        def wdav(method, extra_headers=None, data=None):
-            req = urllib.request.Request(url, method=method)
+        def wdav(method, extra_headers=None, data=None, target=None):
+            req = urllib.request.Request(target or url, method=method)
             req.add_header('Authorization', auth)
             req.add_header('User-Agent', 'InnerOS-Sync/1.0')
             for k, v in (extra_headers or {}).items():
                 req.add_header(k, v)
             with urllib.request.urlopen(req, data=data, timeout=25) as response:
                 return response.status, response.read()
+
+        def wdav_parent(method, parent_url):
+            return wdav(method, target=parent_url)
 
         try:
             if op == 'test':
@@ -338,11 +343,11 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
                 try:
                     status, _ = wdav('PUT', {'Content-Type': 'application/json'}, data)
                 except urllib.error.HTTPError as e:
-                    if e.code == 409:  # 父目录不存在：MKCOL 一级父目录后重试
+                    if e.code == 409:  # 父目录不存在：对父目录 MKCOL 后重试（此前误对文件 URL 发 MKCOL，导致建目录失败）
                         parent = re.sub(r'/[^/]*/?$', '/', url)
-                        if parent and parent != url:
+                        if parent and parent != url and parent.endswith('/'):
                             try:
-                                wdav('MKCOL')
+                                wdav_parent('MKCOL', parent)
                             except Exception:
                                 pass
                         status, _ = wdav('PUT', {'Content-Type': 'application/json'}, data)
@@ -352,7 +357,12 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
                 return
             self._send_json({'error': 'unknown op'}, 400)
         except urllib.error.HTTPError as e:
-            self._send_json({'error': f'WebDAV {e.code}'}, e.code)
+            tips = {
+                401: '账号或应用密码不对（要用网盘生成的应用密码，不是登录密码）',
+                403: '该账号没有 WebDAV 权限（检查应用密码是否被撤销）',
+                405: '地址应指向一个文件路径（以 .json 结尾），而不是目录',
+            }
+            self._send_json({'error': tips.get(e.code, f'WebDAV {e.code}')}, e.code)
         except Exception as e:
             self._send_json({'error': str(e)}, 502)
 
