@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### V1.10.0 架构升级 ARCH-007（Application Service 层，2026-08-30）
+
+- **memory-service**（依赖注入 repository+domain）：createMemory（先领域校验，updated_at 服务端生成）、list/get（normalizeMemory 归一化 + NOT_FOUND 语义）、appendEntry（空追加 400 拒绝）、deleteMemory（墓碑）、updateEntryContent（空白拒绝）
+- **media-service**：Provider 选择（movie/book→douban，未知类型 400）、query 校验、第三方原始错误不泄漏（只进服务端日志 + retryable）
+- **v1 路由接线**：/api/v1/memories GET+POST、/api/v1/media/search 改为 parse→auth→service→ok/fail
+- **_infra/errors.js 补强**：新增 ServiceError（code/status/retryable），路由统一捕获转 fail()
+- 实测：memory-service 9 组断言（fake repository）、media-service 6 组（fake provider，验证不泄漏）全通过；既有 3 套单测回归全绿
+
+## [Unreleased] 之前
 ### V1.9.0 架构升级 ARCH-004~006（第二轮，2026-08-30）
 
 - **ARCH-004 functions/_domain/memory.js**——Memory 领域模型：canonicalType（movie/book/music/game→media）、normalizeMemory（旧字段 watch_date/event_date/location→occurredAt/places 等标准映射 + metadata 兜底）、validateMemory、validateOperation/SYNC_OP_KINDS

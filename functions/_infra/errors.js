@@ -41,6 +41,17 @@ export function fail(code, message, { status = 400, retryable = false, headers =
   });
 }
 
+// Application Service 业务错误：服务抛出，路由层捕获后转 fail()
+export class ServiceError extends Error {
+  constructor(code, message, { status = 400, retryable = false } = {}) {
+    super(message);
+    this.name = 'ServiceError';
+    this.code = code;
+    this.status = status;
+    this.retryable = !!retryable;
+  }
+}
+
 // 常用快捷失败
 export const errors = {
   authRequired: () => fail(ErrorCode.AUTH_REQUIRED, '未登录或会话过期', { status: 401 }),

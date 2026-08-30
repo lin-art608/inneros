@@ -89,6 +89,13 @@ export async function getMediaDetail({ type, id }) {
   return mapMovieDetail(d, id);
 }
 
+// Provider 形态（media-service 依赖注入用）
+export const doubanProvider = {
+  name: 'douban',
+  async search({ type, query }) { return searchMedia({ type, query }); },
+  async detail({ type, id }) { return getMediaDetail({ type, id }); },
+};
+
 // ---- 旧响应形状（既有 /api/douban 路由的兼容输出，由路由层映射）----
 export async function suggestRaw(kind, q) {
   const res = await fetchDouban(`https://${kind}.douban.com/j/subject_suggest?q=${encodeURIComponent(q)}`, 'https://movie.douban.com/', 'application/json, text/javascript, */*; q=0.01');
