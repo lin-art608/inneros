@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.16.2';
+const APP_VERSION = 'v1.16.3';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -752,9 +752,10 @@ function sortEntries(entries) {
   return [...entries].sort((a, b) => {
     const da = getEntryDate(a), db2 = getEntryDate(b);
     if (da !== db2) return da < db2 ? 1 : da > db2 ? -1 : 0;
-    // 同日按时间倒序（无既有时段用 created_at 的时分，再按完整 created_at）
-    const ta = getEntryTime(a) || String(a.created_at || '').slice(11, 16);
-    const tb = getEntryTime(b) || String(b.created_at || '').slice(11, 16);
+    // 同日按时间倒序：无既有时段用 created_at 的**本地**时分（此前用 slice(11,16) 取 UTC 时间，
+    // 与显示层 localTimeOf 差 8 小时，导致书籍等无 watch_time 的条目排序与显示不一致）
+    const ta = getEntryTime(a) || localTimeOf(a.created_at);
+    const tb = getEntryTime(b) || localTimeOf(b.created_at);
     if (ta !== tb) return ta < tb ? 1 : ta > tb ? -1 : 0;
     return String(b.created_at || '').localeCompare(String(a.created_at || ''));
   });
@@ -1832,11 +1833,7 @@ function renderMovieWallContent(items) {
   }
   const byYear = {};
   items.forEach(m => { const y = (getEntryDate(m)||'').slice(0,4) || '未知'; if (!byYear[y]) byYear[y] = []; byYear[y].push(m); });
-  // 同年份内按日期降序（最近在上）
-  Object.values(byYear).forEach(list => list.sort((a, b) => {
-    const da = getEntryDate(a) || a.created_at || '', db2 = getEntryDate(b) || b.created_at || '';
-    return da < db2 ? 1 : da > db2 ? -1 : 0;
-  }));
+  // items 已由 sortEntries 全局排序（日期→时间→created_at 三级倒序），分组后保持原序即可
   // 年份倒序；"未知"固定放最后
   const yearOrder = Object.keys(byYear).sort((a, b) => {
     if (a === '未知') return 1;
@@ -1901,11 +1898,7 @@ function renderBookWallContent(items, status) {
       const y = b.finish_date ? b.finish_date.slice(0,4) : (b.start_date ? b.start_date.slice(0,4) : '未开始');
       if (!byYear[y]) byYear[y] = []; byYear[y].push(b);
     });
-    // 同年份内按日期降序（最近在上），显式排序避免依赖全局顺序
-    Object.values(byYear).forEach(list => list.sort((a, b) => {
-      const da = getEntryDate(a) || a.created_at || '', db2 = getEntryDate(b) || b.created_at || '';
-      return da < db2 ? 1 : da > db2 ? -1 : 0;
-    }));
+    // filtered 已由 sortEntries 全局排序（日期→时间→created_at 三级倒序），分组后保持原序即可
     // 年份倒序；"未开始"（想读无日期）固定放最后，避免中文字符串排序跑到最前
     const yearOrder = Object.keys(byYear).sort((a, b) => {
       if (a === '未开始') return 1;
