@@ -1,7 +1,9 @@
 // ============================================================
-// Personal Memory OS — Phase 1: Local Data System
-// IndexedDB + No Auth + Full CRUD + Poster Fallbacks
+// Personal Memory OS — InnerOS
+// 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
+const APP_VERSION = 'v1.4.2';
+console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
 const TYPE_META = {
@@ -763,8 +765,13 @@ function getEntryDate(e) { return e.watch_date || e.event_date || e.date || e.fi
 function getEntryTime(e) { return e.watch_time || e.event_time || ''; }
 function sortEntries(entries) {
   return [...entries].sort((a, b) => {
-    const da = getEntryDate(a), db = getEntryDate(b);
-    return da < db ? 1 : da > db ? -1 : 0;
+    const da = getEntryDate(a), db2 = getEntryDate(b);
+    if (da !== db2) return da < db2 ? 1 : da > db2 ? -1 : 0;
+    // 同日按时间倒序（无既有时段用 created_at 的时分，再按完整 created_at）
+    const ta = getEntryTime(a) || String(a.created_at || '').slice(11, 16);
+    const tb = getEntryTime(b) || String(b.created_at || '').slice(11, 16);
+    if (ta !== tb) return ta < tb ? 1 : ta > tb ? -1 : 0;
+    return String(b.created_at || '').localeCompare(String(a.created_at || ''));
   });
 }
 
@@ -2085,7 +2092,8 @@ async function renderSettings() {
     <div class="settings-section">
       <div class="section-label">关于</div>
       <div class="settings-card">
-        <div class="settings-row"><div class="settings-row-label">Personal Memory OS</div><div class="settings-row-value">Phase 3 · P3</div></div>
+        <div class="settings-row"><div class="settings-row-label">版本</div><div class="settings-row-value" id="about-version">${APP_VERSION}</div></div>
+        <div class="settings-row"><div class="settings-row-label">存储</div><div class="settings-row-value">IndexedDB + D1 云同步</div></div>
         <div class="settings-row"><div class="settings-row-label">存储方式</div><div class="settings-row-value">IndexedDB · 本地</div></div>
         <div class="settings-row"><div class="settings-row-label">数据不会离开你的设备</div><div class="settings-row-value">✓</div></div>
       </div>
@@ -3150,6 +3158,10 @@ async function dedupSeeds() {
   } else if (!guest) {
     showAuthScreen(); // 未登录且非访客：先登录/注册（访客模式可跳过）
   }
+  const fv = document.getElementById('footer-version');
+  if (fv) fv.innerHTML = 'InnerOS ' + APP_VERSION + ' · 本地存储<br>数据不会离开你的设备';
+  const abv = document.getElementById('about-version');
+  if (abv) abv.textContent = APP_VERSION;
   await navigate('today');
   fixSeedPosters();
 })();

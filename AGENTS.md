@@ -48,7 +48,12 @@ curl -X POST https://inneros.pages.dev/api/...     # 线上接口探测（部署
 ## 风格与流程
 - 注释、UI 文案、错误提示一律中文；错误提示必须是人话+下一步动作。
 - commit：`feat:`/`fix:`/`docs:`/`chore:` + 中文一句话（写明根因）。
-- 每轮迭代：更新 `CHANGELOG.md`（日期 + 根因/Fixed/Changed + 实测记录）→ commit → 回复末尾附 GitHub Desktop 的 Summary + Description 文案（用户自己在 GitHub Desktop 推送）。
+- 每轮迭代必须同步做四件事：
+  1. `app.js` 顶部 `APP_VERSION` 递增（次版本 +0.1；紧急修复 +0.0.1），同时更新 `index.html` 的 `app.js?v=` 查询参数（**破缓存**：手机端不硬刷也能拿到新版）
+  2. 更新 `CHANGELOG.md`（日期 + 根因/Fixed/Changed + 实测记录）
+  3. 功能或限制变化时更新 `项目.md`；结构变化时更新本文件
+  4. commit → 回复末尾附 GitHub Desktop 的 Summary + Description 文案（用户自己在 GitHub Desktop 推送）
+- 版本号是部署成功的判据：用户在侧边栏页脚/设置页看到的版本 = 最新 commit 的版本号即部署成功。
 - 长脚本改 `app.js` 用 python 正则时，替换串必须用 **lambda**（避免 `\${` 转义坑，踩过两次）。
 
 ## 省 token 约定
