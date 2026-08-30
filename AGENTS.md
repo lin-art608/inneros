@@ -42,15 +42,17 @@
 | `src/features/media.js` | ARCH-012 前端媒体数据层：`mediaToWorkFields`/`searchMovie`/`searchBook`/`searchMusic`/`enrichWorkDetail` 从 app.js 迁出（IIFE + `window.InnerOSMedia`，无打包器）。**只做纯数据获取与字段映射，不碰 DOM/app.js 状态**；app.js 的 `ContentProvider` 与 `enrichWorkDetail` 现为薄委托。改媒体搜索/详情逻辑改这里 |
 | `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/itunes-adapter/media-domain/memory-service/media-service/sync-service（node 直接运行） |
 | `tests/integration/sync-route.test.mjs` | ARCH-008.2 集成测试：真实 `onRequestPost/Get` + Cookie 会话 + 内存 D1 仿真（按 SQL 模式处理，未知 SQL 抛错防漂移）。**改同步相关代码后必跑** |
+| `tests/e2e/media-sync-e2e.py` | ARCH-013 真实 D1 端到端：电影/书籍/音乐 搜索→详情→保存→刷新→pull→删除→pull + 跨设备同步 + 幂等 + 墓碑 + user isolation + 稳定错误码。**需先起 wrangler**（零第三方依赖，Python 直接跑） |
+| `tests/run-all.sh` | ARCH-013 统一测试入口：一条命令跑全部 9 套零依赖测试（单测 + 集成）；E2E 见上行 |
 | `CHANGELOG.md` | 每轮迭代必更新（日期 + 根因 + Fixed/Changed + 实测） |
 
 ## 命令
 ```
 python server.py                                   # 本地服务 localhost:8765（/api/auth、/api/sync 反代线上）
-node --check app.js                                # 语法检查（唯一的"测试"手段，每次改完必跑）
-node tests/unit/*.test.mjs                         # 零依赖单测（逐个运行）
-node tests/integration/sync-route.test.mjs         # ARCH-008.2 真实 Route→SyncService→内存D1 集成测试
-npx wrangler pages dev . --d1 DB --port 8788       # 本地 D1 模拟，全接口 E2E（改后端后必跑）
+node --check app.js                                # 语法检查（每次改完必跑）
+bash tests/run-all.sh                              # ARCH-013 统一测试入口：跑全部 9 套零依赖测试（单测+集成）
+npx wrangler pages dev . --d1 DB --port 8788       # 本地 D1 模拟（改后端后必跑，用于 E2E）
+python tests/e2e/media-sync-e2e.py                 # ARCH-013 真实 D1 E2E（需先起 wrangler；电影/书籍/音乐全链路+跨设备同步）
 curl -X POST https://inneros.pages.dev/api/...     # 线上接口探测（部署后验证）
 ```
 

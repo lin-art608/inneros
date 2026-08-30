@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+### V1.16.0 架构升级 ARCH-013（测试护栏，2026-08-30）
+
+- **目标**：让未来维护者/Codex 有足够证据阻止回归，覆盖最易坏、最重要的数据链路，不追求测试数量
+- **新增 `tests/e2e/media-sync-e2e.py`**：真实 D1 端到端（零第三方依赖，Python 直接跑），固化此前沙箱一次性脚本，覆盖文档 7.1 全部最优先链路——电影/书籍/音乐 搜索→详情→保存→刷新→pull→删除→pull + 跨设备同步（同账号 devA→devB）+ op_id 幂等 + 删除墓碑（旧快照不复活）+ user isolation（账号间互不可见）+ 第三方故障稳定错误码（不支持类型 VALIDATION_ERROR / 非法 id PROVIDER_ERROR）
+- **新增 `tests/run-all.sh`**：统一测试入口，一条命令跑全部 9 套零依赖测试（8 单测 + 1 集成）
+- **AGENTS.md**：补 tests/e2e 与 run-all.sh 结构地图 + 命令说明
+
+#### 实测
+- `bash tests/run-all.sh`：9 套测试全绿
+- `python tests/e2e/media-sync-e2e.py`（wrangler 真实 D1）：电影/书籍/音乐三条链路 + 跨设备同步 + 幂等 + 墓碑 + user isolation + 稳定错误码全部通过
+- 踩坑记录（脚本级，非产品 bug）：① `operations.op_id` 是全局唯一约束，E2E 的 op_id 必须每次随机，否则撞 UNIQUE；② 跨设备同步须在同一账号下（devA push → devB pull），用不同账号 pull 会触发 user isolation 而拿不到数据
+
 ### V1.15.0 架构升级 ARCH-012（前端模块化，2026-08-30）
 
 - **目标**：渐进式把高耦合区域移出 app.js，不是重写前端。用已验证的电影/书籍/音乐新 API，把**纯数据逻辑**抽离，app.js 保留生命周期/事件协调/兼容入口
