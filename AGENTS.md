@@ -4,6 +4,13 @@
 
 个人数字空间（InnerOS）：无框架纯静态 Web App，部署于 Cloudflare Pages（inneros.pages.dev / inneros.asia）。**多账户云同步已上线**：Cloudflare D1 + 操作日志协议；坚果云/WebDAV 方案已删除（勿重新引入）。
 
+## 架构升级（V2，进行中）
+架构规则/目录约定/统一信封见 `docs/architecture/README.md`（ARCH-001 生效）。要点：
+- **新增后端 API** 一律走 `/api/v1/**` + `functions/_infra/errors.js` 统一信封（ok()/fail()/errors.*，带 requestId）；旧 /api/* 保持原样勿迁移
+- **新增前端 API 调用** 一律走 `src/services/api-client.js` 的 `InnerOSApi.get/post`（新旧响应都兼容解析）
+- 共享层用下划线前缀目录（`_infra/_domain/_repositories/_services/_adapters`）——CF Pages 不路由下划线文件
+- 禁止：UI 直接 fetch 第三方/D1、业务塞回 app.js、微服务/TS 大迁移/新框架（方案第二十节负面清单）
+
 ## 结构地图（改哪查哪）
 | 文件 | 内容 |
 |---|---|

@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.7.0';
+const APP_VERSION = 'v1.8.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -2907,14 +2907,21 @@ async function api(path, opts = {}) {
 async function checkAuth() {
   authState.checked = true;
   try {
-    const r = await api('/api/auth/me');
+    // ARCH-003：鉴权探测走统一 API Client（旧接口由 client 兼容解析）
+    const r = await InnerOSApi.get('/api/auth/me');
     authState.loggedIn = r.ok;
-    authState.email = r.ok ? r.data.email : null;
+    authState.email = r.ok ? (r.data.email || null) : null;
     authState.offline = false;
   } catch (e) {
-    // 网络不可达 ≠ 未登录：按离线访客放行，联网后 syncNow 自动续传
-    authState.loggedIn = false;
-    authState.offline = true;
+    if (e instanceof InnerOSApi.ApiError) {
+      // 明确的业务失败（未登录 401 等）
+      authState.loggedIn = false;
+      authState.offline = false;
+    } else {
+      // 网络不可达 ≠ 未登录：按离线访客放行，联网后 syncNow 自动续传
+      authState.loggedIn = false;
+      authState.offline = true;
+    }
   }
   return authState;
 }

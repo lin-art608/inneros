@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+### V1.8.0 架构升级 ARCH-001~003（依据《架构升级与 Codex 开发执行方案》，2026-08-30）
+
+- **ARCH-001 docs/architecture/README.md**——目标架构（模块化单体+清晰边界）、分层规则表、目录落地（CF 路由约束→下划线前缀共享层）、统一信封规范、依赖规则、迁移原则与 DoD
+- **ARCH-002 functions/_infra/errors.js**——统一错误模型：ok()/fail()/errors.*（AUTH_REQUIRED/VALIDATION_ERROR/NOT_FOUND/CONFLICT/PROVIDER_ERROR/RATE_LIMITED/INTERNAL）+ requestId（req_+16hex）；示范端点 `/api/v1/me`（复用既有会话）
+- **ARCH-003 src/services/api-client.js**——前端统一客户端 `InnerOSApi`（get/post/request + ApiError），兼容新信封与旧接口响应；checkAuth 已迁移接入
+- 既有 /api/* 全部保持原样（方案要求：旧 API 不破坏）；app.js 未拆分（仅接入 client）
+
+#### 实测
+- 单元：tests/unit/errors.test.mjs 5/5（信封结构/requestId 格式/快捷失败/可重试标记）
+- 集成（wrangler 本地 D1）：/api/v1/me 未登录→401 AUTH_REQUIRED 信封；注册→200；带 Cookie→200 {success,data.user} ✓
+- 浏览器：登录态探测走 InnerOSApi 正常（登录/离线分支）
+- 测试命令：`node tests/unit/errors.test.mjs`；`npx wrangler pages dev . --d1 DB --port 8788`
+
+## [Unreleased] 之前
 ### V1.7.0 详情页改版与记录增强（用户反馈 4 条，2026-08-30）
 
 - **feat: 详情页改版（1）**——移除顶部返回键与追加/删除行（返回走系统返回/手势）；右下角＋在详情页时变为「追加记录到当前内容」；新增右上角 ⤴分享（手机原生分享面板，桌面降级复制剪贴板）与 🗑删除小按钮
