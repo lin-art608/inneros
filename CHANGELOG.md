@@ -7,6 +7,21 @@
 
 ## [Unreleased]
 
+### V1.18.0 足迹地图重做（高德矢量瓦片+添加地点+照片相册）+ AGENTS.md 拆分约定（2026-08-30）
+
+- **Changed（架构约定）**：AGENTS.md 解除"app.js 有意单文件，勿建议拆分"的硬约束，改为**渐进式拆分**——新增功能/页面优先放入 `src/features/` 独立模块（IIFE + `window.InnerOSXxx` 命名空间），触碰既有大块逻辑时顺手迁出；app.js 保留生命周期/事件协调/兼容入口。结构地图同步更新。
+- **feat: 足迹地图重做**：
+  - **高德矢量瓦片**：从 OpenStreetMap 标准瓦片切换为高德矢量街道瓦片（`webrd0{s}.is.autonavi.com`，免 Key 公开瓦片），中文标注完整、样式美观，接近高德地图体验
+  - **添加地点按钮**：足迹页工具栏新增「＋ 添加地点」，点击直接打开快速记录表单并预选地点类型
+  - **地点照片相册**：点击地图标记弹出详情，内含该地点所有照片的缩略图网格（最多显示 4 张，超出显示 +N），点击缩略图全屏查看，「查看记录」跳转详情页
+  - **标记样式优化**：圆点标记加大（radius 9）、白色描边加粗（weight 2.5），按年份颜色区分，popup 圆角+阴影
+  - **模块化**：足迹地图全部逻辑从 app.js 迁至 `src/features/footprint.js`（`window.InnerOSFootprint`），app.js 仅保留 4 行薄委托；app.js 减少约 110 行
+- **未改**：D1 schema / IndexedDB v4 / API 协议 / 同步逻辑 / 地理编码 API（沿用 v1.17.0 的 /api/v1/geocode）。
+
+#### 实测
+- `node --check` app.js / footprint.js / geocode.js：全部通过
+- `git diff --check`：通过
+
 ### V1.17.0 足迹地图 + 速信去表情按钮（2026-08-30）
 
 - **feat: 足迹地图（Footprint Map）**——侧边栏记忆组新增「足迹」入口，类似高德足迹：去过的地点在整体地图上高亮显示，点击标记弹出地点详情，支持全景缩放。

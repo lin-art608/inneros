@@ -9,13 +9,17 @@
 - **新增后端 API** 一律走 `/api/v1/**` + `functions/_infra/errors.js` 统一信封（ok()/fail()/errors.*，带 requestId）；旧 /api/* 保持原样勿迁移
 - **新增前端 API 调用** 一律走 `src/services/api-client.js` 的 `InnerOSApi.get/post`（新旧响应都兼容解析）
 - 共享层用下划线前缀目录（`_infra/_domain/_repositories/_services/_adapters`）——CF Pages 不路由下划线文件
+- **前端渐进式拆分**：app.js 不再强制单文件。新增功能/页面优先放入 `src/features/` 下的独立模块（IIFE + `window.InnerOSXxx` 命名空间，与 media.js/api-client.js 同模式），触碰既有大块逻辑时顺手迁出；app.js 保留生命周期/事件协调/兼容入口
 - 禁止：UI 直接 fetch 第三方/D1、业务塞回 app.js、微服务/TS 大迁移/新框架（方案第二十节负面清单）
 
 ## 结构地图（改哪查哪）
 | 文件 | 内容 |
 |---|---|
 | `index.html` | 单页外壳，全部 CSS 内联。页面路由：today / quickchat(速信) / timeline / library / search / onthisday / random / year-review / settings / res-cs / res-football / res-ai / res-links / knowledge / ai-assistant |
-| `app.js`（~3100 行） | 全部前端逻辑，**有意单文件，勿建议拆分**。分节：TYPE_META / 图片代理 / ContentProvider(豆瓣·iTunes·FreeToGame) / IndexedDB v4 / 账户与同步引擎(搜"多账户云同步 v2") / 速记对话 / 收藏赛程 / Sports 渲染 / 各页渲染 / History 返回栈 |
+| `app.js` | 前端主逻辑（渐进式拆分中，新功能优先放 `src/features/`）。分节：TYPE_META / 图片代理 / ContentProvider / IndexedDB v4 / 账户与同步引擎 / 速记对话 / 收藏赛程 / Sports 渲染 / 各页渲染 / History 返回栈 |
+| `src/features/media.js` | 前端媒体数据层（电影/书籍/音乐搜索+详情+字段映射，IIFE + `window.InnerOSMedia`） |
+| `src/features/footprint.js` | 前端足迹地图（Leaflet+高德矢量瓦片，地理编码+标记+相册，IIFE + `window.InnerOSFootprint`） |
+| `src/services/api-client.js` | 前端统一 API Client（`window.InnerOSApi`，兼容新旧信封） |
 | `server.py` | 本地服务 :8765。代理：`/img`（豆瓣图）、`/api/douban`、`/api/sports`、`/api/auth`+`/api/sync`（**反代到 pages.dev**）、`/api/search` |
 | `functions/_lib.js` | D1 schema 自建（IF NOT EXISTS）/ PBKDF2 / Cookie 会话 |
 | `functions/api/auth/[action].js` | register / login / logout / me / send-code（Resend 验证码） |

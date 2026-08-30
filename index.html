@@ -863,18 +863,26 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 .yr-breakdown-num { font-size:13px; font-weight:600; color:var(--text); min-width:24px; text-align:right; }
 
 /* ============================================================
-   Footprint Map（足迹地图）
+   Footprint Map（足迹地图 — 高德矢量瓦片）
    ============================================================ */
-.footprint-map { height:62vh; min-height:400px; border-radius:var(--radius); border:1px solid var(--border); overflow:hidden; margin-bottom:24px; z-index:1; }
-.footprint-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
-.footprint-progress { font-size:13px; color:var(--text-secondary); }
-.footprint-popup { font-family:var(--font-sans); min-width:160px; }
-.footprint-popup-title { font-size:15px; font-weight:600; color:var(--text); margin-bottom:4px; }
-.footprint-popup-addr { font-size:12px; color:var(--text-secondary); margin-bottom:4px; }
-.footprint-popup-date { font-size:12px; color:var(--text-tertiary); margin-bottom:8px; }
-.footprint-popup-btn { padding:4px 12px; font-size:12px; }
-.leaflet-container { font-family:var(--font-sans); }
-.leaflet-popup-content-wrapper { border-radius:10px; }
+.fp-map { height:62vh; min-height:420px; border-radius:var(--radius); border:1px solid var(--border); overflow:hidden; margin-bottom:24px; z-index:1; box-shadow:var(--shadow); }
+.fp-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+.fp-add-btn { padding:8px 18px; font-size:14px; }
+.fp-progress { font-size:13px; color:var(--text-secondary); }
+.fp-popup { font-family:var(--font-sans); min-width:200px; }
+.fp-popup-title { font-size:15px; font-weight:600; color:var(--text); margin-bottom:4px; }
+.fp-popup-addr { font-size:12px; color:var(--text-secondary); margin-bottom:4px; }
+.fp-popup-date { font-size:12px; color:var(--text-tertiary); margin-bottom:8px; }
+.fp-popup-actions { margin-top:8px; }
+.fp-popup-btn { padding:4px 12px; font-size:12px; }
+.fp-photos { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin-top:6px; }
+.fp-photo-thumb { width:100%; aspect-ratio:1; object-fit:cover; border-radius:4px; cursor:pointer; transition:transform 0.2s; }
+.fp-photo-thumb:hover { transform:scale(1.05); }
+.fp-photo-more { display:flex; align-items:center; justify-content:center; background:var(--bg-subtle); border-radius:4px; font-size:12px; font-weight:600; color:var(--text-secondary); aspect-ratio:1; }
+.leaflet-container { font-family:var(--font-sans); background:#e8eef5; }
+.leaflet-popup-content-wrapper { border-radius:12px; box-shadow:var(--shadow-lg); }
+.leaflet-popup-content { margin:12px 16px; }
+.leaflet-control-attribution { font-size:10px; background:rgba(255,255,255,0.8); }
 
 /* ============================================================
    P3: Sports Data Layer — Team Logos, Match Cards, Team Selector
@@ -1337,8 +1345,9 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <div class="toast-container" id="toast-container"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="src/services/api-client.js?v=1.17.0"></script>
-<script src="src/features/media.js?v=1.17.0"></script>
-<script src="app.js?v=1.17.0"></script>
+<script src="src/services/api-client.js?v=1.18.0"></script>
+<script src="src/features/media.js?v=1.18.0"></script>
+<script src="src/features/footprint.js?v=1.18.0"></script>
+<script src="app.js?v=1.18.0"></script>
 </body>
 </html>
