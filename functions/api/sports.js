@@ -35,6 +35,19 @@ async function tsdb(url) {
   return res.json();
 }
 
+// 中文别名 → 英文（用户输入中文也能搜；覆盖常用球队/战队）
+const CN_ALIAS = {
+  '法尔孔':'Falcons', '猎鹰':'Falcons', '猎鹰队':'Falcons',
+  '阿森纳':'Arsenal', '曼城':'Manchester City', '曼联':'Manchester United', '利物浦':'Liverpool',
+  '切尔西':'Chelsea', '热刺':'Tottenham', '皇马':'Real Madrid', '皇马队':'Real Madrid',
+  '巴塞罗那':'FC Barcelona', '巴萨':'FC Barcelona', '拜仁':'Bayern Munich', '多特':'Borussia Dortmund',
+  '国米':'Inter Milan', 'AC米兰':'AC Milan', '巴黎':'Paris Saint-Germain', '巴黎圣日耳曼':'Paris Saint-Germain',
+  '马竞':'Atletico Madrid', '尤文':'Juventus', '山东泰山':'Shandong Taishan', '上海海港':'Shanghai Port',
+  '北京国安':'Beijing Guoan', '纳维':'Natus Vincere', '纳夫维':'Natus Vincere',
+  '液体':'Team Liquid', '幽灵':'Team Spirit',
+};
+function cnToEn(q) { return CN_ALIAS[q.trim()] || ''; }
+
 // 球队搜索（football→Soccer / cs2→ESports；电竞覆盖差时回退 Liquipedia opensearch）
 async function teamSearch(q, sport) {
   const wantSport = sport === 'cs2' ? 'ESports' : 'Soccer';
@@ -70,10 +83,25 @@ async function lpLogoFor(title) {
 // CS2 搜索兜底：TheSportsDB 电竞覆盖差（搜 NAVI 无结果）→ Liquipedia opensearch
 // 队标取战队页 infobox 首图（每队缓存 24h）；id 用 'lp:' 前缀 + LP 页面标题（关注后可与 ticker 队名匹配）
 async function searchCS2Fallback(q) {
-  const d = await lpFetch(`${LP_API}?action=opensearch&search=${encodeURIComponent(q)}&limit=6&format=json`);
-  const titles = (d[1] || []).filter(t => !t.includes('/')).slice(0, 4);
+  // 中文/别名词自动换英文检索；opensearch 无结果再用 list=search 全文兜底
+  const terms = [q, cnToEn(q)].filter(Boolean);
+  const titles = [];
+  for (const term of terms) {
+    if (!term) continue;
+    try {
+      const d = await lpFetch(`${LP_API}?action=opensearch&search=${encodeURIComponent(term)}&limit=6&format=json`);
+      for (const t of (d[1] || [])) { if (!t.includes('/') && !titles.includes(t)) titles.push(t); }
+    } catch (e) { /* 继续 */ }
+    if (titles.length >= 4) break;
+  }
+  if (!titles.length) {
+    try {
+      const d = await lpFetch(`${LP_API}?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=6&format=json`);
+      for (const r of (d.query?.search || [])) { if (!r.title.includes('/') && !titles.includes(r.title)) titles.push(r.title); }
+    } catch (e) { /* 继续 */ }
+  }
   const out = [];
-  for (const t of titles) {
+  for (const t of titles.slice(0, 4)) {
     let badge = '';
     try { badge = await lpLogoFor(t); } catch (e) { /* 队标失败允许为空 */ }
     out.push({ id: 'lp:' + t, name: t, full: t, league: 'CS2 · Liquipedia', badge, sport: 'ESports', provider: 'liquipedia' });
@@ -177,8 +205,9 @@ function parseLpTicker(html) {
   const matches = [];
   const parseTeam = (seg) => {
     // 队标：优先 lightmode/allmode 变体；大量队伍块用无后缀的 team-template-image-icon（2026-08 实测占 ~2/3），必须兜底
-    const img = seg.match(/team-template-(?:lightmode|allmode)"><a[^>]*><img[^>]*src="([^"]+)"/)
+    let img = seg.match(/team-template-(?:lightmode|allmode)"><a[^>]*><img[^>]*src="([^"]+)"/)
       || seg.match(/team-template-image-icon[^"]*"><a[^>]*><img[^>]*src="([^"]+)"/);
+    if (img) img[1] = img[1].replace(/\/(\d+)px-/, '/128px-'); // 提升清晰度
     // name span：text = 队伍短名（NAVI），title 属性 = LP 页面标题（Natus Vincere，与关注匹配键一致）
     const name = seg.match(/<span class="name"[^>]*><a[^>]*title="([^"]*)"[^>]*>([^<]*)<\/a>/);
     return {

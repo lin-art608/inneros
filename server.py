@@ -90,6 +90,8 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET')
+        # 开发服务禁用缓存：改完代码刷新即生效（也避免手机/浏览器拿旧 JS）
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
         super().end_headers()
 
     API_ORIGIN = 'https://inneros.pages.dev'
@@ -336,6 +338,16 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
                     return json.loads(response.read().decode('utf-8', 'ignore'))
             return cached_fetch_json('tsdb:' + path, do)
 
+        cn_alias = {
+            '法尔孔': 'Falcons', '猎鹰': 'Falcons', '猎鹰队': 'Falcons',
+            '阿森纳': 'Arsenal', '曼城': 'Manchester City', '曼联': 'Manchester United', '利物浦': 'Liverpool',
+            '切尔西': 'Chelsea', '热刺': 'Tottenham', '皇马': 'Real Madrid', '巴塞罗那': 'FC Barcelona',
+            '巴萨': 'FC Barcelona', '拜仁': 'Bayern Munich', '多特': 'Borussia Dortmund',
+            '国米': 'Inter Milan', 'AC米兰': 'AC Milan', '巴黎': 'Paris Saint-Germain',
+            '巴黎圣日耳曼': 'Paris Saint-Germain', '马竞': 'Atletico Madrid', '尤文': 'Juventus',
+            '山东泰山': 'Shandong Taishan', '上海海港': 'Shanghai Port', '北京国安': 'Beijing Guoan',
+            '纳维': 'Natus Vincere', '液体': 'Team Liquid', '幽灵': 'Team Spirit',
+        }
         league_map = {
             '4328': ('英超', 4), '4335': ('西甲', 4), '4331': ('德甲', 4), '4332': ('意甲', 4),
             '4334': ('法甲', 3), '4480': ('欧冠', 5), '4398': ('中超', 3),
@@ -373,12 +385,12 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
 
         try:
             if stype == 'teamsearch':
-                q = params.get('q', [''])[0].strip()
+                q = cn_alias.get(params.get('q', [''])[0].strip(), params.get('q', [''])[0].strip())
                 sport = params.get('sport', ['football'])[0]
                 if not q:
                     self._send_json({'results': []}, 400)
                     return
-                want = 'ESports' if sport == 'cs2' else 'Soccer'
+                want = 'ESPorts' if sport == 'cs2' else 'Soccer'
                 d = tsb_fetch('searchteams.php?t=' + urllib.parse.quote(q))
                 teams = [t for t in (d.get('teams') or []) if not want or t.get('strSport') == want][:12]
                 results = [{'id': t.get('idTeam'), 'name': t.get('strTeam') or '',
@@ -499,9 +511,18 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
                 return ''
 
         try:
-            d = self._lp_fetch_json('https://liquipedia.net/counterstrike/api.php?action=opensearch&search='
-                                    + urllib.parse.quote(q) + '&limit=6&format=json')
-            titles = [t for t in (d[1] or []) if '/' not in t][:4]
+            titles = []
+            for term in (q, cn_alias.get(q, '')):
+                if not term:
+                    continue
+                d = self._lp_fetch_json('https://liquipedia.net/counterstrike/api.php?action=opensearch&search='
+                                        + urllib.parse.quote(term) + '&limit=6&format=json')
+                for t in (d[1] or []):
+                    if '/' not in t and t not in titles:
+                        titles.append(t)
+                if len(titles) >= 4:
+                    break
+            titles = titles[:4]
         except Exception:
             return []
         if not titles:
@@ -545,7 +566,7 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
             img = (re.search(r'team-template-(?:lightmode|allmode)"><a[^>]*><img[^>]*src="([^"]+)"', seg)
                    or re.search(r'team-template-image-icon[^"]*"><a[^>]*><img[^>]*src="([^"]+)"', seg))
             name = re.search(r'<span class="name"[^>]*><a[^>]*title="([^"]*)"[^>]*>([^<]*)</a>', seg)
-            badge = img.group(1) if img else ''
+            badge = re.sub(r'/(\d+)px-', '/128px-', img.group(1)) if img else ''
             if badge.startswith('/'):
                 badge = 'https://liquipedia.net' + badge
             return {

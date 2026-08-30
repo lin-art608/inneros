@@ -157,6 +157,16 @@ async function applyOp(db, userId, kind, entityId, payload) {
     return;
   }
 
+  if (kind === 'update_entry') {
+    // 编辑追加内容：只更新正文，created_at/顺序不变
+    const p = payload || {};
+    const entry = p.entry || {};
+    if (!entry.id) throw new Error('update_entry 缺少 entry.id');
+    await db.prepare('UPDATE memory_entries SET content = ? WHERE id = ? AND user_id = ?')
+      .bind(String(entry.content || ''), entry.id, userId).run();
+    return;
+  }
+
   if (kind === 'upsert_attachment') {
     // payload: { memory_id, bytes, hash, mime, data(base64), created_at }
     await db.prepare(`INSERT INTO attachments(id, memory_id, user_id, bytes, hash, mime, data, created_at)

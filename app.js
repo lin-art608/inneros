@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.6.1';
+const APP_VERSION = 'v1.6.2';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -878,7 +878,7 @@ async function renderResourceCS() {
   const myUpcoming = myMatches.filter(m => m.status === 'upcoming' || m.status === 'live').sort((a,b) => a.date.localeCompare(b.date));
   const myRecent = myMatches.filter(m => m.status === 'finished').sort((a,b) => b.date.localeCompare(a.date)).slice(0, 3);
   // 进行中的赛事：未来场次 + 正在直播的归属赛事（过去场次不计入赛事列表，弱化历史）
-  const tournaments = groupCSMatches(all.filter(m => m.status !== 'finished'))
+  const tournaments = groupCSMatches(all.filter(m => m.status !== 'finished')).filter(g => csIsATier(g.name) || g.matches.some(m => followedIds.includes(m.home_id) || followedIds.includes(m.away_id)))
     .sort((a,b) => Math.min(...a.matches.map(m=>m.ts||Infinity)) - Math.min(...b.matches.map(m=>m.ts||Infinity)));
 
   let html = `
@@ -895,6 +895,7 @@ async function renderResourceCS() {
       html += `<div class="my-team-chip" style="border-color:${team.color}44;">
         ${renderTeamLogo(team, 28)}
         <span class="my-team-name">${team.name}</span>
+        <button class="chip-x" title="取消关注" onclick="removeFollowChip('${t.id}','${sport}')">✕</button>
       </div>`;
     });
   }
@@ -916,7 +917,7 @@ async function renderResourceCS() {
       const next = [...t.matches].filter(m => m.status === 'upcoming').sort((a,b) => a.ts - b.ts)[0];
       const stages = [...t.stages.keys()].map(s => s.split(' - ').slice(1).join(' - ') || s);
       html += `<div class="tournament-card card-enter" style="animation-delay:${i*0.05}s" onclick="openTournamentDetail('${encodeURIComponent(t.key)}')">
-        <div class="tournament-card-name">${t.name}</div>
+        <div class="tournament-card-name">${csNameCN(t.name)}${csIsATier(t.name) ? '<span class="tier-tag">A 级</span>' : ''}</div>
         <div class="tournament-card-stages">${stages.slice(0, 3).map(s => `<span class="tournament-stage-chip">${s}</span>`).join('')}${stages.length > 3 ? `<span class="tournament-stage-chip">+${stages.length-3}</span>` : ''}</div>
         <div class="tournament-card-meta">
           ${tLive > 0 ? `<span class="match-live-badge">${tLive} 场直播中</span>` : ''}
@@ -1420,6 +1421,7 @@ async function renderResourceFootball() {
       html += `<div class="my-team-chip" style="border-color:${team.color}44;">
         ${renderTeamLogo(team, 28)}
         <span class="my-team-name">${team.name}</span>
+        <button class="chip-x" title="取消关注" onclick="removeFollowChip('${t.id}','${sport}')">✕</button>
       </div>`;
     });
   }
@@ -2291,12 +2293,12 @@ async function openDetail(id, fromPop = false) {
       const dateStr = entryDate ? `${entryDate.getFullYear()}-${String(entryDate.getMonth()+1).padStart(2,'0')}-${String(entryDate.getDate()).padStart(2,'0')}` : '';
       const timeStr = entryDate ? `${String(entryDate.getHours()).padStart(2,'0')}:${String(entryDate.getMinutes()).padStart(2,'0')}` : '';
       html += `<div class="memory-entry">`;
-      html += `<div class="memory-entry-header"><span class="memory-entry-num">#${i+1}</span><span class="memory-entry-time">${dateStr} ${timeStr}</span></div>`;
-      if (en.content) html += `<div class="memory-entry-content">${en.content}</div>`;
+      html += `<div class="memory-entry-header"><span class="memory-entry-num">#${i+1}</span><span class="memory-entry-time">${dateStr} ${timeStr}</span><span class="memory-entry-actions"><button onclick="editMemoryEntry('${e.id}','${en.id}')" title="编辑">✎</button><button onclick="deleteMemoryEntry('${e.id}','${en.id}')" title="删除">✕</button></span></div>`;
+      html += `<div class="memory-entry-content" id="entry-body-${en.id}">${en.content ? escapeHtml(en.content) : ''}</div>`;
       if (en.photos && en.photos.length > 0) {
         html += `<div class="memory-photo-gallery">`;
         en.photos.forEach((src, pi) => {
-          html += `<img class="memory-photo" src="${src}" loading="lazy" onclick="this.classList.toggle('expanded')" onerror="this.style.display='none'">`;
+          html += `<img class="memory-photo" src="${src}" loading="lazy" onclick="openViewer(this.src)" onerror="this.style.display='none'">`;
         });
         html += `</div>`;
       }
@@ -2371,6 +2373,7 @@ function selectType(type) {
         <div class="field-row"><div class="field-label">追加内容</div><textarea class="field-textarea" id="capture-review" placeholder="追加记录..." style="min-height:150px;"></textarea></div>
         ${renderPhotoUpload()}
       </div>`;
+    addReviewEmojiBtn();
     setTimeout(() => document.getElementById('capture-review')?.focus(), 100);
     return;
   }
@@ -2476,6 +2479,7 @@ function selectType(type) {
       </div>`;
     document.getElementById('capture-title').focus();
   }
+  addReviewEmojiBtn();
 }
 
 function resetCaptureForm() {
@@ -2720,6 +2724,7 @@ function closeSidebar() { document.getElementById('sidebar').classList.remove('o
 
 // === Keyboard ===
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { document.getElementById('img-viewer')?.classList.remove('show'); document.getElementById('emoji-panel')?.remove(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openCapture(null); }
   if (e.key === 'Escape') {
     if (captureOpen) closeCapture();
@@ -3176,7 +3181,7 @@ async function renderQuickChat() {
     const sorted = [...(mem.entries || [])].sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
     for (const en of sorted) {
       const ts = localTimeOf(en.created_at);
-      const imgs = (en.photos || []).map(p => `<img class="chat-photo" src="${p}" onclick="this.classList.toggle('expanded')">`).join('');
+      const imgs = (en.photos || []).map(p => `<img class="chat-photo" src="${p}" onclick="openViewer(this.src)">`).join('');
       html += `<div class="chat-msg"><div class="chat-bubble">${en.content ? `<div class="chat-text">${escapeHtml(en.content)}</div>` : ''}${imgs}</div><div class="chat-time">${ts}</div></div>`;
     }
   }
@@ -3184,6 +3189,7 @@ async function renderQuickChat() {
     <div class="chat-previews" id="chat-previews"></div>
     <div class="chat-input-row">
       <label class="chat-attach-btn" title="添加照片">📎<input type="file" accept="image/jpeg,image/png,image/webp" multiple style="display:none" onchange="handleChatPhotos(this)"></label>
+      <button type="button" class="chat-attach-btn" title="表情" onclick="toggleEmojiPicker('chat-input',this)">😀</button>
       <input type="text" class="chat-input" id="chat-input" placeholder="给自己发一条…" onkeydown="if(event.key==='Enter')sendQuickMsg()">
       <button class="chat-send-btn" onclick="sendQuickMsg()">发送</button>
     </div>
@@ -3192,6 +3198,68 @@ async function renderQuickChat() {
   requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
 }
 
+// 子条目删除：本地移除 + 墓碑同步（所有设备同步消失）
+async function deleteMemoryEntry(memId, entryId) {
+  showConfirm('🗑️', '删除该条记录', '删除后所有设备都会同步消失。确定吗？', async () => {
+    const mem = await dbGet(memId); if (!mem) return;
+    mem.entries = (mem.entries || []).filter(x => x.id !== entryId);
+    await dbPut(mem);
+    await opAppend('delete_entry', entryId, { memory_id: memId, updated_at: new Date().toISOString() });
+    syncNow();
+    openDetail(memId, true);
+  });
+}
+// 子条目编辑：行内替换为输入框
+async function editMemoryEntry(memId, entryId) {
+  const mem = await dbGet(memId); if (!mem) return;
+  const en = (mem.entries || []).find(x => x.id === entryId); if (!en) return;
+  const holder = document.getElementById('entry-body-' + entryId); if (!holder) return;
+  holder.innerHTML = `<textarea class="field-textarea" id="entry-edit-${entryId}" style="min-height:90px;">${escapeHtml(en.content || '')}</textarea>
+    <div style="display:flex;gap:8px;margin-top:8px;"><button class="btn btn-primary" style="padding:6px 16px;" onclick="saveMemoryEntry('${memId}','${entryId}')">保存</button><button class="btn btn-ghost" style="padding:6px 16px;" onclick="openDetail('${memId}', true)">取消</button></div>`;
+}
+async function saveMemoryEntry(memId, entryId) {
+  const val = document.getElementById('entry-edit-' + entryId)?.value.trim() || '';
+  const mem = await dbGet(memId); if (!mem) return;
+  const en = (mem.entries || []).find(x => x.id === entryId); if (!en) return;
+  en.content = val;
+  await dbPut(mem);
+  await opAppend('update_entry', entryId, { memory_id: memId, entry: { id: entryId, content: val, updated_at: new Date().toISOString() } });
+  syncNow();
+  openDetail(memId, true);
+}
+// 表情选择器（聊天输入 / 记录正文）
+const EMOJI_LIST = Array.from('😀😁😂🥲😊😍🥰😘🤔😎😭😴🤒😤🥺😱🤯🤗👍👎👏🙏💪🤝🔥⭐🌟✨🎉🎊❤️🧡💛💚💙💜💔🌹🍀🌱☕🍺🍕🍔🎯🏆⚽🏀🎬📖📝🎵🎮🏆✈️🚗🏠💻📷⏰💡🌈☀️🌧️❄️');
+let emojiTargetId = null;
+function toggleEmojiPicker(inputId, btn) {
+  const old = document.getElementById('emoji-panel');
+  if (old) { old.remove(); return; }
+  emojiTargetId = inputId;
+  const panel = document.createElement('div');
+  panel.id = 'emoji-panel';
+  panel.innerHTML = EMOJI_LIST.map(e => `<button type="button" onclick="insertEmoji('${e}')">${e}</button>`).join('');
+  document.body.appendChild(panel);
+  const r = btn.getBoundingClientRect();
+  panel.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 272)) + 'px';
+  panel.style.top = Math.max(8, r.top - 200 + window.scrollY) + 'px';
+}
+function insertEmoji(e) {
+  const el = document.getElementById(emojiTargetId); if (!el) return;
+  const st = el.selectionStart ?? el.value.length;
+  el.value = el.value.slice(0, st) + e + el.value.slice(el.selectionEnd ?? st);
+  el.selectionStart = el.selectionEnd = st + e.length;
+  el.focus();
+  document.getElementById('emoji-panel')?.remove();
+}
+// 正文标签右侧加 😀 按钮（记录/追加表单通用）
+function addReviewEmojiBtn() {
+  const ta = document.getElementById('capture-review'); if (!ta) return;
+  const label = ta.parentElement.querySelector('.field-label'); if (!label || label.querySelector('.emoji-toggle')) return;
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'emoji-toggle'; b.textContent = '😀'; b.title = '插入表情';
+  b.onclick = () => toggleEmojiPicker('capture-review', b);
+  label.appendChild(b);
+  label.style.display = 'flex'; label.style.justifyContent = 'space-between'; label.style.alignItems = 'center';
+}
 function escapeHtml(str) {
   return String(str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -3252,6 +3320,31 @@ function dayLabelCN(dateStr) {
   if (diff === -1) return '昨天';
   const wd = ['周日','周一','周二','周三','周四','周五','周六'][d.getDay()];
   return `${+dateStr.slice(5,7)}月${+dateStr.slice(8,10)}日 ${wd}`;
+}
+
+// CS 赛事中文名 + A 级白名单（用户要求：中文名称、起码 A 级才推荐）
+const CS_CIRCUIT_CN = [
+  ['BLAST Open', 'BLAST 公开赛'], ['BLAST Premier', 'BLAST 总决赛'], ['BLAST', 'BLAST 巡回赛'],
+  ['IEM', 'IEM 英特尔极限大师'], ['ESL Pro League', 'ESL 职业联赛'], ['ESL Challenger', 'ESL 挑战者杯'],
+  ['Esports World Cup', '电竞世界杯'], ['PGL', 'PGL 大赛'], ['Thunderpick', 'Thunderpick 锦标赛'],
+  ['Elisa Masters', 'Elisa 大师赛'], ['FISSURE', 'FISSURE 锦标赛'], ['StarLadder', 'SL 冠军赛'],
+  ['CCT', 'CCT 系列赛'], ['ESEA', 'ESEA 联赛'], ['ECL', 'ECL 次级联赛'],
+];
+const CS_A_TIER = ['BLAST', 'IEM', 'ESL Pro League', 'ESL Challenger', 'PGL', 'Esports World Cup', 'Thunderpick', 'Elisa Masters', 'FISSURE', 'StarLadder'];
+function csNameCN(name) {
+  for (const [en, cn] of CS_CIRCUIT_CN) if (name.startsWith(en)) return name.replace(en, cn);
+  return name;
+}
+function csIsATier(name) { return CS_A_TIER.some(p => name.startsWith(p)); }
+function cs2FollowedMatched(m, followedIds) { return followedIds.includes(m.home_id) || followedIds.includes(m.away_id); }
+
+// 取消关注（关注条 ✕）：本地删除 + 墓碑同步
+async function removeFollowChip(dbId, sport) {
+  const rec = await dbGet(dbId); if (!rec) return;
+  try { if (authState.loggedIn) { await opAppend('delete_memory', String(dbId), { updated_at: new Date().toISOString() }); syncNow(); } } catch (e) { console.warn(e); }
+  await dbDeleteTeam(dbId);
+  showToast('已取消关注 ' + (rec.name || ''), '');
+  if (sport === 'cs2') renderResourceCS(); else renderResourceFootball();
 }
 
 // 收藏赛程（首页只显示用户主动收藏的比赛）
