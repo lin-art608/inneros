@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+### V1.9.0 架构升级 ARCH-004~006（第二轮，2026-08-30）
+
+- **ARCH-004 functions/_domain/memory.js**——Memory 领域模型：canonicalType（movie/book/music/game→media）、normalizeMemory（旧字段 watch_date/event_date/location→occurredAt/places 等标准映射 + metadata 兜底）、validateMemory、validateOperation/SYNC_OP_KINDS
+- **ARCH-005 functions/_repositories/memory-repository.js**——D1 访问集中：upsertNewer（新者胜+冲突保留）/appendEntry（幂等+空壳兜底）/tombstone/updateEntryContent/deleteEntry/upsertAttachment/opExists/recordOperation/maxSeq/updateDeviceCursor/listByUser/countByUser；**sync/[action].js 的 applyOp 已切到 repository 分发（行为不变）**
+- **ARCH-006 functions/_adapters/douban-adapter.js**——豆瓣适配器：searchMedia/getMediaDetail 标准结构（suggest+rexxar）+ 旧形状兼容输出（suggestLegacy/movieDetailLegacy/bookDetail*）；`functions/api/douban.js` 重构为薄路由（委托 adapter，响应形状不变）
+- **新端点**：GET /api/v1/memories（limit/offset，走 repository + normalizeMemory）；GET /api/v1/media/search?type=movie|book&query=（走 adapter）
+
+#### 实测
+- 单元（node tests/unit/*）：errors 5/5、domain-memory 全通过、douban-adapter 全通过
+- 集成（wrangler 本地 D1）：注册→push 2 操作→GET /api/v1/memories 返回标准归一化条目（type=media/score 8.8）→GET /api/v1/media/search 奥本海默（豆瓣实时）✓
+- 环境注意：本机 Node 运行时 Array.prototype.concat 被裁（宿主行为），新代码统一用 spread；浏览器不受影响
+
+## [Unreleased] 之前
 ### V1.8.0 架构升级 ARCH-001~003（依据《架构升级与 Codex 开发执行方案》，2026-08-30）
 
 - **ARCH-001 docs/architecture/README.md**——目标架构（模块化单体+清晰边界）、分层规则表、目录落地（CF 路由约束→下划线前缀共享层）、统一信封规范、依赖规则、迁移原则与 DoD
