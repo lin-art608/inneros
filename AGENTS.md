@@ -36,13 +36,16 @@
 | `functions/api/v1/` | 新版 API（统一信封）：me / memories(GET+POST，POST 支持传标准 media) / media/search / media/detail |
 | `app.js` 电影链路 | ARCH-009：搜索与详情走 `InnerOSApi` → `/api/v1/media/search\|detail`，`mediaToWorkFields()` 做标准结构→本地字段映射；v1 失败回退 `/api/douban` |
 | `src/services/api-client.js` | 前端统一 API Client（InnerOSApi，经典脚本命名空间；新调用必经） |
-| `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/memory-service/media-service/sync-service（node 直接运行） |
+| `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/media-domain/memory-service/media-service/sync-service（node 直接运行） |
+| `tests/integration/sync-route.test.mjs` | ARCH-008.2 集成测试：真实 `onRequestPost/Get` + Cookie 会话 + 内存 D1 仿真（按 SQL 模式处理，未知 SQL 抛错防漂移）。**改同步相关代码后必跑** |
 | `CHANGELOG.md` | 每轮迭代必更新（日期 + 根因 + Fixed/Changed + 实测） |
 
 ## 命令
 ```
 python server.py                                   # 本地服务 localhost:8765（/api/auth、/api/sync 反代线上）
 node --check app.js                                # 语法检查（唯一的"测试"手段，每次改完必跑）
+node tests/unit/*.test.mjs                         # 零依赖单测（逐个运行）
+node tests/integration/sync-route.test.mjs         # ARCH-008.2 真实 Route→SyncService→内存D1 集成测试
 npx wrangler pages dev . --d1 DB --port 8788       # 本地 D1 模拟，全接口 E2E（改后端后必跑）
 curl -X POST https://inneros.pages.dev/api/...     # 线上接口探测（部署后验证）
 ```

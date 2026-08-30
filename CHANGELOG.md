@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+### V1.12.1 架构升级 ARCH-008.2（Sync Route 接线核验 + 真实集成测试护栏，2026-08-30）
+
+- **背景**：审核报告基于旧 main 快照，认为 `sync/[action].js` 仍残留旧同步编排（applyOp / repo.opExists 等）。**以实际代码核验（文档自己也要求）**：接线早在 ARCH-008（f6c07eb）已完成——路由仅 auth/parse/`buildSyncService(db).push|pull`/响应，**0 处旧编排**；opExists/record/listSince/maxSeq/updateCursor 只存在于 Repository 与 SyncService 层（用 grep 实证）
+- **因此本任务的实际缺口是**：此前 Route→Service→D1 的验证只在沙箱里跑过一次性脚本，仓库内没有可重复运行的集成测试（审核报告第八节明确要求"不要只新增 sync-service 的 fake repository 测试"）
+- **新增 `tests/integration/sync-route.test.mjs`**：直接调用真实 `onRequestPost/onRequestGet`（真实 Request + Cookie 会话 + 内存 D1 仿真层）。仿真层按 SQL 模式逐条处理、**遇到未知 SQL 立即抛错**（D1 schema/查询漂移会让测试大声失败）。7 组覆盖：Route push（记忆/条目/附件真实落库+operation 记录）、Route pull（排除来源设备）、op_id 幂等、cursor/seq 增量、conflict（新者胜+败方保留）、tombstone（删除不复活）、错误信封（401/400/404 + 单条错误稳定 code + 坏 JSON）
+- **测试基建踩坑**：集成测试里 query 必须与 `params.action` 分离——CF Pages 的 path 参数不含 `?xxx`，拼进去会 404
+
+#### 未改
+D1 schema / IndexedDB v4 / 旧 `/api/sync` 协议 / UI / SyncService 与 Repository 逻辑零改动（纯测试护栏 + 文档）
+
+#### 实测
+- 8 套测试全绿：单测 7 套（errors/domain-memory/douban-adapter/media-domain/media-service/memory-service/sync-service 12 组）+ 集成 1 套（sync-route 7 组）
+- `node --check app.js`、`git diff --check` 通过
+
 ### V1.12.0 架构升级 ARCH-009（电影完整垂直切片，2026-08-30）
 
 - **目标**：搜索 → 详情 → 标准化 → 保存 → 读取 → 编辑/删除 → 同步 全链路走新架构；UI 不读第三方原始 JSON
