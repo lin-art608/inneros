@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+### V1.14.0 架构升级 ARCH-011（音乐最小可用垂直切片，2026-08-30）
+
+- **目标**：验证 Provider 架构可继续扩展到音乐，音乐链路走统一 Media/Memory/Sync，无 MusicSyncService/专用数据库
+- **Provider**：新增 `_adapters/itunes-adapter.js`（iTunes Search/Lookup API，**免 Key、CORS 友好、country=CN 覆盖中文歌**）——`mapTrack()` 纯函数把 track 映射为标准 Media（music），`searchMedia`/`getMediaDetail`/`itunesProvider` 与 douban 同形
+- **Service**：`media-service.js` `SUPPORTED` 加 `music: 'itunes'`；信封级 `source` 字段修正为反映真实 provider（music→itunes，book 保留 douban-book 特例）
+- **Domain**：`media.js` `mediaToMemoryPatch` 加 music 分支（artist/album/preview_url/track_price 落库到业务字段）
+- **路由**：`/api/v1/media/search|detail` providers 补 `itunes`（路由本身 type-agnostic，零逻辑改动）
+- **前端（app.js）**：`searchMusic` / 音乐详情改走 `InnerOSApi → /api/v1/media/search|detail?type=music`（v1 失败回退旧直连 iTunes）；`mediaToWorkFields(m,'music')` 映射 artist/album/preview_url/track_price；`enrichWorkDetail` 加 music 分支（iTunes lookup，幂等）；music 不再误入豆瓣详情兜底
+- **未改**：D1 schema / IndexedDB v4 / 旧 `/api/*` 协议 / UI 布局 / 未重写 app.js；iTunes 无评分/简介 → `score=null`、`description=''`（标准模型语义保留）
+
+#### 实测
+- 单元：新增 `itunes-adapter.test.mjs`（字段映射/artwork 升 600/原始字段隔离/缺省兜底）；`media-domain.test.mjs` 补音乐 mediaToMemoryPatch + 往返（7→9 组）；`media-service.test.mjs` 补 music→itunes provider 选择（并修正"music 未接入"旧断言改用 anime）；9 套测试全绿（单测 8 + 集成 1）
+- 集成（wrangler 本地 D1）：搜"稻香"返回 8 条标准 Media（source=itunes）→ 详情拿到艺人周杰伦/专辑魔杰座/曲风国语流行 → v1 保存后 `type=media` 且 `media.creators=['周杰伦']`、`providerMetadata.album='魔杰座'` → 刷新读取仍在 → 设备 A push → 设备 B pull 到（含标准 media 块）→ 删除不被旧快照复活 → 电影/书籍搜索不回归 → 不支持类型返回稳定 `VALIDATION_ERROR`
+
 ### V1.13.0 架构升级 ARCH-010（书籍完整垂直切片，2026-08-30）
 
 - **目标**：证明 ARCH-009 建立的 Media/Provider/Memory/Sync 模式可复用，书籍链路全走新架构，无第二套同步/专用数据库

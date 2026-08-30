@@ -29,15 +29,17 @@
 | `functions/_repositories/operation-repository.js` | ARCH-008 操作日志访问：opExists（幂等判据）/record/listSince（游标增量+排除设备）/maxSeq。record 的 `prepend` 参数传入业务语句时用 `db.batch()` 与记录同事务提交 |
 | `functions/_repositories/device-repository.js` | ARCH-008 设备访问：ensureDevice/getCursor/updateCursor（last_seq 由 Service 传入，便于脱离 D1 单测） |
 | `functions/_services/memory-service.js` | Memory 业务编排：createMemory（领域校验）/list（归一化）/append（空追加拒绝）/delete（墓碑）/NOT_FOUND 语义 |
-| `functions/_services/media-service.js` | 媒体编排：Provider 选择（movie/book→douban）/query 校验/错误映射（第三方原始错误只进日志） |
+| `functions/_services/media-service.js` | 媒体编排：Provider 选择（movie/book→douban，music→itunes）/query 校验/错误映射（第三方原始错误只进日志） |
 | `functions/_services/sync-service.js` | ARCH-008/008.1 同步编排：push（validateOperation→幂等→applyOperation→推进游标）/pull（增量+排除本机）。`applyOperation` 的 kind→repository 分发在此，勿搬回路由。请求级错误抛 `ServiceError` + `ErrorCode`；单条错误带 `code` 字段（客户端按 code 判断，禁止依赖中文 message）。可语句化的 5 种 kind 走 `db.batch` 与 operation 记录同事务 |
-| `functions/_adapters/douban-adapter.js` | 豆瓣适配器：searchMedia/getMediaDetail 标准结构 + 旧形状兼容输出 |
+| `functions/_adapters/douban-adapter.js` | 豆瓣适配器：searchMedia/getMediaDetail 标准结构 + 旧形状兼容输出（movie/book） |
+| `functions/_adapters/itunes-adapter.js` | ARCH-011 iTunes 适配器（music）：searchMedia/getMediaDetail 标准结构；免 Key、country=CN；iTunes 无评分/简介 → score=null、description='' |
 | `functions/_infra/errors.js` | 统一错误模型（ARCH-002）：ok/fail/errors.*/ServiceError + requestId |
 | `functions/api/v1/` | 新版 API（统一信封）：me / memories(GET+POST，POST 支持传标准 media) / media/search / media/detail |
 | `app.js` 电影链路 | ARCH-009：搜索与详情走 `InnerOSApi` → `/api/v1/media/search\|detail`，`mediaToWorkFields()` 做标准结构→本地字段映射；v1 失败回退 `/api/douban` |
 | `app.js` 书籍链路 | ARCH-010：同电影，`mediaToWorkFields(m,'book')` 映射书籍扩展字段（cover/authors/publisher/isbn/...）；保存带标准 `media` 块 |
+| `app.js` 音乐链路 | ARCH-011：搜索/详情走 v1（`/api/v1/media/search\|detail?type=music` → iTunes），`mediaToWorkFields(m,'music')` 映射 artist/album/preview_url/track_price；v1 失败回退旧直连 iTunes；保存带标准 `media` 块 |
 | `src/services/api-client.js` | 前端统一 API Client（InnerOSApi，经典脚本命名空间；新调用必经） |
-| `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/media-domain/memory-service/media-service/sync-service（node 直接运行） |
+| `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/itunes-adapter/media-domain/memory-service/media-service/sync-service（node 直接运行） |
 | `tests/integration/sync-route.test.mjs` | ARCH-008.2 集成测试：真实 `onRequestPost/Get` + Cookie 会话 + 内存 D1 仿真（按 SQL 模式处理，未知 SQL 抛错防漂移）。**改同步相关代码后必跑** |
 | `CHANGELOG.md` | 每轮迭代必更新（日期 + 根因 + Fixed/Changed + 实测） |
 

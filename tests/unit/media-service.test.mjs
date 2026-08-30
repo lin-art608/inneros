@@ -38,15 +38,25 @@ function fakeDouban(impl = {}) {
   assert.equal(e.status, 400);
 }
 
-// 4) 未知类型（music 未接入）→ 明确拒绝，不落到 provider
+// 4) 未知类型（如 anime/series 未接入）→ 明确拒绝，不落到 provider
 {
   let called = false;
   const svc = createMediaService({ providers: { douban: { async search() { called = true; } } } });
   let e = null;
-  try { await svc.searchMedia({ type: 'music', query: 'x' }); } catch (x) { e = x; }
+  try { await svc.searchMedia({ type: 'anime', query: 'x' }); } catch (x) { e = x; }
   assert.equal(e.code, 'VALIDATION_ERROR');
-  assert.ok(e.message.includes('music'));
+  assert.ok(e.message.includes('anime'));
   assert.equal(called, false);
+}
+
+// 4b) ARCH-011：music → itunes provider 被选中（Provider Contract 扩展验证）
+{
+  let seen = null;
+  const svc = createMediaService({ providers: { itunes: { async search(ctx) { seen = ctx; return [{ externalId: '1624001324', title: '稻香', source: 'itunes' }]; } } } });
+  const r = await svc.searchMedia({ type: 'music', query: '稻香' });
+  assert.deepEqual(seen, { type: 'music', query: '稻香' });
+  assert.equal(r.items[0].title, '稻香');
+  assert.equal(r.source, 'itunes', 'music 的信封级 source 应反映 itunes provider');
 }
 
 // 5) provider 抛错 → PROVIDER_ERROR 502 且 retryable，原始错误不泄漏

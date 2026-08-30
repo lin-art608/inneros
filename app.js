@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.13.0';
+const APP_VERSION = 'v1.14.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -137,6 +137,13 @@ function mediaToWorkFields(m, type) {
     fields.publishedDate = m.releaseDate || '';
     fields.book_description = m.description || '';
   }
+  // ARCH-011：音乐扩展字段（creators[0] = 艺人；专辑/试听/价格在 providerMetadata）
+  if (type === 'music' || m.mediaType === 'music') {
+    fields.artist = (m.creators && m.creators[0]) || '';
+    fields.album = meta.album || '';
+    fields.preview_url = meta.previewUrl || '';
+    fields.track_price = (meta.trackPrice == null ? null : meta.trackPrice);
+  }
   return fields;
 }
 
@@ -196,7 +203,18 @@ const ContentProvider = {
     }));
   },
   async searchMusic(query) {
-    // 加 country=CN 提升中文歌曲/歌手覆盖（V1.2 审计建议）
+    // ARCH-011 音乐垂直切片：优先走 v1 标准接口（InnerOSApi → /api/v1/media/search → MediaService → iTunesAdapter 标准模型），
+    // UI 只接触标准 Media 结构，经 mediaToWorkFields() 映射为本地字段；
+    // v1 不可用时回退旧浏览器直连 iTunes（同样加 country=CN 提升中文歌覆盖）。
+    if (window.InnerOSApi) {
+      try {
+        const res = await InnerOSApi.get(`/api/v1/media/search?type=music&query=${encodeURIComponent(query)}`);
+        const items = (res.data && res.data.items) || [];
+        if (items.length > 0) return items.map(x => mediaToWorkFields(x, 'music'));
+      } catch (e) {
+        console.warn('[music] v1 搜索失败，回退直连 iTunes：', (e && (e.code || e.message)) || e);
+      }
+    }
     const res = await fetch(`https://itunes.apple.com/search?media=music&entity=song&limit=8&term=${encodeURIComponent(query)}&country=CN`);
     if (!res.ok) throw new Error('音乐数据源暂时不可用');
     return (await res.json()).results.map(item => ({ external_id:String(item.trackId), title:item.trackName || '', artist:item.artistName || '', album:item.collectionName || '', poster:item.artworkUrl100?.replace('100x100bb', '600x600bb') || '', release_date:(item.releaseDate || '').slice(0,10), genres:item.primaryGenreName?[item.primaryGenreName]:[], provider:'itunes' }));
@@ -384,6 +402,17 @@ async function enrichWorkDetail(type, r) {
       console.warn('[book] v1 详情失败，回退 /api/douban：', (e && (e.code || e.message)) || e);
     }
   }
+  // ARCH-011：音乐详情走 v1（iTunes lookup，字段与搜索一致，幂等；失败静默回退搜索已含字段）
+  if (type === 'music' && window.InnerOSApi) {
+    try {
+      const res = await InnerOSApi.get(`/api/v1/media/detail?type=music&id=${encodeURIComponent(r.external_id)}`);
+      if (res.data && res.data.title) return mediaToWorkFields(res.data, 'music');
+    } catch (e) {
+      console.warn('[music] v1 详情失败，沿用搜索字段：', (e && (e.code || e.message)) || e);
+    }
+  }
+  // 豆瓣详情兜底只对 movie/book 生效（music 走 iTunes，无豆瓣对应详情，避免用 trackId 误查豆瓣）
+  if (type === 'music') return null;
   try {
     const res = await fetch(`/api/douban?type=detail&kind=${kind}&id=${encodeURIComponent(r.external_id)}`);
     if (!res.ok) return null;
@@ -414,7 +443,8 @@ async function selectWorkResult(type, idx) {
   // 并行：缓存封面 + 拉取豆瓣详情（电影：简介/导演/评分/片长；书籍：出版社/ISBN/页数/简介）
   const [dataUrl, detail] = await Promise.all([
     downloadImageAsDataURL(r[imageKey]),
-    (type === 'movie') ? enrichWorkDetail(type, r) : Promise.resolve(null),
+    // ARCH-011：music 也走详情补全（iTunes lookup，幂等）；movie 详情补简介/评分；book 走 selectBookResult 单独处理
+    (type === 'movie' || type === 'music') ? enrichWorkDetail(type, r) : Promise.resolve(null),
   ]);
   if (detail) mergeDetail(r, detail);
   if (dataUrl) r[imageKey] = dataUrl;

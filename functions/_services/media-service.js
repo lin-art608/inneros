@@ -11,7 +11,8 @@
 import { ErrorCode, ServiceError } from '../_infra/errors.js';
 
 export function createMediaService({ providers }) {
-  const SUPPORTED = { movie: 'douban', book: 'douban' }; // music/series 等 Provider 后续接入
+  // ARCH-011：music → itunes（iTunes Search API，免 Key、CORS 友好、country=CN 覆盖中文歌）
+  const SUPPORTED = { movie: 'douban', book: 'douban', music: 'itunes' };
 
   function businessError(code, message, status = 400, retryable = false) {
     return new ServiceError(code, message, { status, retryable });
@@ -33,7 +34,9 @@ export function createMediaService({ providers }) {
       const provider = pickProvider(type);
       try {
         const items = await provider.search({ type, query: q });
-        return { items: items || [], page: 1, hasMore: false, source: type === 'book' ? 'douban-book' : 'douban' };
+        // ARCH-011：信封级 source 反映真实 provider（music→itunes），book 保留 douban-book 特例（既有语义）
+        const source = type === 'book' ? 'douban-book' : (type === 'music' ? 'itunes' : 'douban');
+        return { items: items || [], page: 1, hasMore: false, source };
       } catch (e) {
         if (e instanceof ServiceError) throw e;
         // 原始第三方错误只进服务端日志，用户可见消息保持通用（方案第十一节）

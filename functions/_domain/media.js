@@ -67,6 +67,12 @@ export function mediaToMemoryPatch(media, mediaType) {
     patch.isbn = m.providerMetadata.isbn || '';
     patch.page_count = m.providerMetadata.pageCount || 0;
     patch.book_description = m.description;
+  } else if (type === 'music') {
+    // ARCH-011：音乐字段（艺人/专辑/试听/价格），其余（genres/release_date/poster）已在通用区
+    patch.artist = m.creators.join(' / ');
+    patch.album = m.providerMetadata.album || '';
+    patch.preview_url = m.providerMetadata.previewUrl || '';
+    patch.track_price = m.providerMetadata.trackPrice == null ? null : m.providerMetadata.trackPrice;
   }
   return patch;
 }

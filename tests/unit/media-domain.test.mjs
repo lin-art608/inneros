@@ -110,4 +110,40 @@ import { normalizeMemory } from '../../functions/_domain/memory.js';
   assert.equal(norm.occurredAt, '2026-01-01', '旧字段 watch_date 仍映射到 occurredAt');
 }
 
-console.log('media-domain.test: 全部通过（7 组）');
+// 8) mediaToMemoryPatch（音乐）：艺人/专辑/试听/价格 从 providerMetadata 落到业务字段（ARCH-011）
+{
+  const patch = mediaToMemoryPatch({
+    externalId: '1624001324', mediaType: 'music', source: 'itunes', title: '稻香',
+    poster: 'https://img/600x600bb.jpg', releaseDate: '2008-10-14',
+    creators: ['周杰伦'], genres: ['国语流行'], score: null, description: '',
+    providerMetadata: { album: '魔杰座', previewUrl: 'https://audio/preview.m4a', trackPrice: 1.0, currency: 'CNY' },
+  }, 'music');
+  assert.equal(patch.type, 'music');
+  assert.equal(patch.artist, '周杰伦', '音乐的 artist 取 creators.join');
+  assert.equal(patch.album, '魔杰座');
+  assert.equal(patch.preview_url, 'https://audio/preview.m4a');
+  assert.equal(patch.track_price, 1.0);
+  assert.deepEqual(patch.genres, ['国语流行']);
+  assert.equal(patch.media.mediaType, 'music');
+  assert.equal(patch.media.providerMetadata.album, '魔杰座');
+}
+
+// 9) 往返：标准音乐 Media → Memory 补丁 → normalizeMemory 读回（ARCH-011）
+{
+  const media = {
+    externalId: '1624001324', mediaType: 'music', source: 'itunes', title: '稻香',
+    poster: 'https://img/600x600bb.jpg', releaseDate: '2008-10-14',
+    creators: ['周杰伦'], genres: ['国语流行'], score: null, description: '',
+    providerMetadata: { album: '魔杰座', previewUrl: 'https://audio/preview.m4a', trackPrice: 1.0 },
+  };
+  const patch = mediaToMemoryPatch(media, 'music');
+  const stored = { id: 'mem-music-1', ...patch, updated_at: '2026-08-30T20:00:00Z' };
+  const norm = normalizeMemory(stored);
+  assert.equal(norm.type, 'media', '音乐应归一化为 media 类型');
+  assert.equal(norm.media.mediaType, 'music');
+  assert.equal(norm.media.externalId, '1624001324');
+  assert.equal(norm.media.creators[0], '周杰伦');
+  assert.equal(norm.title, '稻香');
+}
+
+console.log('media-domain.test: 全部通过（9 组）');

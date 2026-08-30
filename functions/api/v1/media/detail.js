@@ -4,10 +4,12 @@
 
 import { ok, fail, errors, ServiceError } from '../../../_infra/errors.js';
 import { doubanProvider } from '../../../_adapters/douban-adapter.js';
+import { itunesProvider } from '../../../_adapters/itunes-adapter.js';
 import { createMediaService } from '../../../_services/media-service.js';
 
 // Route 职责：parse → service → ok/fail（Provider 选择/错误映射在 Service）
-const service = createMediaService({ providers: { douban: doubanProvider } });
+// ARCH-011：providers 补 itunes（music）；未来换 Provider 只增 Adapter，不改本路由
+const service = createMediaService({ providers: { douban: doubanProvider, itunes: itunesProvider } });
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
