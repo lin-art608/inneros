@@ -13,6 +13,9 @@ export const ErrorCode = {
   MEDIA_PROVIDER_TIMEOUT: 'MEDIA_PROVIDER_TIMEOUT',
   RATE_LIMITED: 'RATE_LIMITED',
   INTERNAL: 'INTERNAL',
+  // ARCH-008.1：同步批次里"单条操作落地失败"的稳定码。
+  // 客户端只能依据 code 判断类型，禁止依赖中文 message（方案 3.2）。
+  OPERATION_FAILED: 'OPERATION_FAILED',
 };
 
 const JSON_TYPE = 'application/json; charset=utf-8';

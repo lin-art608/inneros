@@ -16,10 +16,18 @@ export function createOperationRepository(db) {
     },
 
     // 记录已应用的操作（seq 由 D1 AUTOINCREMENT 生成）
-    async record({ opId, userId, deviceId, kind, entityId, payload, createdAt }) {
-      await db.prepare(
+    // ARCH-008.1 一致性边界：prepend 传入业务语句时，用 db.batch() 把
+    // [业务写入..., operation 记录] 放进同一个事务提交（D1 batch 具备原子性）。
+    // 避免"业务已生效但操作未记录"（其他设备永远拉不到）或反之的中间态。
+    async record({ opId, userId, deviceId, kind, entityId, payload, createdAt, prepend = null }) {
+      const stmt = db.prepare(
         'INSERT INTO operations(op_id, user_id, device_id, kind, entity_id, payload, created_at) VALUES(?,?,?,?,?,?,?)'
-      ).bind(opId, userId, deviceId, kind, entityId || '', JSON.stringify(payload || {}), createdAt).run();
+      ).bind(opId, userId, deviceId, kind, entityId || '', JSON.stringify(payload || {}), createdAt);
+      if (prepend && prepend.length > 0) {
+        await db.batch([...prepend, stmt]);
+        return;
+      }
+      await stmt.run();
     },
 
     // 增量回放：seq > cursor，可排除来源设备（避免把操作原样回给发送方）

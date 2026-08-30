@@ -24,12 +24,12 @@
 | `functions/api/sports.js` | 足球=TheSportsDB(key 3)、CS2=Liquipedia（teamsearch/matches/leagueseason/cs2matches） |
 | `functions/_lib.js` | D1 schema 自建（IF NOT EXISTS）/ PBKDF2 / Cookie 会话（旧共享库，逐步收敛） |
 | `functions/_domain/memory.js` | Memory 领域模型：normalizeMemory（旧字段→标准结构）/validateMemory/canonicalType/validateOperation |
-| `functions/_repositories/memory-repository.js` | Memory 的 D1 访问集中：upsertNewer/tombstone/appendEntry/updateEntryContent/listByUser。**只管 memory/entry**（操作日志与设备已迁出，别再加同步方法） |
-| `functions/_repositories/operation-repository.js` | ARCH-008 操作日志访问：opExists（幂等判据）/record/listSince（游标增量+排除设备）/maxSeq |
+| `functions/_repositories/memory-repository.js` | Memory 的 D1 访问集中：upsertNewer/tombstone/appendEntry/updateEntryContent/**upsertAttachment**/listByUser。**只管 memory/entry/attachment**（操作日志与设备已迁出）。写入方法均支持可选 `collect` 参数：传入数组时只生成语句不执行（供 db.batch 提交） |
+| `functions/_repositories/operation-repository.js` | ARCH-008 操作日志访问：opExists（幂等判据）/record/listSince（游标增量+排除设备）/maxSeq。record 的 `prepend` 参数传入业务语句时用 `db.batch()` 与记录同事务提交 |
 | `functions/_repositories/device-repository.js` | ARCH-008 设备访问：ensureDevice/getCursor/updateCursor（last_seq 由 Service 传入，便于脱离 D1 单测） |
 | `functions/_services/memory-service.js` | Memory 业务编排：createMemory（领域校验）/list（归一化）/append（空追加拒绝）/delete（墓碑）/NOT_FOUND 语义 |
 | `functions/_services/media-service.js` | 媒体编排：Provider 选择（movie/book→douban）/query 校验/错误映射（第三方原始错误只进日志） |
-| `functions/_services/sync-service.js` | ARCH-008 同步编排：push（validateOperation→幂等→applyOperation→推进游标）/pull（增量+排除本机）。`applyOperation` 的 kind→repository 分发在此，勿搬回路由 |
+| `functions/_services/sync-service.js` | ARCH-008/008.1 同步编排：push（validateOperation→幂等→applyOperation→推进游标）/pull（增量+排除本机）。`applyOperation` 的 kind→repository 分发在此，勿搬回路由。请求级错误抛 `ServiceError` + `ErrorCode`；单条错误带 `code` 字段（客户端按 code 判断，禁止依赖中文 message）。可语句化的 5 种 kind 走 `db.batch` 与 operation 记录同事务 |
 | `functions/_adapters/douban-adapter.js` | 豆瓣适配器：searchMedia/getMediaDetail 标准结构 + 旧形状兼容输出 |
 | `functions/_infra/errors.js` | 统一错误模型（ARCH-002）：ok/fail/errors.*/ServiceError + requestId |
 | `functions/api/v1/` | 新版 API（统一信封）：me / memories(GET+POST) / media/search |
@@ -64,6 +64,8 @@ curl -X POST https://inneros.pages.dev/api/...     # 线上接口探测（部署
 7. IndexedDB 结构变更必须递增 `DB_VERSION` 并写迁移（v4 做过数字 id→UUID 迁移，勿回退）。
 8. **UI 约定**：右下角＋按钮只在记忆页显示（非记忆页 navigate 里隐藏）；详情页打开时＋=追加到当前记录（captureTriggerClick）；详情页顶部无返回/删除行，右上角 ⤴分享/🗑删除 角标（shareCurrentPage 系统分享降级剪贴板）；首页赛程=收藏制（★ localStorage `inneros_fav_matches`）；速记(type `quick`)不计入统计；日记无标题/心情输入（标题=正文前 18 字）；时间线每条直显日期时间类型；侧边栏 overflow-y:auto。
 9. D1 里有测试账号残留（e2e@/curltest@/notarget@inneros.dev），勿当用户数据。
+10. **D1 原子性**：无交互式事务（不能 BEGIN…COMMIT 跨 await）。要原子就用 `db.batch([stmt...])`（batch 即事务）。需先读后写的逻辑（如 upsertNewer 冲突判定）无法进 batch，改靠"写入语义幂等 + op_id 未记录即可安全重试"保证一致性。
+11. **`operations.seq` 是全局 AUTOINCREMENT**，不是每账号从 1 开始。写同步相关断言/客户端逻辑时禁止用"条数"推算 seq，必须取实际返回值（踩过两次）。
 
 ## 风格与流程
 - 注释、UI 文案、错误提示一律中文；错误提示必须是人话+下一步动作。

@@ -49,8 +49,11 @@ export async function onRequestPost(context) {
       last_seq: result.lastSeq,
     });
   } catch (e) {
-    // 仅请求级参数错误（缺 device_id / operations 为空）走这里，单条操作错误在 errors[] 里
-    return json({ error: String(e.message || e) }, 400);
+    // 请求级业务错误：SyncService 抛 ServiceError（稳定 code + status），
+    // 这里映射回旧协议的 { error: 中文提示 } 形状——响应形状不变，code 只进服务端日志。
+    const status = e && e.status ? e.status : 400;
+    console.log('[sync] push rejected:', (e && e.code) || 'UNKNOWN');
+    return json({ error: String((e && e.message) || e) }, status);
   }
 }
 

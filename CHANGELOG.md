@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+### V1.11.1 架构升级 ARCH-008.1（Attachment Sync 修复 + 同步错误模型/一致性边界，2026-08-30）
+
+- **根因①**：`MemoryRepository` 缺 `upsertAttachment`，`upsert_attachment` 操作在 `applyOperation` 里抛 `is not a function` 被吞成单条 error → **附件同步实际一直是失效的**（照片只留本地，其他设备永远拉不到）
+- **Fixed ①**：实现 `upsertAttachment`。字段契约严格按 `_lib.js` 的 `attachments` 表与 `app.js enqueueAttachments()` 的 payload（`memory_id/bytes/hash/mime/data/created_at`，`data` 为不带 `data:` 前缀的 base64，未猜字段）。幂等用 `ON CONFLICT(id) DO UPDATE`（保留原 `created_at`），越权用 `WHERE attachments.user_id = excluded.user_id` 隔离
+- **根因②**：SyncService 抛裸 `Error`，客户端只能靠中文 message 判断错误
+- **Fixed ②**：请求级错误统一 `ServiceError` + `ErrorCode`（复用 `_infra/errors.js`，未建第二套 Error 类）；单条操作错误新增稳定 `code` 字段（`VALIDATION_ERROR` / `OPERATION_FAILED`）。`ErrorCode` 新增 `OPERATION_FAILED`
+- **根因③**：`applyOperation` 与 `recordOperation` 之间无一致性边界
+- **Fixed ③**：可纯语句化的 5 种 kind（`append_entry/update_entry/delete_entry/delete_memory/upsert_attachment`）走**语句收集 + `db.batch()` 与 operation 记录同事务提交**（D1 batch 具备原子性，未引入 Redis/MQ）；`upsert_memory` 需先读后写无法语句化，走"先 apply 后 record + 写入语义幂等 + op_id 未记录即可安全重试"路径。`ensureShell` 改为 `INSERT OR IGNORE`（单语句、天然幂等）
+- **未改**：D1 schema / IndexedDB v4 / 旧 `/api/sync` 协议（路由把 ServiceError 映射回 `{error}` 旧形状）/ UI
+
+#### 实测
+- 单元：`sync-service.test.mjs` 扩到 12 组（新增附件落库与字段、附件幂等与 created_at 保留、附件越权隔离、非法操作 code、缺 memory_id 校验、**事务失败回滚后无残留且可安全重试**）；6 套单测全绿
+- 集成（wrangler 本地 D1）：push 记忆+附件 `applied=2` → 重放 `skipped=2` → 同附件 id 新 op_id 覆盖 `applied=1`（ON CONFLICT 生效不撞 UNIQUE）→ 缺 memory_id 返回 `OPERATION_FAILED` → 设备 B pull 到 3 条 → 记忆读回正常（既有链路无回归）
+
 ### V1.11.0 架构升级 ARCH-008（同步系统收口，2026-08-30）
 
 - **根因**：同步职责混在 `MemoryRepository`（opExists/recordOperation/listOperationsSince/maxSeq/updateDeviceCursor），且 `sync/[action].js` 路由里直接编排同步流程 + 内联 `applyOp`，业务编排泄漏到路由层（v1.9 方案第二节两个问题之一）
