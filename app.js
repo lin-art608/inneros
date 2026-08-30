@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.5.2';
+const APP_VERSION = 'v1.6.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -763,6 +763,12 @@ function renderDetailPoster(entry) {
 // === Helpers ===
 function getEntryDate(e) { return e.watch_date || e.event_date || e.date || e.finish_date || ''; }
 function getEntryTime(e) { return e.watch_time || e.event_time || ''; }
+// UTC ISO → 本地 HH:MM（此前直接 slice(11,16) 显示的是 UTC 时间，差 8 小时——多设备汇总后时间错乱的元凶之一）
+function localTimeOf(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
 function sortEntries(entries) {
   return [...entries].sort((a, b) => {
     const da = getEntryDate(a), db2 = getEntryDate(b);
@@ -1594,7 +1600,7 @@ function renderAIAssistant() {
 function renderEntryCard(e, showYear = false, opts = {}) {
   const meta = TYPE_META[e.type] || TYPE_META.event;
   const date = getEntryDate(e);
-  const time = getEntryTime(e) || String(e.created_at || '').slice(11, 16);
+  const time = getEntryTime(e) || localTimeOf(e.created_at);
   const yearLabel = showYear && date ? `<span>${date.slice(0,4)}</span>` : '';
   let poster = renderEntryPoster(e);
   let preview = e.review || e.content || e.notes || e.note || '';
@@ -1707,7 +1713,7 @@ async function renderTimelineContent() {
       const meta = TYPE_META[e.type] || TYPE_META.event;
       const d = getEntryDate(e);
       const when = d ? `${+d.slice(5,7)}月${+d.slice(8,10)}日` : '';
-      const time = getEntryTime(e) || String(e.created_at || '').slice(11, 16);
+      const time = getEntryTime(e) || localTimeOf(e.created_at);
       html += `<div class="timeline-item"><div class="timeline-item-dot" style="border-color:${meta.color}"></div><div class="tl-when" onclick="openDetail('${e.id}')"><span class="tl-when-date">${when}</span><span class="tl-when-time">${time}</span><span class="tl-when-type">${meta.emoji} ${meta.label}</span></div><div onclick="openDetail('${e.id}')">${renderEntryCard(e, false, { hideTime: true })}</div></div>`;
     });
     html += '</div></div>';
@@ -2075,6 +2081,15 @@ async function renderSettings() {
       </div>
     </div>
     <div class="settings-section">
+      <div class="section-label">管理员 · Admin</div>
+      <div class="settings-card">
+        <div class="sync-intro">站长专用：查看全部注册账户、删除违规/测试账户。需在 Cloudflare 环境变量配置 <b>ADMIN_KEY</b> 后使用。</div>
+        <div class="field-row"><div class="field-label">管理密钥</div><input type="password" class="field-input" id="admin-key" placeholder="ADMIN_KEY" autocomplete="off"></div>
+        <div class="sync-actions"><button class="btn btn-ghost" onclick="adminLoad()">加载账户列表</button></div>
+        <div id="admin-list"></div>
+      </div>
+    </div>
+    <div class="settings-section">
       <div class="section-label">数据统计</div>
       <div class="settings-card">
         <div class="settings-row"><div class="settings-row-label">总记录数</div><div class="settings-row-value">${all.length} 条</div></div>
@@ -2138,6 +2153,41 @@ function importData(input) {
     }
   };
   reader.readAsText(file);
+}
+
+// === 管理员后台（设置页入口；密钥经 CF 环境变量 ADMIN_KEY 校验，不落代码）===
+async function adminLoad() {
+  const key = document.getElementById('admin-key')?.value.trim() || '';
+  if (!key) { showToast('先输入管理密钥', 'error'); return; }
+  const list = document.getElementById('admin-list');
+  list.innerHTML = '<div class="douban-loading">加载中...</div>';
+  try {
+    const res = await fetch('/api/admin/overview', { headers: { 'x-admin-key': key } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+    const users = data.users || [];
+    list.innerHTML = users.length === 0
+      ? '<div class="sync-intro">还没有任何注册账户。</div>'
+      : `<table class="admin-table"><thead><tr><th>邮箱</th><th>注册时间</th><th>记录</th><th>照片</th><th></th></tr></thead><tbody>` +
+        users.map(u => `<tr>
+          <td>${u.email}</td>
+          <td>${String(u.created_at || '').slice(0, 10)}</td>
+          <td>${u.memories}</td>
+          <td>${u.attachments}</td>
+          <td><button class="btn btn-ghost" style="color:var(--danger);padding:4px 10px;" onclick="adminDelete('${u.email.replace(/'/g, '')}')">删除</button></td>
+        </tr>`).join('') + `</tbody></table>
+        <div class="sync-intro">删除 = 移除该账户及其全部云端数据（不可恢复）；其设备上的本地缓存会在下次同步时因会话失效而停止。</div>`;
+  } catch (e) { list.innerHTML = '<div class="sync-intro" style="color:var(--danger)">✗ ' + e.message + '</div>'; }
+}
+async function adminDelete(email) {
+  const key = document.getElementById('admin-key')?.value.trim() || '';
+  showConfirm('🗑️', '删除账户', `将永久删除 ${email} 及其全部云端数据，不可恢复。确定吗？`, async () => {
+    const res = await fetch('/api/admin/delete-user', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': key }, body: JSON.stringify({ email }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(data.error || '删除失败', 'error'); return; }
+    showToast('已删除 ' + email, 'success');
+    adminLoad();
+  });
 }
 
 // === Clear ===
@@ -2469,7 +2519,7 @@ async function saveCapture() {
   const reviewEl = document.getElementById('capture-review');
   const extraEl = document.getElementById('capture-extra');
   const title = titleEl ? titleEl.value.trim() : '';
-  if (!title && selectedType !== 'diary') { showToast('请先搜索并选择作品', 'error'); return; }
+  if (!title && !appendMode && selectedType !== 'diary') { showToast('请先搜索并选择作品', 'error'); return; } // 追加模式无需标题
   if (!selectedType) { showToast('请选择记录类型', 'error'); return; }
   const review = reviewEl ? reviewEl.value.trim() : '';
   const extra = extraEl ? extraEl.value.trim() : '';
@@ -2837,6 +2887,15 @@ async function afterAuth(email) {
   authState.offline = false;
   localStorage.removeItem('inneros_guest');
   hideAuthScreen();
+  // 账号隔离（隐私）：本机缓存属于上一个账号时，切换账号必须清空本机缓存再从云端拉取，
+  // 否则上一账号留在本机的记录会被上传进新账号（用户反馈：新注册账号里出现别人的数据）。
+  // 上一个账号的数据在云端不受影响，换回其账号登录即可取回。
+  const lastAccount = localStorage.getItem('inneros_last_account');
+  if (lastAccount && lastAccount !== email) {
+    await wipeLocalCacheForAccountSwitch();
+    showToast('已切换账号：本机缓存已清空，正在从云端拉取 ' + email + ' 的数据', 'success');
+  }
+  localStorage.setItem('inneros_last_account', email);
   showToast('欢迎，' + email, 'success');
   try {
     await ensureSyncBootstrap();
@@ -2844,6 +2903,24 @@ async function afterAuth(email) {
     await syncNow();
   } catch (e) { console.warn('首次同步失败（稍后自动重试）', e); }
   await navigate('today');
+}
+
+// 清空本机缓存（entries/teams/ops + 同步游标），供账号切换使用
+function clearObjectStore(name) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(name, 'readwrite');
+    tx.objectStore(name).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function wipeLocalCacheForAccountSwitch() {
+  await clearObjectStore('entries');
+  await clearObjectStore('teams');
+  await clearObjectStore('ops');
+  localStorage.removeItem('inneros_sync_cursor');
+  localStorage.removeItem('inneros_bootstrap_done');
+  Object.keys(localStorage).filter(k => k.startsWith('inneros_bootstrap_done_')).forEach(k => localStorage.removeItem(k));
 }
 
 async function logoutAccount() {
@@ -3047,7 +3124,8 @@ async function replayOps(ops, collect) {
 async function ensureSyncBootstrap() {
   bootCloudKeys = new Set();
   await pullOps(true); // collect=true：顺手收集云端已有数据的键，用于 seed 去重
-  if (localStorage.getItem('inneros_bootstrap_done') === '1') { await dedupSeeds(); return; }
+  const bootFlag = 'inneros_bootstrap_done_' + (authState.email || 'local');
+  if (localStorage.getItem(bootFlag) === '1') { await dedupSeeds(); return; }
   const all = await dbGetAll();
   const uploadable = all.filter(r => !r.seed);
   for (const rec of uploadable) {
@@ -3056,7 +3134,7 @@ async function ensureSyncBootstrap() {
   }
   const teams = await dbGetTeams();
   for (const t of teams) await enqueueMemoryUpsert(t);
-  localStorage.setItem('inneros_bootstrap_done', '1');
+  localStorage.setItem(bootFlag, '1');
   if (uploadable.length || teams.length) showToast('正在首次上传本机数据（' + uploadable.length + ' 条记录）…', '');
   await dedupSeeds();
 }
@@ -3078,7 +3156,7 @@ async function renderQuickChat() {
     html += `<div class="chat-day">${day}</div>`;
     const sorted = [...(mem.entries || [])].sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
     for (const en of sorted) {
-      const ts = String(en.created_at || '').slice(11, 16);
+      const ts = localTimeOf(en.created_at);
       const imgs = (en.photos || []).map(p => `<img class="chat-photo" src="${p}" onclick="this.classList.toggle('expanded')">`).join('');
       html += `<div class="chat-msg"><div class="chat-bubble">${en.content ? `<div class="chat-text">${escapeHtml(en.content)}</div>` : ''}${imgs}</div><div class="chat-time">${ts}</div></div>`;
     }
