@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.6.0';
+const APP_VERSION = 'v1.6.1';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -392,25 +392,8 @@ async function fixPostersManual() {
 }
 
 // === Seed Data ===
-const SEED_ENTRIES = [
-  { type:'movie', title:'银翼杀手2049', original_title:'Blade Runner 2049', poster:'https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2501864539.webp', director:'Denis Villeneuve', genres:['科幻','剧情'], runtime:163, release_date:'2017-10-06', watch_date:'2026-08-27', watch_time:'18:42', rating:5, review:'视觉效果令人震撼，关于"什么是真正的人"的探讨比第一部更深。K的旅程像一场关于记忆与身份的沉思。Hans Zimmer的配乐完美契合了这种末世美学。', mood:'沉思', watched_with:'独自', location:'家中', tags:['科幻','哲学','视觉震撼'] },
-  { type:'book', title:'置身事内', author:'兰小欢', cover:'https://covers.openlibrary.org/b/id/12092422-L.jpg', isbn:'9787208171336', publish_date:'2021-08-01', start_date:'2026-08-10', finish_date:'2026-08-27', finish_time:'14:10', rating:5, notes:'对中国地方政府运作逻辑最清晰的解释。从财政、土地、产业政策到债务，把"为什么"讲透了。', tags:['经济','政治','中国'], quotes:'"事权划分的本质不是分工，而是分权。"' },
-  { type:'event', title:'一个想法：我想做一个属于自己的记忆空间', event_date:'2026-08-27', event_time:'09:32', location:'书房', content:'突然意识到，我用过那么多笔记App、日记App、收藏工具，但没有一个能真正陪伴我几十年。我想做一个属于自己的私人数字人生档案——把看过的电影、读过的书、去过的地方、经历过的转折都放在一条时间线上。', mood:'兴奋', importance:5, tags:['灵感','人生方向'] },
-  { type:'movie', title:'沙丘2', original_title:'Dune: Part Two', poster:'https://img9.doubanio.com/view/photo/s_ratio_poster/public/p2902227445.jpg', director:'Denis Villeneuve', genres:['科幻','冒险'], runtime:166, release_date:'2024-03-01', watch_date:'2026-08-25', watch_time:'20:15', rating:5, review:'比第一部更宏大、更黑暗。Paul的预言之路令人不安。Zendaya的Chani视角让整个故事有了批判性。', mood:'震撼', watched_with:'朋友', location:'IMAX影院', tags:['科幻','史诗','IMAX'] },
-  { type:'book', title:'人类简史', author:'尤瓦尔·赫拉利', cover:'https://covers.openlibrary.org/b/id/8226262-L.jpg', isbn:'9780062316097', publish_date:'2014-09-04', start_date:'2026-08-01', finish_date:'2026-08-20', rating:4, notes:'从认知革命到科学革命，视角宏大。但有些论断过于大胆，需要批判性阅读。', tags:['历史','人类学'] },
-  { type:'place', title:'外滩', location:'上海', date:'2026-08-15', note:'夜晚的外滩比白天更有魅力。浦江两岸的光影交错，像两个时代的对话。', people:['家人'], rating:5, tags:['旅行','城市','夜景'] },
-  { type:'movie', title:'奥本海默', original_title:'Oppenheimer', poster:'https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2876555451.jpg', director:'Christopher Nolan', genres:['传记','剧情','历史'], runtime:180, release_date:'2023-07-21', watch_date:'2026-08-14', watch_time:'19:00', rating:5, review:'三小时的对话戏，但节奏紧凑到窒息。Nolan用主观/客观双线讲述了一个关于天才、道德和权力纠缠的故事。IMAX黑白画面对比震撼。', mood:'沉重', watched_with:'独自', location:'影院', tags:['传记','历史','核武器'] },
-  { type:'event', title:'搬到了新公寓', event_date:'2026-07-28', location:'新家', content:'终于有了一个安静的书房。窗户外面有一棵银杏树，秋天应该会很美。这大概是一个新的阶段的开始。', mood:'平静', importance:4, tags:['生活','搬家','新起点'] },
-  { type:'book', title:'克拉拉与太阳', author:'石黑一雄', cover:'https://covers.openlibrary.org/b/id/10521752-L.jpg', isbn:'9780593340298', publish_date:'2021-03-02', start_date:'2026-07-15', finish_date:'2026-07-28', rating:4, notes:'以AI的视角讲述人类的孤独与爱。石黑一雄一贯的克制温柔，但后劲很大。', tags:['小说','科幻','文学'], quotes:'"太阳总有办法照到我们，不管我们在哪里。"' },
-  { type:'movie', title:'教父', original_title:'The Godfather', poster:'https://img9.doubanio.com/view/photo/s_ratio_poster/public/p616779645.jpg', director:'Francis Ford Coppola', genres:['犯罪','剧情'], runtime:175, release_date:'1972-03-24', watch_date:'2026-07-20', watch_time:'21:00', rating:5, review:'重看第三遍。这次注意到的是家庭 dinners 的剪辑——每一桌饭都在传递权力结构的变化。这不是黑帮片，是关于美国梦的悲剧。', rewatch_count:3, mood:'敬畏', watched_with:'独自', location:'家中', tags:['经典','犯罪','家族'] },
-  { type:'music', title:'Daydreaming', artist:'Radiohead', album:'A Moon Shaped Pool', date:'2026-08-22', rating:5, note:'深夜独自散步时的完美配乐。Thom Yorke的声音像一层薄雾。', context:'深夜散步' },
-  { type:'game', title:'荒野大镖客2', platform:'PS5', cover:'https://images.igdb.com/igdb/cover_big/co5vm9.jpg', start_date:'2026-07-01', finish_date:null, rating:5, hours:87, review:'Arthur Morgan的故事是游戏叙事的天花板。不是"好玩"，是"经历"。尾声骑马回营的那段路，是我玩过最心碎的游戏场景。' },
-  { type:'place', title:'京都·伏见稻荷大社', location:'京都', date:'2026-06-10', note:'清晨6点的千本鸟居几乎没有人。阳光穿过朱红色的鸟居，地上的光斑像一条路。', people:['伴侣'], rating:5, tags:['旅行','日本','神社'] },
-  { type:'event', title:'决定开始学日语', event_date:'2026-06-01', location:'家中', content:'去了一趟日本后发现，语言是通往另一种思维方式的路。不是为了考试或工作，纯粹是想读懂一些东西。', mood:'坚定', importance:4, tags:['学习','语言','新开始'] },
-  { type:'movie', title:'千与千寻', original_title:'千と千尋の神隠し', poster:'https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2557573348.jpg', director:'宫崎骏', genres:['动画','奇幻'], runtime:125, release_date:'2001-07-20', watch_date:'2026-05-28', watch_time:'20:00', rating:5, review:'每次看都有新发现。这次注意到的是水上列车的窗——没有倒影，只有虚空的蓝。成长就是学会记住自己的名字。', rewatch_count:5, mood:'温暖', watched_with:'家人', location:'家中', tags:['动画','宫崎骏','成长'] },
-  { type:'book', title:'百年孤独', author:'加西亚·马尔克斯', cover:'https://covers.openlibrary.org/b/id/12092422-L.jpg', isbn:'9780060883287', publish_date:'1967-05-30', start_date:'2026-05-01', finish_date:'2026-05-20', rating:5, notes:'布恩迪亚家族七代人的孤独像一条暗河，贯穿百年。读完之后很久无法开始下一本书。', tags:['文学','魔幻现实主义','经典'], quotes:'"过去都是假的，回忆是一条没有归路的桥。"' },
-  { type:'event', title:'30岁生日', event_date:'2026-04-15', location:'家', content:'没有办派对。一个人做了顿饭，倒了一杯酒，看了窗外很久。30岁不像想象中那么沉重，反而有一种"终于可以不在乎一些事了"的轻松。', mood:'释然', importance:5, tags:['生日','人生节点','30岁'] },
-];
+// （V1.6.1：内置演示数据已按用户要求彻底移除；历史残留由 removeLegacySeeds() 清理）
+
 
 // === State ===
 let currentPage = 'today';
@@ -720,18 +703,38 @@ function renderTeamLogo(team, size) {
   return `<span class="team-logo" style="width:${s}px;height:${s}px;background:${color};color:${text};${circleStyle}flex-shrink:0;">${initials}</span>`;
 }
 
-// === Seed (demo data only) ===
-// V1.2 §12 说明：SEED_ENTRIES 仅是首次运行的演示记录，不是"全世界作品数据库"的替代品。
-// 真实作品必须经上方 Provider 搜索导入，禁止靠堆静态 JSON 扩充数据（符合 §12 禁止项）。
-async function seedIfEmpty() {
-  if (localStorage.getItem('memory_os_seeded') === '1') return;
+// === 演示数据清理（V1.6.1：应用户要求彻底移除内置演示数据） ===
+// 历史版本内置过 17 条演示记录（置身事内/奥本海默/百年孤独等），其特征指纹如下；
+// bootstrap 时按 (类型,标题,内容特征) 匹配并删除本机/账号中的残留，用户自建的记录不受影响。
+const SEED_FINGERPRINTS = [
+  ['movie','银翼杀手2049','视觉效果令人震撼'],
+  ['book','置身事内','对中国地方政府运作逻辑'],
+  ['movie','沙丘2','比第一部更宏大'],
+  ['book','人类简史','从认知革命到科学革命'],
+  ['place','外滩','夜晚的外滩比白天'],
+  ['movie','奥本海默','三小时的对话戏'],
+  ['event','搬到了新公寓','终于有了一个安静的书房'],
+  ['book','克拉拉与太阳','以AI的视角讲述人类的孤独'],
+  ['movie','教父','重看第三遍'],
+  ['music','Daydreaming','深夜独自散步时的完美配乐'],
+  ['game','荒野大镖客2','Arthur Morgan的故事'],
+  ['place','京都·伏见稻荷大社','清晨6点的千本鸟居'],
+  ['event','决定开始学日语','语言是通往另一种思维方式'],
+  ['movie','千与千寻','每次看都有新发现'],
+  ['book','百年孤独','布恩迪亚家族七代人'],
+  ['event','30岁生日','没有办派对'],
+  ['event','一个想法：我想做一个属于自己的记忆空间','突然意识到'],
+];
+function seedFingerprintMatch(rec) {
+  const text = String(rec.review || rec.notes || rec.content || rec.note || '');
+  return SEED_FINGERPRINTS.some(([type, title, marker]) =>
+    rec.type === type && rec.title === title && text.includes(marker));
+}
+async function removeLegacySeeds() {
   const all = await dbGetAll();
-  if (all.length === 0) {
-    for (const entry of SEED_ENTRIES) {
-      await dbAdd({ ...entry, seed:true, created_at:new Date().toISOString(), updated_at:new Date().toISOString() });
-    }
+  for (const rec of all) {
+    if (rec.seed === true || seedFingerprintMatch(rec)) await dbDelete(rec.id);
   }
-  localStorage.setItem('memory_os_seeded', '1');
 }
 
 // === Poster Rendering Helpers ===
@@ -2174,7 +2177,10 @@ async function adminLoad() {
           <td>${String(u.created_at || '').slice(0, 10)}</td>
           <td>${u.memories}</td>
           <td>${u.attachments}</td>
-          <td><button class="btn btn-ghost" style="color:var(--danger);padding:4px 10px;" onclick="adminDelete('${u.email.replace(/'/g, '')}')">删除</button></td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-ghost" style="padding:4px 10px;" onclick="adminReset('${u.email.replace(/'/g, '')}')">清空数据</button>
+            <button class="btn btn-ghost" style="color:var(--danger);padding:4px 10px;" onclick="adminDelete('${u.email.replace(/'/g, '')}')">删除</button>
+          </td>
         </tr>`).join('') + `</tbody></table>
         <div class="sync-intro">删除 = 移除该账户及其全部云端数据（不可恢复）；其设备上的本地缓存会在下次同步时因会话失效而停止。</div>`;
   } catch (e) { list.innerHTML = '<div class="sync-intro" style="color:var(--danger)">✗ ' + e.message + '</div>'; }
@@ -2186,6 +2192,18 @@ async function adminDelete(email) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { showToast(data.error || '删除失败', 'error'); return; }
     showToast('已删除 ' + email, 'success');
+    adminLoad();
+  });
+}
+
+// 清空某账户全部云端数据（保留账户与会话；本机残留演示数据由 removeLegacySeeds 自动清理）
+async function adminReset(email) {
+  const key = document.getElementById('admin-key')?.value.trim() || '';
+  showConfirm('🧹', '清空云端数据', `将清空 ${email} 的全部云端记录（保留账户，本机不再自动上传）。确定吗？`, async () => {
+    const res = await fetch('/api/admin/reset-user', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': key }, body: JSON.stringify({ email }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(data.error || '清空失败', 'error'); return; }
+    showToast('已清空 ' + email + ' 的云端数据', 'success');
     adminLoad();
   });
 }
@@ -3126,6 +3144,7 @@ async function ensureSyncBootstrap() {
   await pullOps(true); // collect=true：顺手收集云端已有数据的键，用于 seed 去重
   const bootFlag = 'inneros_bootstrap_done_' + (authState.email || 'local');
   if (localStorage.getItem(bootFlag) === '1') { await dedupSeeds(); return; }
+  await removeLegacySeeds(); // 清理历史演示数据残留（不上传）
   const all = await dbGetAll();
   const uploadable = all.filter(r => !r.seed);
   for (const rec of uploadable) {
@@ -3266,7 +3285,7 @@ async function dedupSeeds() {
 // === Init ===
 (async function init() {
   try { await initDB(); } catch(e) { console.error('IndexedDB init failed:', e); }
-  await seedIfEmpty();
+  await removeLegacySeeds();
   await checkAuth();
   const guest = localStorage.getItem('inneros_guest') === '1' && !authState.loggedIn;
   authState.guest = guest;

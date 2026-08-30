@@ -33,6 +33,27 @@ export async function onRequestGet(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
+  if (context.params.action === 'reset-user') {
+    // 清空该账户全部云端数据，但保留账户（注册信息/会话），用于"从零开始"
+    const gate = checkAdmin(context);
+    if (gate.err) return gate.err;
+    const db = env.DB;
+    if (!db) return json({ error: 'D1 未绑定' }, 500);
+    await ensureSchema(db);
+    let body = {};
+    try { body = await request.json(); } catch (e) { return json({ error: 'bad json' }, 400); }
+    const email = String(body.email || '').trim().toLowerCase();
+    const u = await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+    if (!u) return json({ error: '账户不存在' }, 404);
+    await db.batch([
+      db.prepare('DELETE FROM memories WHERE user_id = ?').bind(u.id),
+      db.prepare('DELETE FROM memory_entries WHERE user_id = ?').bind(u.id),
+      db.prepare('DELETE FROM attachments WHERE user_id = ?').bind(u.id),
+      db.prepare('DELETE FROM operations WHERE user_id = ?').bind(u.id),
+      db.prepare('DELETE FROM devices WHERE user_id = ?').bind(u.id),
+    ]);
+    return json({ ok: true, email });
+  }
   if (context.params.action !== 'delete-user') return json({ error: 'unknown action' }, 404);
   const gate = checkAdmin(context);
   if (gate.err) return gate.err;
