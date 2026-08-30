@@ -39,6 +39,7 @@
 | `app.js` 书籍链路 | ARCH-010：同电影，`mediaToWorkFields(m,'book')` 映射书籍扩展字段（cover/authors/publisher/isbn/...）；保存带标准 `media` 块 |
 | `app.js` 音乐链路 | ARCH-011：搜索/详情走 v1（`/api/v1/media/search\|detail?type=music` → iTunes），`mediaToWorkFields(m,'music')` 映射 artist/album/preview_url/track_price；v1 失败回退旧直连 iTunes；保存带标准 `media` 块 |
 | `src/services/api-client.js` | 前端统一 API Client（InnerOSApi，经典脚本命名空间；新调用必经） |
+| `src/features/media.js` | ARCH-012 前端媒体数据层：`mediaToWorkFields`/`searchMovie`/`searchBook`/`searchMusic`/`enrichWorkDetail` 从 app.js 迁出（IIFE + `window.InnerOSMedia`，无打包器）。**只做纯数据获取与字段映射，不碰 DOM/app.js 状态**；app.js 的 `ContentProvider` 与 `enrichWorkDetail` 现为薄委托。改媒体搜索/详情逻辑改这里 |
 | `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/itunes-adapter/media-domain/memory-service/media-service/sync-service（node 直接运行） |
 | `tests/integration/sync-route.test.mjs` | ARCH-008.2 集成测试：真实 `onRequestPost/Get` + Cookie 会话 + 内存 D1 仿真（按 SQL 模式处理，未知 SQL 抛错防漂移）。**改同步相关代码后必跑** |
 | `CHANGELOG.md` | 每轮迭代必更新（日期 + 根因 + Fixed/Changed + 实测） |

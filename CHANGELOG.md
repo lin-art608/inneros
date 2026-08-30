@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+### V1.15.0 架构升级 ARCH-012（前端模块化，2026-08-30）
+
+- **目标**：渐进式把高耦合区域移出 app.js，不是重写前端。用已验证的电影/书籍/音乐新 API，把**纯数据逻辑**抽离，app.js 保留生命周期/事件协调/兼容入口
+- **新增 `src/features/media.js`**（IIFE + `window.InnerOSMedia`，无打包器，与 `InnerOSApi` 同模式）：迁入 `mediaToWorkFields`（标准 Media→本地字段映射）、`searchMovie`/`searchBook`/`searchMusic`（v1 搜索 + 旧接口回退）、`enrichWorkDetail`（v1 详情 + 回退，含 music 不误入豆瓣兜底）
+- **app.js 减负**：`mediaToWorkFields` 定义删除；`ContentProvider.searchMovie/Book/Music` 改为薄委托 `InnerOSMedia.*`；`enrichWorkDetail` 改为薄委托。**3596 → 3461 行（-135 行纯数据逻辑）**
+- **边界遵守**：media.js 不碰 DOM、不碰 app.js 内部变量，只依赖 `window.InnerOSApi` + 原生 fetch；返回字段形状不变；游戏（FreeToGame）未迁；DOM 渲染（renderWorkResults/selectWorkResult/saveCapture 等）与状态协调仍留 app.js
+- **加载顺序**：index.html 在 `api-client.js` 之后、`app.js` 之前加载 `media.js`（经典脚本全局命名空间，无循环依赖）
+
+#### 实测
+- `node --check` app.js 与 media.js 均通过；node 模拟浏览器执行 media.js，确认 `InnerOSMedia` 正确挂载、movie/book/music 三种 `mediaToWorkFields` 字段映射与迁移前完全一致（含 media 块保留、providerMetadata 隔离）
+- 后端 9 套测试全绿（前端模块化不触及 functions/ 与 tests/，无回归）；`git diff --check` 通过
+
 ### V1.14.0 架构升级 ARCH-011（音乐最小可用垂直切片，2026-08-30）
 
 - **目标**：验证 Provider 架构可继续扩展到音乐，音乐链路走统一 Media/Memory/Sync，无 MusicSyncService/专用数据库

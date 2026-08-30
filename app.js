@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.14.0';
+const APP_VERSION = 'v1.15.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -104,121 +104,22 @@ async function downloadImageAsDataURL(url) {
   return null;
 }
 
-// === 标准 Media → 本地记录字段（ARCH-009 / ARCH-010） ===
-// v1 接口返回的是 InnerOS 标准 Media 结构（externalId/title/originalTitle/poster/releaseDate/
-// creators/genres/score/description/source/providerMetadata）。这里把它映射成既有 UI 与
-// IndexedDB 读取的字段名，同时把标准结构整体保留在 media 字段（含 providerMetadata），
-// 这样换 Provider（如 TMDB）时 UI 读取方式不变；第三方原始 JSON 只存在于 providerMetadata。
-// type 用于书籍扩展字段映射（cover/authors/publisher/isbn/...）。
-function mediaToWorkFields(m, type) {
-  const meta = m.providerMetadata || {};
-  const fields = {
-    external_id: String(m.externalId || ''),
-    title: m.title || '',
-    original_title: m.originalTitle || '',
-    poster: m.poster || '',
-    release_date: m.releaseDate || '',
-    director: (m.creators && m.creators[0]) || '',
-    genres: m.genres || [],
-    description: m.description || '',
-    rating: (m.score == null ? null : m.score),
-    runtime: meta.runtime || null,
-    provider: m.source || 'douban',
-    media: m,
-  };
-  // ARCH-010：书籍扩展字段（书籍的 creators[0] = 作者；译者/出版社/ISBN/页数在 providerMetadata）
-  if (type === 'book' || m.mediaType === 'book') {
-    fields.cover = m.poster || '';
-    fields.authors = (m.creators && m.creators[0]) || '';
-    fields.publisher = meta.publisher || '';
-    fields.isbn = meta.isbn || '';
-    fields.categories = m.genres || [];
-    fields.pageCount = meta.pageCount || 0;
-    fields.publishedDate = m.releaseDate || '';
-    fields.book_description = m.description || '';
-  }
-  // ARCH-011：音乐扩展字段（creators[0] = 艺人；专辑/试听/价格在 providerMetadata）
-  if (type === 'music' || m.mediaType === 'music') {
-    fields.artist = (m.creators && m.creators[0]) || '';
-    fields.album = meta.album || '';
-    fields.preview_url = meta.previewUrl || '';
-    fields.track_price = (meta.trackPrice == null ? null : meta.trackPrice);
-  }
-  return fields;
-}
-
-// === Public provider adapters (no API keys) ===
-// UI talks only to this normalized layer so a provider can be replaced later.
-// V1.2 §5 统一数据层：UI 只依赖此归一化层，Provider 可替换；§P1 要求电影/书籍/音乐走真实搜索。
-// 当前实现：电影/音乐=iTunes Search（免密钥、CORS 友好）、书籍=Google Books（免密钥）、游戏=FreeToGame。
-// 均为真实 Provider，未用 mock 冒充（符合 §12 禁止项）。
+// === 媒体数据层已迁出（ARCH-012 前端模块化）===
+// mediaToWorkFields / searchMovie / searchBook / searchMusic / enrichWorkDetail 已迁至
+// src/features/media.js（window.InnerOSMedia），此处 ContentProvider 仅作薄委托，
+// 供既有调用点（searchWork / fixSeedPosters / selectWorkResult / searchGoogleBooks 等）无感使用。
+// 游戏（FreeToGame）未迁（非 v1 标准链路，保持原样）。
 let workSearchTimer = null;
 let selectedMovie = null;
 let selectedMusic = null;
 let selectedGame = null;
 let workSearchResults = [];
 const ContentProvider = {
-  async searchMovie(query) {
-    // ARCH-009 电影垂直切片：优先走 v1 标准接口（InnerOSApi → /api/v1/media/search → MediaService → DoubanAdapter 标准模型），
-    // UI 只接触标准 Media 结构，再经 mediaToWorkFields() 映射为本地记录字段；
-    // v1 不可用时自动回退旧 /api/douban，保证第三方故障不导致页面无结果（方案第五节验收标准）。
-    if (window.InnerOSApi) {
-      try {
-        const res = await InnerOSApi.get(`/api/v1/media/search?type=movie&query=${encodeURIComponent(query)}`);
-        const items = (res.data && res.data.items) || [];
-        if (items.length > 0) return items.map(x => mediaToWorkFields(x, 'movie'));
-      } catch (e) {
-        console.warn('[movie] v1 搜索失败，回退 /api/douban：', (e && (e.code || e.message)) || e);
-      }
-    }
-    // 回退：旧 /api/douban（同样是 Adapter 输出，非豆瓣原始 JSON）
-    const res = await fetch(`/api/douban?type=movie&q=${encodeURIComponent(query)}`);
-    if (!res.ok) throw new Error('电影数据源暂时不可用');
-    const data = await res.json();
-    return (data.results || []).map(item => ({
-      external_id: String(item.external_id), title: item.title || '', original_title: item.original_title || '',
-      poster: item.poster || '', release_date: item.release_date || '',
-      director: item.director || '', genres: item.genres || [], description: item.description || '', provider: 'douban',
-    }));
-  },
-  async searchBook(query) {
-    // ARCH-010 书籍垂直切片：优先走 v1 标准接口（MediaService → DoubanAdapter 书籍标准模型），
-    // 失败自动回退旧 /api/douban（同样是 Adapter 输出，非豆瓣原始 JSON）。
-    if (window.InnerOSApi) {
-      try {
-        const res = await InnerOSApi.get(`/api/v1/media/search?type=book&query=${encodeURIComponent(query)}`);
-        const items = (res.data && res.data.items) || [];
-        if (items.length > 0) return items.map(x => mediaToWorkFields(x, 'book'));
-      } catch (e) {
-        console.warn('[book] v1 搜索失败，回退 /api/douban：', (e && (e.code || e.message)) || e);
-      }
-    }
-    const res = await fetch(`/api/douban?type=book&q=${encodeURIComponent(query)}`);
-    if (!res.ok) throw new Error('图书数据源暂时不可用');
-    const data = await res.json();
-    return (data.items || []).map(item => ({
-      external_id: String(item.external_id), title: item.title || '', authors: item.authors || '',
-      publisher: item.publisher || '', publishedDate: item.publishedDate || '', cover: item.cover || '',
-      isbn: item.isbn || '', categories: item.categories || [], description: item.description || '', pageCount: item.pageCount || 0, provider: 'douban',
-    }));
-  },
-  async searchMusic(query) {
-    // ARCH-011 音乐垂直切片：优先走 v1 标准接口（InnerOSApi → /api/v1/media/search → MediaService → iTunesAdapter 标准模型），
-    // UI 只接触标准 Media 结构，经 mediaToWorkFields() 映射为本地字段；
-    // v1 不可用时回退旧浏览器直连 iTunes（同样加 country=CN 提升中文歌覆盖）。
-    if (window.InnerOSApi) {
-      try {
-        const res = await InnerOSApi.get(`/api/v1/media/search?type=music&query=${encodeURIComponent(query)}`);
-        const items = (res.data && res.data.items) || [];
-        if (items.length > 0) return items.map(x => mediaToWorkFields(x, 'music'));
-      } catch (e) {
-        console.warn('[music] v1 搜索失败，回退直连 iTunes：', (e && (e.code || e.message)) || e);
-      }
-    }
-    const res = await fetch(`https://itunes.apple.com/search?media=music&entity=song&limit=8&term=${encodeURIComponent(query)}&country=CN`);
-    if (!res.ok) throw new Error('音乐数据源暂时不可用');
-    return (await res.json()).results.map(item => ({ external_id:String(item.trackId), title:item.trackName || '', artist:item.artistName || '', album:item.collectionName || '', poster:item.artworkUrl100?.replace('100x100bb', '600x600bb') || '', release_date:(item.releaseDate || '').slice(0,10), genres:item.primaryGenreName?[item.primaryGenreName]:[], provider:'itunes' }));
-  },
+  // ARCH-012：电影/书籍/音乐搜索逻辑已迁至 src/features/media.js（InnerOSMedia），
+  // 此处保留薄委托，供既有调用点无感使用。游戏（FreeToGame）未迁，保持原样。
+  async searchMovie(query) { return InnerOSMedia.searchMovie(query); },
+  async searchBook(query) { return InnerOSMedia.searchBook(query); },
+  async searchMusic(query) { return InnerOSMedia.searchMusic(query); },
   async searchGame(query) {
     const res = await fetch('https://www.freetogame.com/api/games');
     if (!res.ok) throw new Error('游戏数据源暂时不可用');
@@ -379,46 +280,10 @@ function renderWorkResults(type, results) {
     </div>
   `).join('');
 }
-// 豆瓣详情补全（V1.2 §8：选中搜索结果后拉详情，补齐简介/导演/评分/片长；书籍：出版社/ISBN/页数/简介）
-// 解决"只有 suggest 级数据、简介为空"的缺口；详情由 /api/douban?type=detail 代理（电影走 m.douban rexxar API，书籍走详情页解析）
+// 豆瓣详情补全（V1.2 §8）：详情逻辑已迁至 src/features/media.js（InnerOSMedia.enrichWorkDetail），
+// 此处保留薄委托，供 selectWorkResult / selectBookResult 无感调用。
 async function enrichWorkDetail(type, r) {
-  if (!r || !r.external_id) return null;
-  const kind = type === 'book' ? 'book' : 'movie';
-  // ARCH-009：电影详情优先走 v1 标准接口（MediaService → Adapter 标准模型），失败再回退旧 /api/douban
-  if (type === 'movie' && window.InnerOSApi) {
-    try {
-      const res = await InnerOSApi.get(`/api/v1/media/detail?type=movie&id=${encodeURIComponent(r.external_id)}`);
-      if (res.data && res.data.title) return mediaToWorkFields(res.data, 'movie');
-    } catch (e) {
-      console.warn('[movie] v1 详情失败，回退 /api/douban：', (e && (e.code || e.message)) || e);
-    }
-  }
-  // ARCH-010：书籍详情同样走 v1 标准接口（Adapter 内部 rexxar + HTML 兜底补 ISBN 等），失败回退旧接口
-  if (type === 'book' && window.InnerOSApi) {
-    try {
-      const res = await InnerOSApi.get(`/api/v1/media/detail?type=book&id=${encodeURIComponent(r.external_id)}`);
-      if (res.data && res.data.title) return mediaToWorkFields(res.data, 'book');
-    } catch (e) {
-      console.warn('[book] v1 详情失败，回退 /api/douban：', (e && (e.code || e.message)) || e);
-    }
-  }
-  // ARCH-011：音乐详情走 v1（iTunes lookup，字段与搜索一致，幂等；失败静默回退搜索已含字段）
-  if (type === 'music' && window.InnerOSApi) {
-    try {
-      const res = await InnerOSApi.get(`/api/v1/media/detail?type=music&id=${encodeURIComponent(r.external_id)}`);
-      if (res.data && res.data.title) return mediaToWorkFields(res.data, 'music');
-    } catch (e) {
-      console.warn('[music] v1 详情失败，沿用搜索字段：', (e && (e.code || e.message)) || e);
-    }
-  }
-  // 豆瓣详情兜底只对 movie/book 生效（music 走 iTunes，无豆瓣对应详情，避免用 trackId 误查豆瓣）
-  if (type === 'music') return null;
-  try {
-    const res = await fetch(`/api/douban?type=detail&kind=${kind}&id=${encodeURIComponent(r.external_id)}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.detail || null;
-  } catch (e) { return null; }
+  return InnerOSMedia.enrichWorkDetail(type, r);
 }
 
 function mergeDetail(target, detail) {
