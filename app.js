@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.5.0';
+const APP_VERSION = 'v1.5.1';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -1601,7 +1601,7 @@ function renderEntryCard(e, showYear = false, opts = {}) {
   const tagsHtml = e.tags && e.tags.length ? `<span>${e.tags.slice(0,3).join(' · ')}</span>` : '';
   // 时间线场景由 tl-when 行统一显示日期时间，卡片内不再重复（用户反馈：重复提及时间）
   const timeHtml = opts.hideTime ? '' : `<div class="entry-time">${time || ''}</div>`;
-  return `<div class="entry-card type-${e.type}">${timeHtml}<div class="entry-icon">${meta.char}</div><div class="entry-body"><div class="entry-title">${e.title}</div>${preview ? `<div class="entry-content-preview">${preview}</div>`:''}<div class="entry-meta">${yearLabel}${tagsHtml}</div></div>${poster}</div>`;
+  return `<div class="entry-card type-${e.type}">${timeHtml}<div class="entry-icon">${meta.emoji}</div><div class="entry-body"><div class="entry-title">${e.title}</div>${preview ? `<div class="entry-content-preview">${preview}</div>`:''}<div class="entry-meta">${yearLabel}${tagsHtml}</div></div>${poster}</div>`;
 }
 
 // === Today ===
@@ -1708,7 +1708,7 @@ async function renderTimelineContent() {
       const d = getEntryDate(e);
       const when = d ? `${+d.slice(5,7)}月${+d.slice(8,10)}日` : '';
       const time = getEntryTime(e) || String(e.created_at || '').slice(11, 16);
-      html += `<div class="timeline-item"><div class="timeline-item-dot" style="border-color:${meta.color}"></div><div class="tl-when" onclick="openDetail('${e.id}')"><span class="tl-when-date">${when}</span><span class="tl-when-time">${time}</span><span class="tl-when-type"><span class="type-mark-inline" style="color:${meta.color}">${meta.char}</span> ${meta.label}</span></div><div onclick="openDetail('${e.id}')">${renderEntryCard(e, false, { hideTime: true })}</div></div>`;
+      html += `<div class="timeline-item"><div class="timeline-item-dot" style="border-color:${meta.color}"></div><div class="tl-when" onclick="openDetail('${e.id}')"><span class="tl-when-date">${when}</span><span class="tl-when-time">${time}</span><span class="tl-when-type">${meta.emoji} ${meta.label}</span></div><div onclick="openDetail('${e.id}')">${renderEntryCard(e, false, { hideTime: true })}</div></div>`;
     });
     html += '</div></div>';
   });
@@ -1796,7 +1796,7 @@ async function renderLibraryTab(tab) {
   } else if (tab === 'music') {
     let html = '<div class="books-grid">';
     items.forEach(m => {
-      html += `<div class="book-card" onclick="openDetail('${m.id}')"><div class="entry-icon" style="width:64px;height:64px;border-radius:8px;background:rgba(201,123,99,0.12);color:var(--c-music);font-size:26px;">乐</div><div class="book-info"><div class="book-title">${m.title}</div><div class="book-author">${m.artist||''}</div><div class="book-date">${(m.date||'').replace(/-/g,'/')}</div></div></div>`;
+      html += `<div class="book-card" onclick="openDetail('${m.id}')"><div class="entry-icon" style="width:64px;height:64px;border-radius:8px;background:rgba(201,123,99,0.12);color:var(--c-music);font-size:28px;">🎵</div><div class="book-info"><div class="book-title">${m.title}</div><div class="book-author">${m.artist||''}</div><div class="book-date">${(m.date||'').replace(/-/g,'/')}</div></div></div>`;
     });
     content.innerHTML = html ? html + '</div>' : '<div class="empty-state"><div class="empty-state-icon">🎵</div><div class="empty-state-title">还没有音乐记录</div><div class="empty-state-desc">点击 + 按钮，记录你听过的音乐</div></div>';
   } else if (tab === 'game') {
@@ -1804,14 +1804,14 @@ async function renderLibraryTab(tab) {
     items.forEach(g => {
       const coverHtml = g.cover
         ? `<img class="book-cover" src="${proxyImage(g.cover)}" alt="${g.title}" loading="lazy" onerror="this.style.display='none'">`
-        : `<div class="book-cover" style="background:rgba(90,139,173,0.12);display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--c-game);">游</div>`;
+        : `<div class="book-cover" style="background:rgba(90,139,173,0.12);display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--c-game);">🎮</div>`;
       html += `<div class="book-card" onclick="openDetail('${g.id}')">${coverHtml}<div class="book-info"><div class="book-title">${g.title}</div><div class="book-author">${g.platform||''}</div><div class="book-date">${g.finish_date?'完成于 '+g.finish_date.replace(/-/g,'/'):'进行中'}</div></div></div>`;
     });
     content.innerHTML = html + '</div>' || '<div class="search-empty">还没有游戏记录</div>';
   } else if (tab === 'place') {
     let html = '<div class="books-grid">';
     items.forEach(p => {
-      html += `<div class="book-card type-place" onclick="openDetail('${p.id}')"><div class="entry-icon" style="width:64px;height:90px;border-radius:6px;background:rgba(201,169,97,0.15);color:var(--c-place);font-size:26px;display:flex;align-items:center;justify-content:center;">地</div><div class="book-info"><div class="book-title">${p.title}</div><div class="book-author">${p.location||''}</div><div class="book-date">${(p.date||'').replace(/-/g,'/')}</div></div></div>`;
+      html += `<div class="book-card type-place" onclick="openDetail('${p.id}')"><div class="entry-icon" style="width:64px;height:90px;border-radius:6px;background:rgba(201,169,97,0.15);color:var(--c-place);font-size:28px;display:flex;align-items:center;justify-content:center;">📍</div><div class="book-info"><div class="book-title">${p.title}</div><div class="book-author">${p.location||''}</div><div class="book-date">${(p.date||'').replace(/-/g,'/')}</div></div></div>`;
     });
     content.innerHTML = html ? html + '</div>' : '<div class="empty-state"><div class="empty-state-icon">📍</div><div class="empty-state-title">还没有地点记录</div><div class="empty-state-desc">点击 + 按钮，记录你去过的地方</div></div>';
   }
@@ -2078,7 +2078,7 @@ async function renderSettings() {
       <div class="section-label">数据统计</div>
       <div class="settings-card">
         <div class="settings-row"><div class="settings-row-label">总记录数</div><div class="settings-row-value">${all.length} 条</div></div>
-        ${Object.entries(counts).map(([t,n]) => { const m = TYPE_META[t]||{emoji:'',label:t}; return `<div class="settings-row" style="cursor:pointer;" onclick="jumpLibrary('${t}')" title="查看全部${m.label}"><div class="settings-row-label"><span style="font-family:var(--font-cn-serif);font-weight:600;color:${m.color}">${m.char || m.emoji}</span> ${m.label}</div><div class="settings-row-value">${n} 条 →</div></div>`; }).join('')}
+        ${Object.entries(counts).map(([t,n]) => { const m = TYPE_META[t]||{emoji:'',label:t}; return `<div class="settings-row" style="cursor:pointer;" onclick="jumpLibrary('${t}')" title="查看全部${m.label}"><div class="settings-row-label">${m.emoji} ${m.label}</div><div class="settings-row-value">${n} 条 →</div></div>`; }).join('')}
       </div>
     </div>
     <div class="settings-section">
@@ -2175,11 +2175,11 @@ async function openDetail(id, fromPop = false) {
 
   // Hero: poster + title + type badge
   if (e.poster || e.cover) {
-    html += `<div class="detail-hero fade-in">${renderDetailPoster(e)}<div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}"><span style="font-family:var(--font-cn-serif);font-weight:600;">${meta.char || meta.emoji}</span> ${meta.label}</div><div class="detail-title">${e.title}</div>`;
+    html += `<div class="detail-hero fade-in">${renderDetailPoster(e)}<div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${meta.emoji} ${meta.label}</div><div class="detail-title">${e.title}</div>`;
     if (e.original_title) html += `<div class="detail-subtitle">${e.original_title}</div>`;
     html += heroMeta + '</div></div>';
   } else {
-    html += `<div class="detail-hero fade-in" style="gap:0"><div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}"><span style="font-family:var(--font-cn-serif);font-weight:600;">${meta.char || meta.emoji}</span> ${meta.label}</div><div class="detail-title">${e.title}</div>`;
+    html += `<div class="detail-hero fade-in" style="gap:0"><div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${meta.emoji} ${meta.label}</div><div class="detail-title">${e.title}</div>`;
     if (e.location) html += `<div class="detail-subtitle">${e.location}</div>`;
     html += heroMeta + '</div></div>';
   }

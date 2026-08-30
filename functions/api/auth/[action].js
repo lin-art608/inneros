@@ -27,17 +27,20 @@ export async function onRequestPost(context) {
     await db.prepare(`INSERT INTO codes(email, code, expires_at, created_at) VALUES(?,?,?,?)
       ON CONFLICT(email) DO UPDATE SET code = excluded.code, expires_at = excluded.expires_at, created_at = excluded.created_at`)
       .bind(email, code, expires, new Date().toISOString()).run();
+    // 发件人：默认 onboarding@resend.dev（Resend 测试模式，只能发给自己）；
+    // 在 Resend 验证 inneros.asia 域名后，设置环境变量 EMAIL_FROM（如 InnerOS <noreply@inneros.asia>）即可给任意邮箱发信
+    const from = env.EMAIL_FROM || 'InnerOS <onboarding@resend.dev>';
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'InnerOS <onboarding@resend.dev>', to: [email], subject: 'InnerOS 注册验证码', text: '你的注册验证码是 ' + code + '，10 分钟内有效。' }),
+      body: JSON.stringify({ from, to: [email], subject: 'InnerOS 注册验证码', text: '你的注册验证码是 ' + code + '，10 分钟内有效。' }),
     });
     if (!res.ok) {
       const errText = (await res.text()).slice(0, 300);
       // Resend 测试模式（未验证域名）只能发给自己账号的邮箱 → 转成人话指引
       const m = errText.match(/your own email address \(([^)]+)\)/);
       if (res.status === 403 && m) {
-        return json({ error: 'Resend 测试模式只能发给账号本人的邮箱（' + m[1] + '）。可用该邮箱注册；或在 Resend 验证 inneros.asia 域名后任意邮箱可用。' }, 403);
+        return json({ error: '当前为 Resend 测试模式：只能发给 ' + m[1] + '（用该邮箱注册即可收到）。要让任意邮箱可注册：Resend 后台 Domains 添加 inneros.asia → 按提示在 Cloudflare DNS 加记录 → 状态变 Verified 后，在此项目环境变量新增 EMAIL_FROM（值如 InnerOS <noreply@inneros.asia>）' }, 403);
       }
       return json({ error: '验证码邮件发送失败（' + res.status + '）：' + errText }, 502);
     }
