@@ -145,11 +145,17 @@ def main():
     p_del = pull(opA, "devB")
     del_ops = [o for o in p_del["ops"] if o["entity_id"] == mid_sync and o["kind"] == "delete_memory"]
     assert del_ops, "删除操作应被设备B pull 到"
-    # 墓碑：旧快照（同账号A、更早 updated_at）不得复活已删除记录
-    push(opA, "devA", [{"op_id": op_mv3, "kind": "upsert_memory", "entity_id": mid_sync,
-                        "payload": {"data": {**movie_payload, "title": "僵尸"}, "updated_at": "2026-08-30T20:30:00.000Z"}}])
+    # 墓碑：devA 再 push 更早 updated_at 的旧 snapshot（新 op_id，不幂等跳过）
+    # 实际语义：upsertNewer 按 updated_at 比较，旧快照走"旧者冲突"分支进 _conflicts，不复活已删除记录
+    r_stale = push(opA, "devA", [{"op_id": op_mv3, "kind": "upsert_memory", "entity_id": mid_sync,
+                                  "payload": {"data": {**movie_payload, "title": "僵尸"}, "updated_at": "2026-08-30T20:30:00.000Z"}}])
+    assert r_stale["errors"] == [], f"旧 snapshot 不应报错，实际 {r_stale['errors']}"
     assert not any(m["id"] == mid_sync for m in list_memories(opA)), "删除后不应被旧快照复活"
-    print("  删除→B pull: 删除操作已同步，墓碑生效旧快照不复活")
+    # devB 再 pull：确认没有可复活记录的有效 upsert（服务端墓碑已生效）
+    p_final = pull(opA, "devB")
+    final_upserts = [o for o in p_final["ops"] if o["entity_id"] == mid_sync and o["kind"] == "upsert_memory"]
+    assert not any(m["id"] == mid_sync for m in list_memories(opA)), "devB 侧读取也不应看到已删除记录"
+    print("  删除→B pull: delete 已同步，旧 snapshot 走冲突不复活，A/B 两侧均无记录")
 
     # ============ 2. 书籍完整链路 ============
     print("\n=== 书籍：搜索→详情→保存→刷新→pull→删除→pull ===")
@@ -175,6 +181,7 @@ def main():
     op_bk1 = "bk1-" + uuid.uuid4().hex[:8]
     op_bk2 = "bk2-" + uuid.uuid4().hex[:8]
     op_bk3 = "bk3-" + uuid.uuid4().hex[:8]
+    op_bk4 = "bk4-" + uuid.uuid4().hex[:8]
     # 保存 → B pull
     push(opA, "devA", [{"op_id": op_bk1, "kind": "upsert_memory", "entity_id": mid_bk,
                         "payload": {"data": book_payload, "updated_at": "2026-08-30T20:00:00.000Z"}}])
@@ -188,11 +195,17 @@ def main():
     mod_ops = [o for o in p2["ops"] if o["entity_id"] == mid_bk]
     assert mod_ops and mod_ops[-1]["payload"]["data"]["title"] == "百年孤独（精装）", "设备B 应 pull 到修改后的书籍"
     print("  修改→B pull: 设备B 拉到新标题")
-    # 删除 → 墓碑
+    # 删除 → B pull（文档要求书籍"删除→B pull"）
     push(opA, "devA", [{"op_id": op_bk3, "kind": "delete_memory", "entity_id": mid_bk,
                         "payload": {"updated_at": "2026-08-30T21:00:00.000Z"}}])
-    assert not any(m["id"] == mid_bk for m in list_memories(opA))
-    print("  删除墓碑: 通过")
+    p_bk_del = pull(opA, "devB")
+    bk_del_ops = [o for o in p_bk_del["ops"] if o["entity_id"] == mid_bk and o["kind"] == "delete_memory"]
+    assert bk_del_ops, "设备B 应 pull 到书籍的 delete_memory 操作"
+    # 旧 snapshot 不复活（同账号A、更早 updated_at，走冲突分支进 _conflicts）
+    push(opA, "devA", [{"op_id": op_bk4, "kind": "upsert_memory", "entity_id": mid_bk,
+                        "payload": {"data": {**book_payload, "title": "僵尸书"}, "updated_at": "2026-08-30T20:10:00.000Z"}}])
+    assert not any(m["id"] == mid_bk for m in list_memories(opA)), "书籍删除后不应被旧快照复活"
+    print("  删除→B pull: delete_memory 已同步，旧快照不复活")
 
     # ============ 3. 音乐链路 ============
     print("\n=== 音乐：搜索/详情→保存→刷新→pull ===")

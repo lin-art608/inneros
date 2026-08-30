@@ -7,6 +7,22 @@
 
 ## [Unreleased]
 
+### V1.16.1 架构收口 + 测试护栏修正（一次性收尾，2026-08-30）
+
+- **根因**：深度审查（以实际源码为准）发现 ARCH-012 抽出的 `InnerOSMedia` 与 app.js 旧 Provider 曾并存；且 media.js 的 fallback（/api/douban、iTunes）散落在 4 个函数里，未集中到兼容层。
+- **Fixed（P0 主流程收口）**：app.js 已无任何直接 fetch /api/douban / iTunes；`ContentProvider.searchMovie/Book/Music` 与 `enrichWorkDetail` 均为薄委托 → `InnerOSMedia.*`（唯一前端媒体入口）。
+- **Changed（P1 fallback 集中化）**：media.js 把散落的第三方 URL 收拢到「兼容 fallback 层」（`legacyDoubanSearch`/`legacyDoubanDetail`/`legacyItunesSearch`），feature 主链始终走 v1，第三方 URL 只存在于 fallback 层 + Adapter。
+- **Changed（P1 E2E 断言补全）**：电影补「删除→B pull + 旧 snapshot 走冲突不复活」跨设备完整断言；书籍补「删除→B pull + 旧快照不复活」；音乐保持 A→B pull。
+- **Added（P1 fallback 回归测试）**：新增 `tests/unit/media-feature.test.mjs`（7 组）——v1 电影/书籍/音乐成功时**绝不触发 fallback fetch**、v1 失败才走 fallback、fallback URL 指向正确。
+- **Changed（P2 工程收口）**：更新 `media-service.js` 顶部陈旧注释（music 已支持，非"拒绝"）；新增 `tests/run-e2e.sh` 明确区分「零依赖测试」与「完整 E2E」两个入口。
+- **未改**：D1 schema / IndexedDB v4 / API 协议 / 用户操作流程 / SyncService 逻辑。
+
+#### 实测
+- `node --check app.js` 与 `src/features/media.js`：通过
+- `bash tests/run-all.sh`：10 套零依赖测试全绿（新增 media-feature 7 组）
+- `python tests/e2e/media-sync-e2e.py`（wrangler 真实 D1）：电影/书籍/音乐三条链路 + 跨设备同步 + 幂等 + 墓碑 + user isolation + 稳定错误码全部通过
+- `git diff --check`：通过
+
 ### V1.16.0 架构升级 ARCH-013（测试护栏，2026-08-30）
 
 - **目标**：让未来维护者/Codex 有足够证据阻止回归，覆盖最易坏、最重要的数据链路，不追求测试数量
