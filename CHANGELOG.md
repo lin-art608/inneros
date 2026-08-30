@@ -18,6 +18,7 @@
 - `bash tests/run-all.sh`：9 套测试全绿
 - `python tests/e2e/media-sync-e2e.py`（wrangler 真实 D1）：电影/书籍/音乐三条链路 + 跨设备同步 + 幂等 + 墓碑 + user isolation + 稳定错误码全部通过
 - 踩坑记录（脚本级，非产品 bug）：① `operations.op_id` 是全局唯一约束，E2E 的 op_id 必须每次随机，否则撞 UNIQUE；② 跨设备同步须在同一账号下（devA push → devB pull），用不同账号 pull 会触发 user isolation 而拿不到数据
+- **三条跨设备回归对齐文档精确定义（补充完善）**：① 电影补「删除→B pull」（验证删除操作同步到 B）；② 书籍补「修改→B pull」（B 拉到新标题）；③ 音乐补「B pull」（B 拉到音乐含标准 media）。并修正「旧快照复活」用例改用同账号 push（此前误用账号B，因 user isolation 未真正测到墓碑优先语义）
 
 ### V1.15.0 架构升级 ARCH-012（前端模块化，2026-08-30）
 

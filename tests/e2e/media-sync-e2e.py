@@ -139,13 +139,17 @@ def main():
     assert pulled and pulled[-1]["payload"]["data"]["title"] == md["title"] and "media" in pulled[-1]["payload"]["data"]
     print(f"  跨设备: push applied={r1['applied']}，重放 skipped={r1b['skipped']}，设备B pull 到电影(含标准 media)")
 
-    # 删除 → 墓碑不被旧快照复活
+    # 删除 → B pull（文档要求"删除→B pull"：删除操作应同步到设备B）
     push(opA, "devA", [{"op_id": op_mv2, "kind": "delete_memory", "entity_id": mid_sync,
                         "payload": {"updated_at": "2026-08-30T21:00:00.000Z"}}])
-    push(opB, "devB", [{"op_id": op_mv3, "kind": "upsert_memory", "entity_id": mid_sync,
+    p_del = pull(opA, "devB")
+    del_ops = [o for o in p_del["ops"] if o["entity_id"] == mid_sync and o["kind"] == "delete_memory"]
+    assert del_ops, "删除操作应被设备B pull 到"
+    # 墓碑：旧快照（同账号A、更早 updated_at）不得复活已删除记录
+    push(opA, "devA", [{"op_id": op_mv3, "kind": "upsert_memory", "entity_id": mid_sync,
                         "payload": {"data": {**movie_payload, "title": "僵尸"}, "updated_at": "2026-08-30T20:30:00.000Z"}}])
     assert not any(m["id"] == mid_sync for m in list_memories(opA)), "删除后不应被旧快照复活"
-    print("  删除: 墓碑生效，旧快照不复活")
+    print("  删除→B pull: 删除操作已同步，墓碑生效旧快照不复活")
 
     # ============ 2. 书籍完整链路 ============
     print("\n=== 书籍：搜索→详情→保存→刷新→pull→删除→pull ===")
@@ -170,14 +174,25 @@ def main():
     mid_bk = "mem-book-" + uuid.uuid4().hex[:12]
     op_bk1 = "bk1-" + uuid.uuid4().hex[:8]
     op_bk2 = "bk2-" + uuid.uuid4().hex[:8]
+    op_bk3 = "bk3-" + uuid.uuid4().hex[:8]
+    # 保存 → B pull
     push(opA, "devA", [{"op_id": op_bk1, "kind": "upsert_memory", "entity_id": mid_bk,
                         "payload": {"data": book_payload, "updated_at": "2026-08-30T20:00:00.000Z"}}])
     p = pull(opA, "devB")  # 同账号A 跨设备
     assert any(o["entity_id"] == mid_bk and o["payload"]["data"].get("isbn") for o in p["ops"]), "设备B 应 pull 到书籍(含 ISBN)"
-    push(opA, "devA", [{"op_id": op_bk2, "kind": "delete_memory", "entity_id": mid_bk,
+    # 修改 → B pull（文档要求书籍有"修改"步骤）
+    book_payload_v2 = {**book_payload, "title": "百年孤独（精装）", "updated_at": "2026-08-30T20:30:00.000Z"}
+    push(opA, "devA", [{"op_id": op_bk2, "kind": "upsert_memory", "entity_id": mid_bk,
+                        "payload": {"data": book_payload_v2, "updated_at": "2026-08-30T20:30:00.000Z"}}])
+    p2 = pull(opA, "devB")
+    mod_ops = [o for o in p2["ops"] if o["entity_id"] == mid_bk]
+    assert mod_ops and mod_ops[-1]["payload"]["data"]["title"] == "百年孤独（精装）", "设备B 应 pull 到修改后的书籍"
+    print("  修改→B pull: 设备B 拉到新标题")
+    # 删除 → 墓碑
+    push(opA, "devA", [{"op_id": op_bk3, "kind": "delete_memory", "entity_id": mid_bk,
                         "payload": {"updated_at": "2026-08-30T21:00:00.000Z"}}])
     assert not any(m["id"] == mid_bk for m in list_memories(opA))
-    print("  跨设备同步 + 删除墓碑: 通过")
+    print("  删除墓碑: 通过")
 
     # ============ 3. 音乐链路 ============
     print("\n=== 音乐：搜索/详情→保存→刷新→pull ===")
@@ -196,10 +211,24 @@ def main():
     assert any(m["id"] == mid_music for m in list_memories(opA))
     print(f"  保存+刷新: {mid_music} 艺人/专辑正确")
 
+    # 跨设备：设备A push 音乐 → 设备B pull（文档要求音乐"刷新→B pull"）
+    music_payload = {"type": "music", "title": mud["title"], "poster": mud["poster"],
+                     "external_id": mud["externalId"], "artist": (mud["creators"] or [""])[0],
+                     "album": mud["providerMetadata"].get("album", ""), "genres": mud["genres"],
+                     "media": {**mud, "mediaType": "music"}, "updated_at": "2026-08-30T20:00:00.000Z"}
+    mid_mu = "mem-music-" + uuid.uuid4().hex[:12]
+    op_mu1 = "mu1-" + uuid.uuid4().hex[:8]
+    push(opA, "devA", [{"op_id": op_mu1, "kind": "upsert_memory", "entity_id": mid_mu,
+                        "payload": {"data": music_payload, "updated_at": "2026-08-30T20:00:00.000Z"}}])
+    p_mu = pull(opA, "devB")
+    mu_ops = [o for o in p_mu["ops"] if o["entity_id"] == mid_mu]
+    assert mu_ops and mu_ops[-1]["payload"]["data"]["title"] == mud["title"] and "media" in mu_ops[-1]["payload"]["data"], "设备B 应 pull 到音乐(含标准 media)"
+    print(f"  B pull: 设备B 拉到音乐(含标准 media)")
+
     # ============ 4. user isolation（账号 B 看不到 A 的任何记录）============
     print("\n=== user isolation ===")
     b_items = list_memories(opB)
-    a_ids = {mid_movie, mid_book, mid_music}
+    a_ids = {mid_movie, mid_book, mid_music, mid_mu}
     assert not (a_ids & {m["id"] for m in b_items}), "账号B 不应看到账号A 的记录"
     print(f"  账号B 可见记录数: {len(b_items)}，账号A 的记录均不可见 ✓")
 
