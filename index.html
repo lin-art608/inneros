@@ -159,7 +159,11 @@ body {
   display:flex; flex-direction:column; padding:32px 20px;
   position:fixed; top:0; left:0; bottom:0; background:var(--bg);
   z-index:100; transition:transform 0.3s ease;
+  overflow-y:auto; overflow-x:hidden; /* 侧边栏可上下滚动（用户反馈：看不到设置） */
+  scrollbar-width:thin;
 }
+.sidebar::-webkit-scrollbar { width:4px; }
+.sidebar::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
 .brand { margin-bottom:32px; padding:0 8px; }
 .brand-title { font-family:var(--font-serif); font-size:24px; font-weight:600; letter-spacing:-0.5px; line-height:1.2; }
 .brand-sub { font-size:11px; color:var(--text-secondary); letter-spacing:1.5px; text-transform:uppercase; margin-top:4px; }
@@ -1113,10 +1117,6 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             <span class="nav-label"><span class="nav-cn">今天</span><span class="nav-en">Today</span></span>
           </button>
-          <button class="nav-item" data-page="quickchat" onclick="navigate('quickchat')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-            <span class="nav-label"><span class="nav-cn">速记</span><span class="nav-en">Quick</span></span>
-          </button>
           <button class="nav-item" data-page="timeline" onclick="navigate('timeline')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
             <span class="nav-label"><span class="nav-cn">时间线</span><span class="nav-en">Timeline</span></span>
@@ -1165,6 +1165,14 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
             <span class="nav-label"><span class="nav-cn">常用资源</span><span class="nav-en">Quick Links</span></span>
           </button>
         </div>
+      </div>
+
+      <!-- 速信（Quick Express） -->
+      <div class="nav-group" id="nav-group-quick">
+        <button class="nav-group-header" onclick="navigate('quickchat')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          <span class="nav-label"><span class="nav-cn">速信</span><span class="nav-en">Express</span></span>
+        </button>
       </div>
 
       <!-- Knowledge -->

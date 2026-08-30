@@ -790,7 +790,7 @@ async function navigate(page, fromPop = false) {
 
   // Auto-expand the parent group when navigating to a sub-item
   const groupMap = {
-    today:'memory', timeline:'memory', library:'memory', search:'memory', quickchat:'memory',
+    today:'memory', timeline:'memory', library:'memory', search:'memory',
     onthisday:'memory', random:'memory', 'year-review':'memory',
     'res-cs':'resources', 'res-football':'resources', 'res-ai':'resources', 'res-links':'resources'
   };
@@ -826,6 +826,10 @@ async function navigate(page, fromPop = false) {
     console.error('Page render error:', err);
     content.innerHTML = `<div class="error-state"><div class="error-state-icon">⚠</div><div class="error-state-title">页面加载失败</div><div class="error-state-desc">请刷新页面重试</div><button class="error-state-retry" onclick="navigate('${page}')">重试</button></div>`;
   }
+  // 右下角＋仅记忆相关页面显示（用户要求：非记忆界面不放添加按钮）
+  const memoryPages = ['today','timeline','library','search','onthisday','random','year-review'];
+  const capBtn = document.querySelector('.capture-trigger');
+  if (capBtn) capBtn.style.display = memoryPages.includes(page) ? '' : 'none';
   closeSidebar();
 }
 
@@ -1585,7 +1589,7 @@ function renderAIAssistant() {
 function renderEntryCard(e, showYear = false) {
   const meta = TYPE_META[e.type] || TYPE_META.event;
   const date = getEntryDate(e);
-  const time = getEntryTime(e);
+  const time = getEntryTime(e) || String(e.created_at || '').slice(11, 16);
   const yearLabel = showYear && date ? `<span>${date.slice(0,4)}</span>` : '';
   let poster = renderEntryPoster(e);
   let preview = e.review || e.content || e.notes || e.note || '';
@@ -1626,17 +1630,6 @@ async function renderToday() {
     html += '</div>';
   } else {
     html += `<div class="empty-state"><div class="empty-state-icon">✦</div><div class="empty-state-title">今天还没有记录</div><div class="empty-state-desc">点击右下角的 + 按钮，开始记录你的第一个记忆</div></div>`;
-  }
-  // 最近添加（按创建时间倒序，跨日期）
-  const recentAdded = all.filter(e => getEntryDate(e) !== todayStr)
-    .sort((a,b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))).slice(0, 5);
-  if (recentAdded.length > 0) {
-    html += `<div class="on-this-day"><div class="section-label"> 最近添加 · Recently Added</div><div class="today-entries">`;
-    recentAdded.forEach((e,i) => {
-      const ca = (e.created_at || '').replace('T',' ').slice(5,16);
-      html += `<div class="card-enter" style="animation-delay:${i*0.06}s" onclick="openDetail('${e.id}')">${renderEntryCard(e, true)}<div class="entry-recent-time">添加于 ${ca}</div></div>`;
-    });
-    html += '</div></div>';
   }
   const monthDay = todayStr.slice(5);
   const pastEntries = all.filter(e => { const d = getEntryDate(e); return d.endsWith(monthDay) && d !== todayStr; });
@@ -2048,7 +2041,7 @@ function changeReviewYear(yr) {
 async function renderSettings() {
   const all = await dbGetAll();
   const counts = {};
-  all.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
+  all.forEach(e => { if (e.type === 'quick') return; counts[e.type] = (counts[e.type] || 0) + 1; }); // 速记不计入统计
   const lastCloud = await dbGetMeta('last_cloud_sync');
   let html = `
     <div class="page-header"><div class="page-title">设置 · Settings</div></div>
@@ -2336,9 +2329,7 @@ function selectType(type) {
   } else if (type === 'diary') {
     container.innerHTML = `
       <div class="capture-fields show" id="capture-fields">
-        <div class="field-row"><div class="field-label">标题（可选）</div><input type="text" class="field-input" id="capture-title" placeholder="给这天起个名字..."></div>
         <div class="field-row"><div class="field-label">日记内容</div><textarea class="capture-textarea" id="capture-review" placeholder="今天发生了什么？写点什么..." style="min-height:200px;"></textarea></div>
-        <div class="field-row"><div class="field-label">心情</div><input type="text" class="field-input" id="capture-extra" placeholder="平静 / 兴奋 / 沉思..."></div>
         ${renderPhotoUpload()}
       </div>`;
     setTimeout(() => document.getElementById('capture-review')?.focus(), 100);
@@ -2557,8 +2548,9 @@ async function saveCapture() {
       }
     } else if (selectedType === 'diary') {
       entry.event_date = today; entry.event_time = time;
-      if (extra) entry.mood = extra;
-      if (!title) entry.title = today.slice(5).replace('-', '月') + '日';
+      // 标题 = 正文前一部分（用户要求：去除标题/心情输入）
+      const plain = review.replace(/\s+/g, ' ').trim();
+      entry.title = plain ? (plain.length > 18 ? plain.slice(0, 18) + '…' : plain) : today.slice(5).replace('-', '月') + '日';
     } else if (selectedType === 'event') {
       entry.event_date = today; entry.event_time = time;
       if (extra) entry.location = extra;
@@ -2939,7 +2931,7 @@ async function syncNow() {
 }
 function startAutoSync() {
   if (startAutoSync._t) return;
-  startAutoSync._t = setInterval(() => syncNow(), 5 * 60e3);
+  startAutoSync._t = setInterval(() => syncNow(), 60e3);
   window.addEventListener('online', () => syncNow());
 }
 async function pushPendingOps() {
@@ -3044,7 +3036,7 @@ let pendingChatPhotos = [];
 async function renderQuickChat() {
   const all = (await dbGetAll()).filter(r => r.type === 'quick')
     .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
-  let html = `<div class="page-header"><div class="page-title">速记 · Quick</div><div class="page-subtitle">随手发文字 / 照片给自己，登录后全设备同步</div></div>`;
+  let html = `<div class="page-header"><div class="page-title">速信 · Express</div><div class="page-subtitle">随手发文字 / 照片给自己，登录后全设备同步</div></div>`;
   html += `<div class="chat-thread" id="chat-thread">`;
   if (!all.length) {
     html += `<div class="empty-state" style="padding:40px 16px;"><div class="empty-state-icon">💬</div><div class="empty-state-title">发第一条速记给自己</div><div class="empty-state-desc">下方输入文字或点 📎 加照片，发送即保存并同步。</div></div>`;

@@ -33,7 +33,12 @@ export async function onRequestPost(context) {
       body: JSON.stringify({ from: 'InnerOS <onboarding@resend.dev>', to: [email], subject: 'InnerOS 注册验证码', text: '你的注册验证码是 ' + code + '，10 分钟内有效。' }),
     });
     if (!res.ok) {
-      const errText = (await res.text()).slice(0, 200);
+      const errText = (await res.text()).slice(0, 300);
+      // Resend 测试模式（未验证域名）只能发给自己账号的邮箱 → 转成人话指引
+      const m = errText.match(/your own email address \(([^)]+)\)/);
+      if (res.status === 403 && m) {
+        return json({ error: 'Resend 测试模式只能发给账号本人的邮箱（' + m[1] + '）。可用该邮箱注册；或在 Resend 验证 inneros.asia 域名后任意邮箱可用。' }, 403);
+      }
       return json({ error: '验证码邮件发送失败（' + res.status + '）：' + errText }, 502);
     }
     return json({ ok: true, ttl_minutes: 10 });
