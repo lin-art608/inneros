@@ -2,21 +2,21 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.4.2';
+const APP_VERSION = 'v1.5.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
 const TYPE_META = {
-  movie:  { emoji:'🎬', label:'电影', color:'var(--c-movie)' },
-  book:   { emoji:'📖', label:'书籍', color:'var(--c-book)' },
-  music:  { emoji:'🎵', label:'音乐', color:'var(--c-music)' },
-  game:   { emoji:'🎮', label:'游戏', color:'var(--c-game)' },
-  custom: { emoji:'📝', label:'自定义', color:'var(--c-event)' },
-  place:  { emoji:'📍', label:'地点', color:'var(--c-place)' },
-  event:  { emoji:'✦', label:'事件', color:'var(--c-event)' },
-  photo:  { emoji:'📷', label:'照片', color:'var(--c-photo)' },
-  quick:  { emoji:'💬', label:'速记', color:'var(--c-music)' },
-  diary:  { emoji:'📝', label:'日记', color:'var(--c-event)' },
+  movie:  { emoji:'🎬', char:'影', label:'电影', color:'var(--c-movie)' },
+  book:   { emoji:'📖', char:'书', label:'书籍', color:'var(--c-book)' },
+  music:  { emoji:'🎵', char:'乐', label:'音乐', color:'var(--c-music)' },
+  game:   { emoji:'🎮', char:'游', label:'游戏', color:'var(--c-game)' },
+  custom: { emoji:'📝', char:'记', label:'自定义', color:'var(--c-event)' },
+  place:  { emoji:'📍', char:'地', label:'地点', color:'var(--c-place)' },
+  event:  { emoji:'✦', char:'事', label:'事件', color:'var(--c-event)' },
+  photo:  { emoji:'📷', char:'相', label:'照片', color:'var(--c-photo)' },
+  quick:  { emoji:'💬', char:'速', label:'速记', color:'var(--c-music)' },
+  diary:  { emoji:'📝', char:'记', label:'日记', color:'var(--c-event)' },
 };
 function localDate(value = new Date()) {
   const offset = value.getTimezoneOffset() * 60000;
@@ -888,9 +888,8 @@ async function renderResourceCS() {
         <span class="my-team-name">${team.name}</span>
       </div>`;
     });
-  } else {
-    html += `<span class="my-teams-empty">尚未关注，可在 <button class="link-btn" onclick="navigate('settings')">设置 → Sports 关注管理</button> 添加</span>`;
   }
+  html += `<button class="add-team-btn" onclick="openTeamSelector('cs2')">＋ 添加战队</button>`;
   html += `</div></div>`;
 
   // 🔴 正在直播（全局，不只关注队——用户要求列出正在进行的比赛方便点进去看）
@@ -1013,7 +1012,7 @@ function renderMatchCard(m, followedIds) {
       ${scoreHtml}
       <div class="match-team">${renderTeamLogo(awayTeam, 36)}<span class="match-team-name">${m.away_name}</span></div>
     </div>
-    <div class="match-card-date">${m.date.replace(/-/g,'/')} ${m.time}</div>
+    <div class="match-card-date">${dayLabelCN(m.date)} ${m.time}</div>
     ${!isPast ? `<div class="match-card-stars">${'★'.repeat(stars)}${'☆'.repeat(5-stars)}</div>` : ''}
     ${reason ? `<div class="match-card-reason">${reason}</div>` : ''}
     <a class="match-card-source" href="${sourceUrl}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-size:11px;color:#8a8f98;text-decoration:none;">数据来源 · ${sourceName}</a>
@@ -1414,9 +1413,8 @@ async function renderResourceFootball() {
         <span class="my-team-name">${team.name}</span>
       </div>`;
     });
-  } else {
-    html += `<span class="my-teams-empty">尚未关注，可在 <button class="link-btn" onclick="navigate('settings')">设置 → Sports 关注管理</button> 添加</span>`;
   }
+  html += `<button class="add-team-btn" onclick="openTeamSelector('football')">＋ 添加主队</button>`;
   html += `</div></div>`;
 
   // 五大联赛 + 欧冠 + 中超 赛程 tab（按联赛检索）
@@ -1593,7 +1591,7 @@ function renderAIAssistant() {
 }
 
 // === Entry Card ===
-function renderEntryCard(e, showYear = false) {
+function renderEntryCard(e, showYear = false, opts = {}) {
   const meta = TYPE_META[e.type] || TYPE_META.event;
   const date = getEntryDate(e);
   const time = getEntryTime(e) || String(e.created_at || '').slice(11, 16);
@@ -1601,7 +1599,9 @@ function renderEntryCard(e, showYear = false) {
   let poster = renderEntryPoster(e);
   let preview = e.review || e.content || e.notes || e.note || '';
   const tagsHtml = e.tags && e.tags.length ? `<span>${e.tags.slice(0,3).join(' · ')}</span>` : '';
-  return `<div class="entry-card type-${e.type}"><div class="entry-time">${time || ''}</div><div class="entry-icon">${meta.emoji}</div><div class="entry-body"><div class="entry-title">${e.title}</div>${preview ? `<div class="entry-content-preview">${preview}</div>`:''}<div class="entry-meta">${yearLabel}${tagsHtml}</div></div>${poster}</div>`;
+  // 时间线场景由 tl-when 行统一显示日期时间，卡片内不再重复（用户反馈：重复提及时间）
+  const timeHtml = opts.hideTime ? '' : `<div class="entry-time">${time || ''}</div>`;
+  return `<div class="entry-card type-${e.type}">${timeHtml}<div class="entry-icon">${meta.char}</div><div class="entry-body"><div class="entry-title">${e.title}</div>${preview ? `<div class="entry-content-preview">${preview}</div>`:''}<div class="entry-meta">${yearLabel}${tagsHtml}</div></div>${poster}</div>`;
 }
 
 // === Today ===
@@ -1673,6 +1673,13 @@ async function renderTimeline() {
   await renderTimelineContent();
 }
 
+// 时间线分组折叠：用户手动状态优先；默认仅最近一个分组展开
+const timelineUserFold = new Map();
+function toggleTimelineGroup(key, currentlyFolded) {
+  timelineUserFold.set(key, !currentlyFolded);
+  renderTimelineContent();
+}
+
 async function renderTimelineContent() {
   let entries = sortEntries(await dbGetAll());
   if (!activeFilters.has('all')) entries = entries.filter(e => activeFilters.has(e.type));
@@ -1692,13 +1699,16 @@ async function renderTimelineContent() {
   sortedKeys.forEach(key => {
     const ge = groups[key];
     let label = activeScale === 'month' ? `${key.split('-')[0]}年${parseInt(key.split('-')[1])}月` : key;
-    html += `<div class="timeline-group"><div class="timeline-group-header"><div class="timeline-group-date">${label}</div><div class="timeline-group-meta">${ge.length} 条</div></div><div class="timeline-line">`;
+    // 折叠：老分组（除最近 1 个外）默认收起，点组头展开/收起（快速检索）
+    const gIdx = sortedKeys.indexOf(key);
+    const folded = timelineUserFold.has(key) ? timelineUserFold.get(key) : (gIdx !== 0 && activeScale === 'month');
+    html += `<div class="timeline-group${folded ? ' tl-collapsed' : ''}" data-key="${key}"><div class="timeline-group-header" onclick="toggleTimelineGroup('${key}', ${folded})"><span class="tl-chevron">${folded ? '▸' : '▾'}</span><div class="timeline-group-date">${label}</div><div class="timeline-group-meta">${ge.length} 条</div></div><div class="timeline-line">`;
     ge.forEach(e => {
       const meta = TYPE_META[e.type] || TYPE_META.event;
       const d = getEntryDate(e);
       const when = d ? `${+d.slice(5,7)}月${+d.slice(8,10)}日` : '';
       const time = getEntryTime(e) || String(e.created_at || '').slice(11, 16);
-      html += `<div class="timeline-item"><div class="timeline-item-dot" style="border-color:${meta.color}"></div><div class="tl-when" onclick="openDetail('${e.id}')"><span class="tl-when-date">${when}</span><span class="tl-when-time">${time}</span><span class="tl-when-type">${meta.emoji} ${meta.label}</span></div><div onclick="openDetail('${e.id}')">${renderEntryCard(e)}</div></div>`;
+      html += `<div class="timeline-item"><div class="timeline-item-dot" style="border-color:${meta.color}"></div><div class="tl-when" onclick="openDetail('${e.id}')"><span class="tl-when-date">${when}</span><span class="tl-when-time">${time}</span><span class="tl-when-type"><span class="type-mark-inline" style="color:${meta.color}">${meta.char}</span> ${meta.label}</span></div><div onclick="openDetail('${e.id}')">${renderEntryCard(e, false, { hideTime: true })}</div></div>`;
     });
     html += '</div></div>';
   });
@@ -1786,7 +1796,7 @@ async function renderLibraryTab(tab) {
   } else if (tab === 'music') {
     let html = '<div class="books-grid">';
     items.forEach(m => {
-      html += `<div class="book-card" onclick="openDetail('${m.id}')"><div class="entry-icon" style="width:64px;height:64px;border-radius:8px;background:rgba(201,123,99,0.12);color:var(--c-music);font-size:28px;">🎵</div><div class="book-info"><div class="book-title">${m.title}</div><div class="book-author">${m.artist||''}</div><div class="book-date">${(m.date||'').replace(/-/g,'/')}</div></div></div>`;
+      html += `<div class="book-card" onclick="openDetail('${m.id}')"><div class="entry-icon" style="width:64px;height:64px;border-radius:8px;background:rgba(201,123,99,0.12);color:var(--c-music);font-size:26px;">乐</div><div class="book-info"><div class="book-title">${m.title}</div><div class="book-author">${m.artist||''}</div><div class="book-date">${(m.date||'').replace(/-/g,'/')}</div></div></div>`;
     });
     content.innerHTML = html ? html + '</div>' : '<div class="empty-state"><div class="empty-state-icon">🎵</div><div class="empty-state-title">还没有音乐记录</div><div class="empty-state-desc">点击 + 按钮，记录你听过的音乐</div></div>';
   } else if (tab === 'game') {
@@ -1794,14 +1804,14 @@ async function renderLibraryTab(tab) {
     items.forEach(g => {
       const coverHtml = g.cover
         ? `<img class="book-cover" src="${proxyImage(g.cover)}" alt="${g.title}" loading="lazy" onerror="this.style.display='none'">`
-        : `<div class="book-cover" style="background:rgba(90,139,173,0.12);display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--c-game);">🎮</div>`;
+        : `<div class="book-cover" style="background:rgba(90,139,173,0.12);display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--c-game);">游</div>`;
       html += `<div class="book-card" onclick="openDetail('${g.id}')">${coverHtml}<div class="book-info"><div class="book-title">${g.title}</div><div class="book-author">${g.platform||''}</div><div class="book-date">${g.finish_date?'完成于 '+g.finish_date.replace(/-/g,'/'):'进行中'}</div></div></div>`;
     });
     content.innerHTML = html + '</div>' || '<div class="search-empty">还没有游戏记录</div>';
   } else if (tab === 'place') {
     let html = '<div class="books-grid">';
     items.forEach(p => {
-      html += `<div class="book-card type-place" onclick="openDetail('${p.id}')"><div class="entry-icon" style="width:64px;height:90px;border-radius:6px;background:rgba(201,169,97,0.15);color:var(--c-place);font-size:28px;display:flex;align-items:center;justify-content:center;">📍</div><div class="book-info"><div class="book-title">${p.title}</div><div class="book-author">${p.location||''}</div><div class="book-date">${(p.date||'').replace(/-/g,'/')}</div></div></div>`;
+      html += `<div class="book-card type-place" onclick="openDetail('${p.id}')"><div class="entry-icon" style="width:64px;height:90px;border-radius:6px;background:rgba(201,169,97,0.15);color:var(--c-place);font-size:26px;display:flex;align-items:center;justify-content:center;">地</div><div class="book-info"><div class="book-title">${p.title}</div><div class="book-author">${p.location||''}</div><div class="book-date">${(p.date||'').replace(/-/g,'/')}</div></div></div>`;
     });
     content.innerHTML = html ? html + '</div>' : '<div class="empty-state"><div class="empty-state-icon">📍</div><div class="empty-state-title">还没有地点记录</div><div class="empty-state-desc">点击 + 按钮，记录你去过的地方</div></div>';
   }
@@ -2060,7 +2070,7 @@ async function renderSettings() {
           <div class="settings-row"><div><div class="settings-row-label">同步状态</div><div class="settings-row-desc" id="cloud-sync-status">${lastCloud ? '✓ 上次同步 ' + new Date(lastCloud).toLocaleString() : '从未同步（保存/删除内容后自动同步）'}</div></div><button class="btn btn-ghost" onclick="syncNow()">立即同步</button></div>
           <div class="settings-row"><div><div class="settings-row-label">退出登录</div><div class="settings-row-desc">本机数据保留，仅停止云同步。</div></div><button class="btn btn-ghost" onclick="logoutAccount()">退出</button></div>
         ` : `
-          <div class="settings-row"><div><div class="settings-row-label">${authState.guest ? '访客模式' : '未登录'}</div><div class="settings-row-desc">${authState.guest ? '数据仅存本机。登录后可在所有设备间同步。' : '登录后可在所有设备间同步你的记忆（免费）。'}</div></div><button class="btn btn-ghost" onclick="location.reload()">去登录</button></div>
+          <div class="settings-row"><div><div class="settings-row-label">${authState.guest ? '访客模式' : '未登录'}</div><div class="settings-row-desc">${authState.guest ? '数据仅存本机。登录后可在所有设备间同步。' : '登录后可在所有设备间同步你的记忆（免费）。'}</div></div><button class="btn btn-ghost" onclick="goLogin()">去登录</button></div>
         `}
       </div>
     </div>
@@ -2068,7 +2078,7 @@ async function renderSettings() {
       <div class="section-label">数据统计</div>
       <div class="settings-card">
         <div class="settings-row"><div class="settings-row-label">总记录数</div><div class="settings-row-value">${all.length} 条</div></div>
-        ${Object.entries(counts).map(([t,n]) => { const m = TYPE_META[t]||{emoji:'',label:t}; return `<div class="settings-row" style="cursor:pointer;" onclick="jumpLibrary('${t}')" title="查看全部${m.label}"><div class="settings-row-label">${m.emoji} ${m.label}</div><div class="settings-row-value">${n} 条 →</div></div>`; }).join('')}
+        ${Object.entries(counts).map(([t,n]) => { const m = TYPE_META[t]||{emoji:'',label:t}; return `<div class="settings-row" style="cursor:pointer;" onclick="jumpLibrary('${t}')" title="查看全部${m.label}"><div class="settings-row-label"><span style="font-family:var(--font-cn-serif);font-weight:600;color:${m.color}">${m.char || m.emoji}</span> ${m.label}</div><div class="settings-row-value">${n} 条 →</div></div>`; }).join('')}
       </div>
     </div>
     <div class="settings-section">
@@ -2079,14 +2089,6 @@ async function renderSettings() {
         <div class="settings-row"><div><div class="settings-row-label">导入备份</div><div class="settings-row-desc">从导出的 JSON 文件恢复（相同记录按更新时间合并，不覆盖较新内容）</div></div><button class="btn btn-ghost" onclick="document.getElementById('import-file').click()">导入</button></div>
         <input type="file" id="import-file" accept="application/json" style="display:none" onchange="importData(this)">
         <div class="settings-row"><div><div class="settings-row-label" style="color:var(--danger);">清除所有数据</div><div class="settings-row-desc">删除全部记忆，不可恢复</div></div><button class="btn btn-ghost" style="color:var(--danger);" onclick="confirmClearData()">清除</button></div>
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="section-label">Sports 关注管理</div>
-      <div class="settings-card">
-        <div class="settings-row"><div><div class="settings-row-label">足球主队</div><div class="settings-row-desc">搜索、选择和管理你的足球主队；资源页只显示相关赛事。</div></div><button class="btn btn-ghost" onclick="openTeamSelector('football')">管理</button></div>
-        <div class="settings-row"><div><div class="settings-row-label">CS2 关注战队</div><div class="settings-row-desc">搜索、选择和管理你关注的 CS2 战队。</div></div><button class="btn btn-ghost" onclick="openTeamSelector('cs2')">管理</button></div>
-        <div class="settings-row"><div><div class="settings-row-label">赛事缓存</div><div class="settings-row-desc">本地缓存每个项目的最后同步时间；手动刷新不会请求付费服务。</div></div><div class="settings-row-value">本地</div></div>
       </div>
     </div>
     <div class="settings-section">
@@ -2159,7 +2161,7 @@ async function openDetail(id, fromPop = false) {
   const date = getEntryDate(e);
   const time = getEntryTime(e);
   let html = `<button class="detail-back" onclick="history.back()">← 返回</button>`;
-  html += `<div class="detail-actions"><button class="detail-action-btn" onclick="openCapture('${e.id}')">＋ 追加记录</button><button class="detail-action-btn danger" onclick="confirmDelete(${e.id})">🗑 删除</button></div>`;
+  html += `<div class="detail-actions"><button class="detail-action-btn" onclick="openCapture('${e.id}')">＋ 追加记录</button><button class="detail-action-btn danger" onclick="confirmDelete('${e.id}')">🗑 删除</button></div>`;
 
   // V1.2 §7：事件 / 日记 / 地点 详情必须在顶部突出「地点 + 时间」。
   let heroMeta = '';
@@ -2173,11 +2175,11 @@ async function openDetail(id, fromPop = false) {
 
   // Hero: poster + title + type badge
   if (e.poster || e.cover) {
-    html += `<div class="detail-hero fade-in">${renderDetailPoster(e)}<div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${meta.emoji} ${meta.label}</div><div class="detail-title">${e.title}</div>`;
+    html += `<div class="detail-hero fade-in">${renderDetailPoster(e)}<div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}"><span style="font-family:var(--font-cn-serif);font-weight:600;">${meta.char || meta.emoji}</span> ${meta.label}</div><div class="detail-title">${e.title}</div>`;
     if (e.original_title) html += `<div class="detail-subtitle">${e.original_title}</div>`;
     html += heroMeta + '</div></div>';
   } else {
-    html += `<div class="detail-hero fade-in" style="gap:0"><div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${meta.emoji} ${meta.label}</div><div class="detail-title">${e.title}</div>`;
+    html += `<div class="detail-hero fade-in" style="gap:0"><div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}"><span style="font-family:var(--font-cn-serif);font-weight:600;">${meta.char || meta.emoji}</span> ${meta.label}</div><div class="detail-title">${e.title}</div>`;
     if (e.location) html += `<div class="detail-subtitle">${e.location}</div>`;
     html += heroMeta + '</div></div>';
   }
@@ -2263,6 +2265,7 @@ function openCapture(entryId) {
     document.getElementById('step-form').style.display = 'block';
     loadEntryForEdit(entryId);
   } else {
+    appendMode = false;
     saveBtn.textContent = '保存';
     document.getElementById('step-type').style.display = 'block';
     document.getElementById('step-form').style.display = 'none';
@@ -2289,10 +2292,20 @@ function selectType(type) {
   selectedType = type;
   uploadedPhotos = []; photoFailures = [];
   const meta = TYPE_META[type] || {};
-  document.getElementById('modal-title').textContent = meta.label || '记录';
+  document.getElementById('modal-title').textContent = appendMode ? '追加记录 · ' + (meta.label || '') : (meta.label || '记录');
   document.getElementById('step-type').style.display = 'none';
   document.getElementById('step-form').style.display = 'block';
   const container = document.getElementById('workflow-container');
+  // 追加模式：一律只渲染 正文 + 图片（基础资料保持不变，用户要求）
+  if (appendMode) {
+    container.innerHTML = `
+      <div class="capture-fields show" id="capture-fields">
+        <div class="field-row"><div class="field-label">追加内容</div><textarea class="field-textarea" id="capture-review" placeholder="追加记录..." style="min-height:150px;"></textarea></div>
+        ${renderPhotoUpload()}
+      </div>`;
+    setTimeout(() => document.getElementById('capture-review')?.focus(), 100);
+    return;
+  }
   const today = localDate();
   const now = localTime();
 
@@ -2398,6 +2411,7 @@ function selectType(type) {
 }
 
 function resetCaptureForm() {
+  appendMode = false;
   selectedType = null; uploadedPhotos = []; photoFailures = [];
   selectedMovie = null; selectedBook = null; selectedMusic = null; selectedGame = null;
   document.getElementById('workflow-container').innerHTML = '';
@@ -2406,6 +2420,7 @@ function resetCaptureForm() {
 async function loadEntryForEdit(id) {
   const e = await dbGet(id);
   if (!e) { closeCapture(); return; }
+  appendMode = true; // 追加模式：只留正文 + 图片，不再填标题/分类等（用户要求）
   selectType(e.type);
   // Pre-fill base info only, NOT the review/content (append mode)
   if (e.title) { const t = document.getElementById('capture-title'); if (t) t.value = e.title; }
@@ -2424,6 +2439,7 @@ async function loadEntryForEdit(id) {
 }
 
 // === Reading Status & Event Category ===
+let appendMode = false; // 追加模式：openCapture(entryId) 时置 true
 let readingStatus = 'done';
 function setReadingStatus(status) {
   readingStatus = status;
@@ -2504,14 +2520,14 @@ async function saveCapture() {
       if (selectedBook.translator) merged.translator = selectedBook.translator;
       if (selectedBook.publishedDate) merged.publish_date = selectedBook.publishedDate;
     }
-    if (selectedType === 'book') {
+    if (selectedType === 'book' && !appendMode) {
       if (readingStatus === 'done') { merged.finish_date = today; merged.reading_status = 'done'; }
       else if (readingStatus === 'reading') { merged.start_date = today; merged.reading_status = 'reading'; }
       else { merged.reading_status = 'want'; }
     }
-    if (selectedType === 'event' && eventCategory) merged.category = eventCategory;
-    if (selectedType === 'diary' && extra) merged.mood = extra;
-    if (selectedType === 'event' && extra) merged.location = extra;
+    if (selectedType === 'event' && eventCategory && !appendMode) merged.category = eventCategory;
+    if (selectedType === 'diary' && extra && !appendMode) merged.mood = extra;
+    if (selectedType === 'event' && extra && !appendMode) merged.location = extra;
     if ((selectedType === 'music' || selectedType === 'game' || selectedType === 'place') && extra) {
       if (selectedType === 'music') Object.assign(merged, selectedMusic || { artist:extra });
       if (selectedType === 'game') Object.assign(merged, selectedGame || { platform:extra });
@@ -2804,6 +2820,14 @@ function enterGuest() {
   hideAuthScreen();
   showToast('访客模式：数据仅存本机，可在设置中随时登录开启同步', '');
   navigate('today');
+}
+// 访客 → 登录：清 guest 标记并直接弹出登录层（用户反馈：reload 会卡回首页）
+function goLogin() {
+  localStorage.removeItem('inneros_guest');
+  authState.guest = false;
+  authState.loggedIn = false;
+  showAuthScreen();
+  switchAuthTab('login');
 }
 
 async function afterAuth(email) {
@@ -3116,6 +3140,21 @@ async function sendQuickMsg() {
   } catch (e) { console.warn('速记同步入队失败', e); }
   pendingChatPhotos = [];
   renderQuickChat();
+}
+
+// 比赛日期人性化：今天/明天/后天/昨天，更远显示 M月D日 周X
+function dayLabelCN(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d)) return dateStr;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((d - today) / 86400e3);
+  if (diff === 0) return '今天';
+  if (diff === 1) return '明天';
+  if (diff === 2) return '后天';
+  if (diff === -1) return '昨天';
+  const wd = ['周日','周一','周二','周三','周四','周五','周六'][d.getDay()];
+  return `${+dateStr.slice(5,7)}月${+dateStr.slice(8,10)}日 ${wd}`;
 }
 
 // 收藏赛程（首页只显示用户主动收藏的比赛）
