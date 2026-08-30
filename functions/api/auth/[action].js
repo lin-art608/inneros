@@ -27,9 +27,9 @@ export async function onRequestPost(context) {
     await db.prepare(`INSERT INTO codes(email, code, expires_at, created_at) VALUES(?,?,?,?)
       ON CONFLICT(email) DO UPDATE SET code = excluded.code, expires_at = excluded.expires_at, created_at = excluded.created_at`)
       .bind(email, code, expires, new Date().toISOString()).run();
-    // 发件人：默认 onboarding@resend.dev（Resend 测试模式，只能发给自己）；
-    // 在 Resend 验证 inneros.asia 域名后，设置环境变量 EMAIL_FROM（如 InnerOS <noreply@inneros.asia>）即可给任意邮箱发信
-    const from = env.EMAIL_FROM || 'InnerOS <onboarding@resend.dev>';
+    // 发件人：inneros.asia 域名已在 Resend 完成验证（2026-08-30），默认即可给任意邮箱发信；
+    // 如需更换发件人可设环境变量 EMAIL_FROM（如 InnerOS <noreply@inneros.asia>）
+    const from = env.EMAIL_FROM || 'InnerOS <noreply@inneros.asia>';
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },

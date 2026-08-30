@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+### V1.5.2（2026-08-30）
+- **fix: 验证码发件人切换为已验证域名**——用户已在 Resend 完成 inneros.asia 域名验证（DKIM/SPF 全 Verified）；发件人默认从 onboarding@resend.dev（测试模式）改为 noreply@inneros.asia，任意邮箱可注册收码；EMAIL_FROM 环境变量仍可覆盖
+- 实测：见下轮部署后线上验证
+
+## [Unreleased] 之前
 ### V1.5.1（用户反馈 3 条，2026-08-30）
 
 - **revert: 字符印记回退为 emoji 图标**（用户反馈衬线单字不如以前）；时间线折叠/单处时间等其余改进保留
