@@ -42,7 +42,7 @@ curl -X POST https://inneros.pages.dev/api/...     # 线上接口探测（部署
 5. **Liquipedia**：必须 gzip + 描述性 UA + 缓存≥5min（≤2 req/s）。**坚果云**：风控拦数据中心 IP，已弃用，勿再排查。
 6. **D1 限制**：绑定参数 ≤1MB —— 附件 base64 压缩到 ≤1280px/JPEG0.8 后仍超 900KB 则跳过云端（原图只留本地）。
 7. IndexedDB 结构变更必须递增 `DB_VERSION` 并写迁移（v4 做过数字 id→UUID 迁移，勿回退）。
-8. **UI 约定**：右下角＋按钮只在记忆页显示（非记忆页 navigate 里隐藏）；首页赛程=收藏制（★ localStorage `inneros_fav_matches`）；速记(type `quick`)不计入统计；日记无标题/心情输入（标题=正文前 18 字）；时间线每条直显日期时间类型；侧边栏 overflow-y:auto。
+8. **UI 约定**：右下角＋按钮只在记忆页显示（非记忆页 navigate 里隐藏）；详情页打开时＋=追加到当前记录（captureTriggerClick）；详情页顶部无返回/删除行，右上角 ⤴分享/🗑删除 角标（shareCurrentPage 系统分享降级剪贴板）；首页赛程=收藏制（★ localStorage `inneros_fav_matches`）；速记(type `quick`)不计入统计；日记无标题/心情输入（标题=正文前 18 字）；时间线每条直显日期时间类型；侧边栏 overflow-y:auto。
 9. D1 里有测试账号残留（e2e@/curltest@/notarget@inneros.dev），勿当用户数据。
 
 ## 风格与流程

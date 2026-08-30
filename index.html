@@ -36,10 +36,10 @@
   --c-place: #C9A961;
   --c-event: #B07555;
   --c-photo: #8B8B8B;
-  --font-sans: 'Inter', 'Noto Sans SC', sans-serif;
-  --font-serif: 'Cormorant Garamond', 'Noto Serif SC', serif;
-  --font-cn: 'Noto Sans SC', 'Inter', sans-serif;
-  --font-cn-serif: 'Noto Serif SC', 'Cormorant Garamond', serif;
+  --font-sans: 'Inter', 'Noto Sans SC', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
+  --font-serif: 'Cormorant Garamond', 'Noto Serif SC', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', serif;
+  --font-cn: 'Noto Sans SC', 'Inter', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
+  --font-cn-serif: 'Noto Serif SC', 'Cormorant Garamond', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', serif;
   --danger: #C75450;
   --success: #5A8C5A;
 }
@@ -703,6 +703,11 @@ body {
 /* ============================================================
    Entry Detail
    ============================================================ */
+.detail-corner { position:fixed; top:16px; right:20px; display:flex; gap:8px; z-index:30; }
+.detail-corner-btn { width:36px; height:36px; border-radius:50%; border:1px solid var(--border); background:var(--bg-elevated); color:var(--text-secondary); font-size:15px; cursor:pointer; box-shadow:var(--shadow); transition:all 0.2s ease; }
+.detail-corner-btn:hover { color:var(--accent); border-color:var(--accent); transform:translateY(-1px); }
+@media (max-width:768px) { .detail-corner { top:12px; right:12px; } }
+
 .detail-back { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--text-secondary); cursor:pointer; margin-bottom:24px; border:none; background:none; font-family:var(--font-sans); transition:color 0.2s ease; }
 .detail-back:hover { color:var(--text); }
 .detail-actions { display:flex; gap:8px; margin-bottom:24px; }
@@ -1256,7 +1261,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 </div>
 
 <!-- Quick Capture Button -->
-<button class="capture-trigger" onclick="openCapture(null)" title="快速记录 (Ctrl+K)">
+<button class="capture-trigger" onclick="captureTriggerClick()" title="快速记录 (Ctrl+K)">
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
 </button>
 
@@ -1312,6 +1317,6 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <!-- Toast Container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="app.js?v=1.6.2"></script>
+<script src="app.js?v=1.7.0"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.6.2';
+const APP_VERSION = 'v1.7.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -895,7 +895,7 @@ async function renderResourceCS() {
       html += `<div class="my-team-chip" style="border-color:${team.color}44;">
         ${renderTeamLogo(team, 28)}
         <span class="my-team-name">${team.name}</span>
-        <button class="chip-x" title="取消关注" onclick="removeFollowChip('${t.id}','${sport}')">✕</button>
+        <button class="chip-x" title="取消关注" onclick="removeFollowChip('${t.id}','${t.sport}')">✕</button>
       </div>`;
     });
   }
@@ -1421,7 +1421,7 @@ async function renderResourceFootball() {
       html += `<div class="my-team-chip" style="border-color:${team.color}44;">
         ${renderTeamLogo(team, 28)}
         <span class="my-team-name">${team.name}</span>
-        <button class="chip-x" title="取消关注" onclick="removeFollowChip('${t.id}','${sport}')">✕</button>
+        <button class="chip-x" title="取消关注" onclick="removeFollowChip('${t.id}','${t.sport}')">✕</button>
       </div>`;
     });
   }
@@ -1774,7 +1774,16 @@ async function renderLibraryTab(tab) {
 
   if (tab === 'movie') {
     window._movieItems = items;
+    window._movieFilter = {};
     const thisYear = items.filter(m => (getEntryDate(m)||'').slice(0,4) === String(new Date().getFullYear())).length;
+    // 分类 chips：全部 / 高分(豆瓣≥8.5) / 按类型（取自数据中的 genres）
+    const genres = [];
+    items.forEach(m => (m.genres || []).forEach(g => { if (g && !genres.includes(g)) genres.push(g); }));
+    let chipsHtml = `<div class="lib-filter-chips">
+      <button class="lib-filter-chip active" onclick="setMovieFilter('all',this)">全部</button>
+      <button class="lib-filter-chip" onclick="setMovieFilter('high',this)">★ 高分</button>
+      ${genres.slice(0, 10).map(g => `<button class="lib-filter-chip" onclick="setMovieFilter('${g}',this)">${g}</button>`).join('')}
+    </div>`;
     let html = `
       <div class="lib-toolbar">
         <div class="lib-search-box">
@@ -1782,17 +1791,25 @@ async function renderLibraryTab(tab) {
           <input type="text" class="lib-search-input" id="movie-search" placeholder="搜索电影名、导演..." oninput="filterMovieWall()">
         </div>
       </div>
+      ${chipsHtml}
       <div class="lib-stats-bar">
         <div class="lib-stat"><span class="lib-stat-num">${items.length}</span><span class="lib-stat-label">部</span></div>
         <div class="lib-stat"><span class="lib-stat-num">${thisYear}</span><span class="lib-stat-label">今年看过</span></div>
       </div>`;
     content.innerHTML = html + '<div id="movie-wall-content"></div>';
-    renderMovieWallContent(items);
+    renderMovieWallContent(movieFiltered(items));
   } else if (tab === 'book') {
     window._bookItems = items;
     const wantRead = items.filter(b => !b.finish_date && !b.start_date).length;
     const reading = items.filter(b => b.start_date && !b.finish_date).length;
     const done = items.filter(b => b.finish_date).length;
+    const tags = [];
+    items.forEach(b => (b.tags || []).forEach(t => { if (t && !tags.includes(t)) tags.push(t); }));
+    let tagChips = `<div class="lib-filter-chips" style="margin-top:10px;">
+      <button class="lib-filter-chip active" onclick="setBookGenre(null,this)">全部</button>
+      <button class="lib-filter-chip" onclick="setBookGenre('高分',this)">★ 高分</button>
+      ${tags.slice(0, 10).map(t => `<button class="lib-filter-chip" onclick="setBookGenre('${t}',this)">${t}</button>`).join('')}
+    </div>`;
     let html = `
       <div class="lib-toolbar">
         <div class="book-status-tabs">
@@ -1801,9 +1818,10 @@ async function renderLibraryTab(tab) {
           <button class="book-status-tab" data-status="reading" onclick="filterBookWall('reading',this)">在读 <span class="count">${reading}</span></button>
           <button class="book-status-tab" data-status="done" onclick="filterBookWall('done',this)">已读 <span class="count">${done}</span></button>
         </div>
-      </div>`;
+      </div>
+      ${tagChips}`;
     content.innerHTML = html + '<div id="book-wall-content"></div>';
-    renderBookWallContent(items, 'all');
+    renderBookWallContent(bookFiltered(items), 'all');
   } else if (tab === 'music') {
     let html = '<div class="books-grid">';
     items.forEach(m => {
@@ -1850,9 +1868,22 @@ function renderMovieWallContent(items) {
   container.innerHTML = html;
 }
 
+function movieFiltered(items) {
+  const f = window._movieFilter || {};
+  let out = items || [];
+  if (f.mode === 'high') out = out.filter(m => (m.rating || 0) >= 8.5);
+  if (f.genre) out = out.filter(m => (m.genres || []).includes(f.genre));
+  return out;
+}
+function setMovieFilter(mode, btn) {
+  window._movieFilter = { mode: mode === 'all' ? null : (mode === 'high' ? 'high' : null), genre: (mode !== 'all' && mode !== 'high') ? mode : null };
+  document.querySelectorAll('.lib-filter-chip').forEach(c => c.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  filterMovieWall();
+}
 function filterMovieWall() {
   const q = (document.getElementById('movie-search')?.value || '').toLowerCase().trim();
-  let filtered = window._movieItems || [];
+  let filtered = movieFiltered(window._movieItems);
   if (q) filtered = filtered.filter(m => {
     return (m.title||'').toLowerCase().includes(q) ||
            (m.original_title||'').toLowerCase().includes(q) ||
@@ -1902,6 +1933,28 @@ function renderBookWallContent(items, status) {
   }
 }
 
+function bookFiltered(items) {
+  const f = window._bookFilter || {};
+  let out = items || [];
+  if (f.genre === '高分') out = out.filter(b => (b.rating || 0) >= 8.5);
+  else if (f.genre) out = out.filter(b => (b.tags || []).includes(f.genre));
+  return out;
+}
+function setBookGenre(genre, btn) {
+  window._bookFilter = { genre: genre || null };
+  document.querySelectorAll('.lib-filter-chip').forEach(c => c.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const status = document.querySelector('.book-status-tab.active')?.dataset.status || 'all';
+  const items = bookFiltered(window._bookItems);
+  // 计数徽标刷新
+  document.querySelectorAll('.book-status-tab .count').forEach((el, i) => {
+    const st = ['all','want','reading','done'][i];
+    const pool = bookFiltered(window._bookItems);
+    const map = { all: pool.length, want: pool.filter(b => !b.finish_date && !b.start_date).length, reading: pool.filter(b => b.start_date && !b.finish_date).length, done: pool.filter(b => b.finish_date).length };
+    el.textContent = map[st];
+  });
+  renderBookWallContent(items, status);
+}
 function renderBookCard(b, delay) {
   const [c1,c2] = getPosterColors(b);
   const coverHtml = b.cover
@@ -2230,8 +2283,11 @@ async function openDetail(id, fromPop = false) {
   const meta = TYPE_META[e.type] || TYPE_META.event;
   const date = getEntryDate(e);
   const time = getEntryTime(e);
-  let html = `<button class="detail-back" onclick="history.back()">← 返回</button>`;
-  html += `<div class="detail-actions"><button class="detail-action-btn" onclick="openCapture('${e.id}')">＋ 追加记录</button><button class="detail-action-btn danger" onclick="confirmDelete('${e.id}')">🗑 删除</button></div>`;
+  // 顶部仅保留右上角 分享/删除 两个小按钮（用户要求：去掉返回键与原删除/追加行；返回走系统返回，追加走右下角＋）
+  let html = `<div class="detail-corner">
+      <button class="detail-corner-btn" onclick="shareCurrentPage()" title="分享">⤴</button>
+      <button class="detail-corner-btn" onclick="confirmDelete('${e.id}')" title="删除">🗑</button>
+    </div>`;
 
   // V1.2 §7：事件 / 日记 / 地点 详情必须在顶部突出「地点 + 时间」。
   let heroMeta = '';
@@ -2322,7 +2378,30 @@ async function openDetail(id, fromPop = false) {
   if (e.tags && e.tags.length) html += `<div class="detail-section fade-in-delay-3"><div class="detail-section-title">标签 · Tags</div><div class="detail-tags">${e.tags.map(t=>`<span class="detail-tag">${t}</span>`).join('')}</div></div>`;
   document.getElementById('content').innerHTML = html;
   document.getElementById('content').classList.add('fade-in');
+  const capBtn = document.querySelector('.capture-trigger');
+  if (capBtn) capBtn.title = '追加记录到当前内容';
   window.scrollTo({ top:0, behavior:'smooth' });
+}
+
+// 分享当前详情页内容：优先系统分享（手机原生面板），降级复制到剪贴板
+async function shareCurrentPage() {
+  if (detailOpenId == null) return;
+  const e = await dbGet(detailOpenId); if (!e) return;
+  const lines = ['【' + (e.title || '记录') + '】'];
+  const d = getEntryDate(e); if (d) lines.push((d.replace(/-/g, '/')) + (getEntryTime(e) ? ' ' + getEntryTime(e) : ''));
+  (e.entries || []).forEach(en => { if (en.content) lines.push('· ' + en.content); });
+  const text = lines.join('\n');
+  if (navigator.share) {
+    try { await navigator.share({ title: 'InnerOS · ' + (e.title || '记录'), text }); return; }
+    catch (err) { if (err && err.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(text); showToast('内容已复制到剪贴板，可粘贴分享', 'success'); }
+  catch (err) { showToast('复制失败', 'error'); }
+}
+
+// 右下角＋：详情页时 = 给当前记录追加；否则新建记录
+function captureTriggerClick() {
+  if (detailOpenId != null) openCapture(detailOpenId); else openCapture(null);
 }
 
 // === Quick Capture ===
