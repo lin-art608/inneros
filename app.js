@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.16.3';
+const APP_VERSION = 'v1.17.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -807,6 +807,7 @@ async function navigate(page, fromPop = false) {
       case 'onthisday': await renderOnThisDay(); break;
       case 'random': await renderRandom(); break;
       case 'year-review': await renderYearReview(); break;
+      case 'footprint': await renderFootprintMap(); break;
       case 'settings': await renderSettings(); break;
       case 'res-cs': await renderResourceCS(); break;
       case 'res-football': await renderResourceFootball(); break;
@@ -820,7 +821,7 @@ async function navigate(page, fromPop = false) {
     content.innerHTML = `<div class="error-state"><div class="error-state-icon">⚠</div><div class="error-state-title">页面加载失败</div><div class="error-state-desc">请刷新页面重试</div><button class="error-state-retry" onclick="navigate('${page}')">重试</button></div>`;
   }
   // 右下角＋仅记忆相关页面显示（用户要求：非记忆界面不放添加按钮）
-  const memoryPages = ['today','timeline','library','search','onthisday','random','year-review'];
+  const memoryPages = ['today','timeline','library','search','onthisday','random','year-review','footprint'];
   const capBtn = document.querySelector('.capture-trigger');
   if (capBtn) capBtn.style.display = memoryPages.includes(page) ? '' : 'none';
   closeSidebar();
@@ -2109,6 +2110,122 @@ function changeReviewYear(yr) {
   renderYearReview(yr);
 }
 
+// ============================================================
+// 足迹地图 · Footprint Map（类似高德足迹：去过的地点在地图上高亮显示）
+// 数据源：place 类型记录 + event 类型带 location 的记录
+// 地理编码：后端 /api/v1/geocode 代理 Nominatim（免费免 Key），经纬度缓存到记录的 lat/lng 字段
+// ============================================================
+let footprintMap = null;
+let footprintMarkers = [];
+// 按年份区分标记颜色（近年暖色，早年冷色）
+const FOOTPRINT_COLORS = ['#C75450', '#C97B63', '#C9A961', '#88A096', '#5A8BAD', '#6B5B95', '#B07555', '#8B8B8B'];
+function footprintColorForYear(year) {
+  const years = [...new Set(footprintMarkers.map(m => m._year).filter(Boolean))].sort().reverse();
+  const idx = years.indexOf(String(year));
+  return FOOTPRINT_COLORS[idx % FOOTPRINT_COLORS.length];
+}
+
+async function renderFootprintMap() {
+  const all = await dbGetAll();
+  // 收集所有地点：place 类型 + event 类型带 location
+  const places = [];
+  for (const e of all) {
+    if (e.type === 'place') {
+      places.push({ id: e.id, name: e.title || e.location || '未命名', location: e.location || '', date: getEntryDate(e) || '', lat: e.lat, lng: e.lng, record: e });
+    } else if (e.type === 'event' && e.location) {
+      places.push({ id: e.id, name: e.location, location: e.location || '', date: getEntryDate(e) || '', lat: e.lat, lng: e.lng, record: e });
+    }
+  }
+  const located = places.filter(p => p.lat != null && p.lng != null);
+  const needsGeo = places.filter(p => p.lat == null || p.lng == null);
+
+  let html = `<div class="page-header"><div class="page-title">足迹 · Footprint</div><div class="page-subtitle">共 ${places.length} 个地点 · 已定位 ${located.length} · 待定位 ${needsGeo.length}</div></div>`;
+  html += `<div class="footprint-toolbar">
+    <button class="btn btn-ghost" onclick="footprintFitAll()">全景</button>
+    <span class="footprint-progress" id="footprint-progress">${needsGeo.length > 0 ? '正在地理编码…' : '全部已定位'}</span>
+  </div>`;
+  html += `<div id="footprint-map" class="footprint-map"></div>`;
+  if (places.length === 0) {
+    html += `<div class="empty-state"><div class="empty-state-icon">📍</div><div class="empty-state-title">还没有地点记录</div><div class="empty-state-desc">点击右下角 + 按钮，记录你去过的地方</div></div>`;
+  }
+  document.getElementById('content').innerHTML = html;
+
+  if (places.length === 0) return;
+
+  // 初始化地图（延迟到下一帧，确保容器有尺寸）
+  requestAnimationFrame(() => {
+    if (footprintMap) { footprintMap.remove(); footprintMap = null; }
+    footprintMap = L.map('footprint-map', { zoomControl: true }).setView([35.0, 105.0], 4); // 默认居中中国
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 18,
+    }).addTo(footprintMap);
+    footprintMarkers = [];
+    // 先渲染已定位的地点
+    for (const p of located) addFootprintMarker(p);
+    if (located.length > 0) footprintFitAll();
+    // 批量地理编码待定位的地点（串行，Nominatim 限 1 req/s）
+    if (needsGeo.length > 0) batchGeocodePlaces(needsGeo);
+  });
+}
+
+function addFootprintMarker(p) {
+  if (!footprintMap || p.lat == null || p.lng == null) return;
+  const year = p.date ? p.date.slice(0, 4) : '未知';
+  const color = FOOTPRINT_COLORS[footprintMarkers.length % FOOTPRINT_COLORS.length];
+  const marker = L.circleMarker([p.lat, p.lng], {
+    radius: 8,
+    fillColor: color,
+    color: '#fff',
+    weight: 2,
+    opacity: 1,
+    fillOpacity: 0.85,
+  }).addTo(footprintMap);
+  marker._year = year;
+  marker.bindPopup(`<div class="footprint-popup">
+    <div class="footprint-popup-title">${escapeHtml(p.name)}</div>
+    ${p.location && p.location !== p.name ? `<div class="footprint-popup-addr">${escapeHtml(p.location)}</div>` : ''}
+    <div class="footprint-popup-date">${p.date || '日期未知'}</div>
+    <button class="btn btn-ghost footprint-popup-btn" onclick="openDetail('${p.id}')">查看详情</button>
+  </div>`);
+  footprintMarkers.push(marker);
+}
+
+function footprintFitAll() {
+  if (!footprintMap || footprintMarkers.length === 0) return;
+  const group = L.featureGroup(footprintMarkers);
+  footprintMap.fitBounds(group.getBounds().pad(0.2));
+}
+
+// 串行地理编码（Nominatim 限频 1 req/s，间隔 1.1s），每完成一个更新标记并存回记录
+async function batchGeocodePlaces(places) {
+  const progressEl = document.getElementById('footprint-progress');
+  let done = 0;
+  for (const p of places) {
+    done++;
+    if (progressEl) progressEl.textContent = `地理编码中 ${done}/${places.length}：${p.name}`;
+    try {
+      const res = await InnerOSApi.get(`/api/v1/geocode?q=${encodeURIComponent(p.name)}`);
+      const geo = res.data || {};
+      if (geo.lat != null && geo.lon != null) {
+        p.lat = geo.lat; p.lng = geo.lon;
+        // 存回记录（经纬度持久化，避免重复查询）
+        const rec = await dbGet(p.id);
+        if (rec) { rec.lat = geo.lat; rec.lng = geo.lng; await dbPut(rec);
+          try { if (authState.loggedIn) { await enqueueMemoryUpsert(rec); syncNow(); } } catch (e) { console.warn('足迹同步入队失败', e); }
+        }
+        addFootprintMarker(p);
+        if (footprintMarkers.length > 0) footprintFitAll();
+      }
+    } catch (e) {
+      console.warn('[footprint] 地理编码失败', p.name, e);
+    }
+    // 限频间隔（最后一个不用等）
+    if (done < places.length) await new Promise(r => setTimeout(r, 1100));
+  }
+  if (progressEl) progressEl.textContent = `地理编码完成（${places.length} 个地点）`;
+}
+
 // === Settings ===
 async function renderSettings() {
   const all = await dbGetAll();
@@ -3274,7 +3391,6 @@ async function renderQuickChat() {
     <div class="chat-previews" id="chat-previews"></div>
     <div class="chat-input-row">
       <label class="chat-attach-btn" title="添加照片">📎<input type="file" accept="image/jpeg,image/png,image/webp" multiple style="display:none" onchange="handleChatPhotos(this)"></label>
-      <button type="button" class="chat-attach-btn" title="表情" onclick="toggleEmojiPicker('chat-input',this)">😀</button>
       <input type="text" class="chat-input" id="chat-input" placeholder="给自己发一条…" onkeydown="if(event.key==='Enter')sendQuickMsg()">
       <button class="chat-send-btn" onclick="sendQuickMsg()">发送</button>
     </div>
