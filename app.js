@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.16.1';
+const APP_VERSION = 'v1.16.2';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -735,7 +735,12 @@ function renderDetailPoster(entry) {
 }
 
 // === Helpers ===
-function getEntryDate(e) { return e.watch_date || e.event_date || e.date || e.finish_date || ''; }
+// 书籍：已读用 finish_date，在读回退 start_date（此前在读无日期→时间线不显示、收藏页排序错位）；
+// 其余类型：watch_date（电影）/ event_date（日记事件）/ date（音乐地点）/ finish_date 兜底
+function getEntryDate(e) {
+  if (e.type === 'book') return e.finish_date || e.start_date || '';
+  return e.watch_date || e.event_date || e.date || e.finish_date || '';
+}
 function getEntryTime(e) { return e.watch_time || e.event_time || ''; }
 // UTC ISO → 本地 HH:MM（此前直接 slice(11,16) 显示的是 UTC 时间，差 8 小时——多设备汇总后时间错乱的元凶之一）
 function localTimeOf(iso) {
@@ -1827,8 +1832,19 @@ function renderMovieWallContent(items) {
   }
   const byYear = {};
   items.forEach(m => { const y = (getEntryDate(m)||'').slice(0,4) || '未知'; if (!byYear[y]) byYear[y] = []; byYear[y].push(m); });
+  // 同年份内按日期降序（最近在上）
+  Object.values(byYear).forEach(list => list.sort((a, b) => {
+    const da = getEntryDate(a) || a.created_at || '', db2 = getEntryDate(b) || b.created_at || '';
+    return da < db2 ? 1 : da > db2 ? -1 : 0;
+  }));
+  // 年份倒序；"未知"固定放最后
+  const yearOrder = Object.keys(byYear).sort((a, b) => {
+    if (a === '未知') return 1;
+    if (b === '未知') return -1;
+    return a < b ? 1 : a > b ? -1 : 0;
+  });
   let html = '';
-  Object.keys(byYear).sort().reverse().forEach((y, yi) => {
+  yearOrder.forEach((y, yi) => {
     html += `<div class="year-section card-enter" style="animation-delay:${yi*0.08}s"><div class="year-header"><div class="year-number">${y}</div><div class="year-count">${byYear[y].length} 部</div></div><div class="poster-wall">`;
     byYear[y].forEach((m, mi) => {
       const delay = (yi*0.08 + mi*0.03).toFixed(2);
@@ -1885,8 +1901,19 @@ function renderBookWallContent(items, status) {
       const y = b.finish_date ? b.finish_date.slice(0,4) : (b.start_date ? b.start_date.slice(0,4) : '未开始');
       if (!byYear[y]) byYear[y] = []; byYear[y].push(b);
     });
+    // 同年份内按日期降序（最近在上），显式排序避免依赖全局顺序
+    Object.values(byYear).forEach(list => list.sort((a, b) => {
+      const da = getEntryDate(a) || a.created_at || '', db2 = getEntryDate(b) || b.created_at || '';
+      return da < db2 ? 1 : da > db2 ? -1 : 0;
+    }));
+    // 年份倒序；"未开始"（想读无日期）固定放最后，避免中文字符串排序跑到最前
+    const yearOrder = Object.keys(byYear).sort((a, b) => {
+      if (a === '未开始') return 1;
+      if (b === '未开始') return -1;
+      return a < b ? 1 : a > b ? -1 : 0;
+    });
     let html = '';
-    Object.keys(byYear).sort().reverse().forEach((y, yi) => {
+    yearOrder.forEach((y, yi) => {
       html += `<div class="year-section card-enter" style="animation-delay:${yi*0.08}s"><div class="year-header"><div class="year-number">${y}</div><div class="year-count">${byYear[y].length} 本</div></div><div class="books-grid">`;
       byYear[y].forEach((b, bi) => {
         const delay = (yi*0.08 + bi*0.03).toFixed(2);

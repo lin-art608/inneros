@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+### V1.16.2 收藏页排序修复（书籍/电影按时间倒序，2026-08-30）
+
+- **根因①**：`getEntryDate` 不认识书籍的 `start_date`——在读的书没有 `finish_date`，返回空字符串 → 时间线里被 `if (!d) return` 直接跳过不显示；收藏页排序时被丢到最后，与按 `start_date` 分年份的逻辑错位，导致同一年内顺序混乱。
+- **Fixed ①**：`getEntryDate` 对 `type==='book'` 改为 `finish_date || start_date || ''`——已读用读完日期、在读用开始日期、想读留空（在想读 tab 按添加时间排）。时间线/今天页/收藏页三处同时受益。
+- **根因②**：年份分组用 `Object.keys(byYear).sort().reverse()`，中文字符串"未开始"/"未知"的 Unicode 大于数字，reverse 后反而排在 2026 年最上面。
+- **Fixed ②**：书籍墙/电影墙年份排序改为自定义比较——年份倒序，"未开始"/"未知"固定放最后。
+- **Fixed ③（健壮性）**：同年份组内显式按 `getEntryDate` 降序（无日期回退 `created_at`），不再依赖全局 sortEntries 的顺序传递，避免未来过滤/筛选引入顺序漂移。
+- **未改**：D1 schema / IndexedDB v4 / API 协议 / 同步逻辑 / 其他页面排序规则。
+
+#### 实测
+- `node --check app.js`：通过
+- 逻辑验证：已读(2026-08) > 在读(2026-06) > 已读(2026-01) > 已读(2025-12) 分组与组内顺序均正确；想读无日期归入"未开始"且在最末；电影同年份内按 watch_date 降序
+
 ### V1.16.1 架构收口 + 测试护栏修正（一次性收尾，2026-08-30）
 
 - **根因**：深度审查（以实际源码为准）发现 ARCH-012 抽出的 `InnerOSMedia` 与 app.js 旧 Provider 曾并存；且 media.js 的 fallback（/api/douban、iTunes）散落在 4 个函数里，未集中到兼容层。
