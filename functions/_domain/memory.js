@@ -48,6 +48,8 @@ export function normalizeMemory(raw) {
     places: raw.location ? [raw.location] : [],
     deleted: raw.deleted === 1 || raw.deleted === true,
     // 媒体子结构（仅 media）
+    // ARCH-009：若记录里已存标准 media 块（经 /api/v1/memories 保存的电影），以它为准；
+    // 否则仍从旧字段推导——老数据零迁移，读取结果一致。
     media: isMedia ? {
       mediaType: legacyType,
       externalId: raw.external_id || null,
@@ -56,6 +58,7 @@ export function normalizeMemory(raw) {
       creators: [raw.director, raw.author, raw.artist].filter(Boolean),
       genres: Array.isArray(raw.genres) ? raw.genres : [],
       score: raw.rating != null ? Number(raw.rating) : null,
+      ...(raw.media && typeof raw.media === 'object' ? raw.media : {}),
     } : null,
     // 旧字段整体保留为 metadata（兼容读取，不丢任何信息）
     metadata: { legacyType, mood: raw.mood || null, platform: raw.platform || null, location: raw.location || null },

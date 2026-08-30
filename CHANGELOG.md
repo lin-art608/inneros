@@ -7,6 +7,23 @@
 
 ## [Unreleased]
 
+### V1.12.0 架构升级 ARCH-009（电影完整垂直切片，2026-08-30）
+
+- **目标**：搜索 → 详情 → 标准化 → 保存 → 读取 → 编辑/删除 → 同步 全链路走新架构；UI 不读第三方原始 JSON
+- **新增 `functions/_domain/media.js`**：`normalizeMedia` / `validateMedia` / `mediaToMemoryPatch`。标准 Media（externalId/title/originalTitle/poster/releaseDate/creators/genres/score/description/source/providerMetadata）↔ Memory 的纯函数映射；**第三方原始 JSON 只进 providerMetadata**
+- **新增 `GET /api/v1/media/detail?type=&id=`**：Route → MediaService → DoubanAdapter → 标准 Media（补上此前缺失的"详情"环节，搜索/详情链路才完整）
+- **`POST /api/v1/memories` 支持 `media`**：传标准 Media 时经 Domain 转成记录补丁落库；同时保留旧字段（既有 UI/IndexedDB 零迁移）+ 标准 `media` 块
+- **`normalizeMemory` 增强**：记录里已有标准 `media` 块时以它为准，否则仍从旧字段推导（老数据行为不变）
+- **前端电影链路接 v1**：`searchMovie` / 电影详情补全改走 `InnerOSApi` → `/api/v1/media/search|detail`，新增 `mediaToWorkFields()` 做标准结构→本地字段映射；**v1 失败自动回退旧 `/api/douban`**（第三方故障不导致页面无结果）
+- **修复（E2E 发现）**：`media-service` / `memory-service` 此前用本地 `businessError()` 造**裸 Error**，路由 `e instanceof ServiceError` 判定失败 → 所有第三方故障被退化成 **500 INTERNAL**。现统一抛 `ServiceError` + `ErrorCode`（单一错误类）。实测修复后：非法 id → **502 PROVIDER_ERROR(retryable)**，不支持类型/空词 → **400 VALIDATION_ERROR**
+
+#### 未改
+D1 schema / IndexedDB v4 / 旧 `/api/*` 协议 / app.js 未重写（仅新增一个映射函数）/ 未新增第二套同步（仍走既有 Sync Engine）
+
+#### 实测
+- 单元：新增 `media-domain.test.mjs` 7 组（标准结构归一与 providerMetadata 隔离、校验、电影/书籍补丁、标准↔Memory 往返、老数据零迁移推导）；7 套单测全绿
+- 集成（wrangler 本地 D1）：搜"星际穿越"返回正确候选 → 详情拿到导演/类型/评分 9.4/上映日期/简介/片长 169 → v1 保存后 `type=media` 且带标准 media 块 → 刷新读取仍在 → 另一设备 pull 到电影记录（含标准 media）→ 删除后旧快照不复活 → 异常场景返回稳定 code
+
 ### V1.11.1 架构升级 ARCH-008.1（Attachment Sync 修复 + 同步错误模型/一致性边界，2026-08-30）
 
 - **根因①**：`MemoryRepository` 缺 `upsertAttachment`，`upsert_attachment` 操作在 `applyOperation` 里抛 `is not a function` 被吞成单条 error → **附件同步实际一直是失效的**（照片只留本地，其他设备永远拉不到）

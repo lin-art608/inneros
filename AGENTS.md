@@ -23,7 +23,8 @@
 | `functions/api/douban.js` | 豆瓣 suggest + rexxar 详情（电影/书籍简介、评分） |
 | `functions/api/sports.js` | 足球=TheSportsDB(key 3)、CS2=Liquipedia（teamsearch/matches/leagueseason/cs2matches） |
 | `functions/_lib.js` | D1 schema 自建（IF NOT EXISTS）/ PBKDF2 / Cookie 会话（旧共享库，逐步收敛） |
-| `functions/_domain/memory.js` | Memory 领域模型：normalizeMemory（旧字段→标准结构）/validateMemory/canonicalType/validateOperation |
+| `functions/_domain/memory.js` | Memory 领域模型：normalizeMemory（旧字段→标准结构；有标准 `media` 块时以其为准）/validateMemory/canonicalType/validateOperation |
+| `functions/_domain/media.js` | ARCH-009 Media 领域模型：normalizeMedia/validateMedia/**mediaToMemoryPatch**（标准 Media → 记忆记录补丁；第三方原始 JSON 只进 providerMetadata） |
 | `functions/_repositories/memory-repository.js` | Memory 的 D1 访问集中：upsertNewer/tombstone/appendEntry/updateEntryContent/**upsertAttachment**/listByUser。**只管 memory/entry/attachment**（操作日志与设备已迁出）。写入方法均支持可选 `collect` 参数：传入数组时只生成语句不执行（供 db.batch 提交） |
 | `functions/_repositories/operation-repository.js` | ARCH-008 操作日志访问：opExists（幂等判据）/record/listSince（游标增量+排除设备）/maxSeq。record 的 `prepend` 参数传入业务语句时用 `db.batch()` 与记录同事务提交 |
 | `functions/_repositories/device-repository.js` | ARCH-008 设备访问：ensureDevice/getCursor/updateCursor（last_seq 由 Service 传入，便于脱离 D1 单测） |
@@ -32,7 +33,8 @@
 | `functions/_services/sync-service.js` | ARCH-008/008.1 同步编排：push（validateOperation→幂等→applyOperation→推进游标）/pull（增量+排除本机）。`applyOperation` 的 kind→repository 分发在此，勿搬回路由。请求级错误抛 `ServiceError` + `ErrorCode`；单条错误带 `code` 字段（客户端按 code 判断，禁止依赖中文 message）。可语句化的 5 种 kind 走 `db.batch` 与 operation 记录同事务 |
 | `functions/_adapters/douban-adapter.js` | 豆瓣适配器：searchMedia/getMediaDetail 标准结构 + 旧形状兼容输出 |
 | `functions/_infra/errors.js` | 统一错误模型（ARCH-002）：ok/fail/errors.*/ServiceError + requestId |
-| `functions/api/v1/` | 新版 API（统一信封）：me / memories(GET+POST) / media/search |
+| `functions/api/v1/` | 新版 API（统一信封）：me / memories(GET+POST，POST 支持传标准 media) / media/search / media/detail |
+| `app.js` 电影链路 | ARCH-009：搜索与详情走 `InnerOSApi` → `/api/v1/media/search\|detail`，`mediaToWorkFields()` 做标准结构→本地字段映射；v1 失败回退 `/api/douban` |
 | `src/services/api-client.js` | 前端统一 API Client（InnerOSApi，经典脚本命名空间；新调用必经） |
 | `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/memory-service/media-service/sync-service（node 直接运行） |
 | `CHANGELOG.md` | 每轮迭代必更新（日期 + 根因 + Fixed/Changed + 实测） |
@@ -66,6 +68,7 @@ curl -X POST https://inneros.pages.dev/api/...     # 线上接口探测（部署
 9. D1 里有测试账号残留（e2e@/curltest@/notarget@inneros.dev），勿当用户数据。
 10. **D1 原子性**：无交互式事务（不能 BEGIN…COMMIT 跨 await）。要原子就用 `db.batch([stmt...])`（batch 即事务）。需先读后写的逻辑（如 upsertNewer 冲突判定）无法进 batch，改靠"写入语义幂等 + op_id 未记录即可安全重试"保证一致性。
 11. **`operations.seq` 是全局 AUTOINCREMENT**，不是每账号从 1 开始。写同步相关断言/客户端逻辑时禁止用"条数"推算 seq，必须取实际返回值（踩过两次）。
+12. **Service 抛错必须 `new ServiceError(...)`**，禁止自建 Error 类或裸 Error + `.code`。v1 路由用 `e instanceof ServiceError` 判定，裸 Error 会被判成内部错误 → **所有业务/第三方错误都退化成 500 INTERNAL**（ARCH-009 修复过一次：media/memory service 原用本地 businessError 造裸 Error）。
 
 ## 风格与流程
 - 注释、UI 文案、错误提示一律中文；错误提示必须是人话+下一步动作。

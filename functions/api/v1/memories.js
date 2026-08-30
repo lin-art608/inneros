@@ -6,6 +6,7 @@ import { ok, fail, errors } from '../../_infra/errors.js';
 import { createMemoryRepository } from '../../_repositories/memory-repository.js';
 import { createMemoryService } from '../../_services/memory-service.js';
 import * as domain from '../../_domain/memory.js';
+import { validateMedia, mediaToMemoryPatch } from '../../_domain/media.js';
 
 // Route 职责：parse → auth → service → ok/fail（ARCH-007：业务编排已入 Service）
 function buildService(db) {
@@ -48,12 +49,24 @@ export async function onRequestPost(context) {
   let body = {};
   try { body = await context.request.json(); } catch (e) { return errors.validation('请求体必须是 JSON'); }
 
+  // ARCH-009：电影垂直切片——body.media 为标准 Media（来自 /api/v1/media/search|detail），
+  // 由 Domain 转成记忆记录补丁（旧字段 + 标准 media 块 + providerMetadata）后落库。
+  // 第三方原始 JSON 只留在 providerMetadata，不进入业务字段。
+  const input = { type: String(body.type || 'note'), title: body.title, content: body.content, rating: body.rating, tags: body.tags, occurredAt: body.occurredAt };
+  if (body.media && typeof body.media === 'object') {
+    const v = validateMedia(body.media);
+    if (!v.ok) return errors.validation(v.errors[0]);
+    const patch = mediaToMemoryPatch(body.media, String(body.type || body.media.mediaType || 'movie'));
+    Object.assign(input, patch);
+    if (!input.title && body.media.title) input.title = body.media.title;
+  }
+
   try {
     const service = buildService(db);
     const memory = await service.createMemory({
       userId: user.id,
       id: crypto.randomUUID(),
-      input: { type: String(body.type || 'note'), title: body.title, content: body.content, rating: body.rating, tags: body.tags, occurredAt: body.occurredAt },
+      input,
     });
     return ok({ memory }, 201);
   } catch (e) {

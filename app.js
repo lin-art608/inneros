@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.11.1';
+const APP_VERSION = 'v1.12.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -104,6 +104,29 @@ async function downloadImageAsDataURL(url) {
   return null;
 }
 
+// === 标准 Media → 本地记录字段（ARCH-009） ===
+// v1 接口返回的是 InnerOS 标准 Media 结构（externalId/title/originalTitle/poster/releaseDate/
+// creators/genres/score/description/source/providerMetadata）。这里把它映射成既有 UI 与
+// IndexedDB 读取的字段名，同时把标准结构整体保留在 media 字段（含 providerMetadata），
+// 这样换 Provider（如 TMDB）时 UI 读取方式不变；第三方原始 JSON 只存在于 providerMetadata。
+function mediaToWorkFields(m) {
+  const meta = m.providerMetadata || {};
+  return {
+    external_id: String(m.externalId || ''),
+    title: m.title || '',
+    original_title: m.originalTitle || '',
+    poster: m.poster || '',
+    release_date: m.releaseDate || '',
+    director: (m.creators && m.creators[0]) || '',
+    genres: m.genres || [],
+    description: m.description || '',
+    rating: (m.score == null ? null : m.score),
+    runtime: meta.runtime || null,
+    provider: m.source || 'douban',
+    media: m,
+  };
+}
+
 // === Public provider adapters (no API keys) ===
 // UI talks only to this normalized layer so a provider can be replaced later.
 // V1.2 §5 统一数据层：UI 只依赖此归一化层，Provider 可替换；§P1 要求电影/书籍/音乐走真实搜索。
@@ -116,7 +139,19 @@ let selectedGame = null;
 let workSearchResults = [];
 const ContentProvider = {
   async searchMovie(query) {
-    // V1.2 §5/§P1：电影改走豆瓣（中国可达+中文覆盖好），经 /api/douban 代理绕过 CORS 与 GFW
+    // ARCH-009 电影垂直切片：优先走 v1 标准接口（InnerOSApi → /api/v1/media/search → MediaService → DoubanAdapter 标准模型），
+    // UI 只接触标准 Media 结构，再经 mediaToWorkFields() 映射为本地记录字段；
+    // v1 不可用时自动回退旧 /api/douban，保证第三方故障不导致页面无结果（方案第五节验收标准）。
+    if (window.InnerOSApi) {
+      try {
+        const res = await InnerOSApi.get(`/api/v1/media/search?type=movie&query=${encodeURIComponent(query)}`);
+        const items = (res.data && res.data.items) || [];
+        if (items.length > 0) return items.map(mediaToWorkFields);
+      } catch (e) {
+        console.warn('[movie] v1 搜索失败，回退 /api/douban：', (e && (e.code || e.message)) || e);
+      }
+    }
+    // 回退：旧 /api/douban（同样是 Adapter 输出，非豆瓣原始 JSON）
     const res = await fetch(`/api/douban?type=movie&q=${encodeURIComponent(query)}`);
     if (!res.ok) throw new Error('电影数据源暂时不可用');
     const data = await res.json();
@@ -307,8 +342,17 @@ function renderWorkResults(type, results) {
 // 解决"只有 suggest 级数据、简介为空"的缺口；详情由 /api/douban?type=detail 代理（电影走 m.douban rexxar API，书籍走详情页解析）
 async function enrichWorkDetail(type, r) {
   if (!r || !r.external_id) return null;
+  const kind = type === 'book' ? 'book' : 'movie';
+  // ARCH-009：电影详情优先走 v1 标准接口（MediaService → Adapter 标准模型），失败再回退旧 /api/douban
+  if (type === 'movie' && window.InnerOSApi) {
+    try {
+      const res = await InnerOSApi.get(`/api/v1/media/detail?type=movie&id=${encodeURIComponent(r.external_id)}`);
+      if (res.data && res.data.title) return mediaToWorkFields(res.data);
+    } catch (e) {
+      console.warn('[movie] v1 详情失败，回退 /api/douban：', (e && (e.code || e.message)) || e);
+    }
+  }
   try {
-    const kind = type === 'book' ? 'book' : 'movie';
     const res = await fetch(`/api/douban?type=detail&kind=${kind}&id=${encodeURIComponent(r.external_id)}`);
     if (!res.ok) return null;
     const data = await res.json();

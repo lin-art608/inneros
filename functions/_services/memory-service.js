@@ -3,16 +3,16 @@
 // 禁止：DOM、Cookie、Cloudflare Request、SQL、直接 fetch 第三方。
 // 承载的真实业务：写入前校验、业务错误语义（NOT_FOUND/VALIDATION_ERROR）、
 //                读取→领域归一化、墓碑时间戳生成。不是 repository 的机械包装。
+// ARCH-009：统一抛 ServiceError（复用 _infra/errors.js，不自建第二套 Error 类）。
+
+import { ErrorCode, ServiceError } from '../_infra/errors.js';
 
 export function createMemoryService({ repository, domain }) {
   const nowIso = () => new Date().toISOString();
   const { normalizeMemory, validateMemory } = domain;
 
   function businessError(code, message, status = 400) {
-    const e = new Error(message);
-    e.code = code;
-    e.status = status;
-    return e;
+    return new ServiceError(code, message, { status });
   }
 
   return {
@@ -27,7 +27,7 @@ export function createMemoryService({ repository, domain }) {
     async getMemory({ userId, id }) {
       const row = await repository.getById(userId, id);
       if (!row || row.deleted) {
-        throw businessError('NOT_FOUND', '记忆不存在', 404);
+        throw businessError(ErrorCode.NOT_FOUND, '记忆不存在', 404);
       }
       return normalizeMemory({ id: row.id, ...safeParse(row.data), updated_at: row.updated_at });
     },
@@ -36,7 +36,7 @@ export function createMemoryService({ repository, domain }) {
     async createMemory({ userId, id, input }) {
       const clean = { ...input, id };
       const v = validateMemory(clean);
-      if (!v.ok) throw businessError('VALIDATION_ERROR', v.errors[0], 400);
+      if (!v.ok) throw businessError(ErrorCode.VALIDATION_ERROR, v.errors[0], 400);
       const updatedAt = nowIso();
       const data = { ...clean };
       delete data.id;
@@ -49,7 +49,7 @@ export function createMemoryService({ repository, domain }) {
       const content = String(entry.content || '').trim();
       const photos = Array.isArray(entry.photos) ? entry.photos : [];
       if (!content && photos.length === 0) {
-        throw businessError('VALIDATION_ERROR', '追加内容不能为空', 400);
+        throw businessError(ErrorCode.VALIDATION_ERROR, '追加内容不能为空', 400);
       }
       const full = { ...entry, content: String(entry.content || ''), created_at: entry.created_at || nowIso() };
       await repository.appendEntry({ userId, memoryId, entry: full });
@@ -65,7 +65,7 @@ export function createMemoryService({ repository, domain }) {
     // 用例：修改追加内容（禁止清空为纯空白）
     async updateEntryContent({ userId, entryId, content }) {
       const val = String(content || '');
-      if (!val.trim()) throw businessError('VALIDATION_ERROR', '内容不能为空', 400);
+      if (!val.trim()) throw businessError(ErrorCode.VALIDATION_ERROR, '内容不能为空', 400);
       await repository.updateEntryContent({ userId, entryId, content: val });
       return { ok: true };
     },
