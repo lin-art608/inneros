@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+### V1.12.2 架构升级 ARCH-009 复核补充（追加记录保留标准 media 块，2026-08-30）
+
+- **背景**：按精确开发指导 2.1 对电影链路做全量审计（searchMovie / media/search / media/detail / selectedMovie / douban 原始字段泄漏）。结论：链路完整、豆瓣原始字段**零泄漏**（grep 实证只在 Adapter）；发现 1 个小缺口——"追加记录"路径重建 `selectedMovie` 时丢失标准 `media` 块，再次保存会用旧字段覆盖、`providerMetadata` 丢失
+- **Fixed**：编辑重建 `selectedMovie`/`selectedBook` 时保留 `e.media`；追加路径仅在携带时回写 `merged.media`。书籍侧同款修复随 ARCH-010 提交
+
 ### V1.12.1 架构升级 ARCH-008.2（Sync Route 接线核验 + 真实集成测试护栏，2026-08-30）
 
 - **背景**：审核报告基于旧 main 快照，认为 `sync/[action].js` 仍残留旧同步编排（applyOp / repo.opExists 等）。**以实际代码核验（文档自己也要求）**：接线早在 ARCH-008（f6c07eb）已完成——路由仅 auth/parse/`buildSyncService(db).push|pull`/响应，**0 处旧编排**；opExists/record/listSince/maxSeq/updateCursor 只存在于 Repository 与 SyncService 层（用 grep 实证）

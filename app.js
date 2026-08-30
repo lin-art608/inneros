@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.12.1';
+const APP_VERSION = 'v1.12.2';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -2621,8 +2621,10 @@ async function loadEntryForEdit(id) {
   if (e.title) { const t = document.getElementById('capture-title'); if (t) t.value = e.title; }
   const extraMap = { book:e.author, music:e.artist, game:e.platform, place:e.location, event:e.location, diary:e.mood };
   if (extraMap[e.type] && document.getElementById('capture-extra')) document.getElementById('capture-extra').value = extraMap[e.type];
-  selectedMovie = (e.type === 'movie' && e.poster) ? { poster: e.poster, title: e.title, release_date: e.release_date || '', original_title: e.original_title || '' } : null;
-  selectedBook = (e.type === 'book' && e.cover) ? { cover:e.cover, authors:e.author, publisher:e.publisher, isbn:e.isbn, categories:e.genres, description:e.book_description, pageCount:e.page_count } : null;
+  // ARCH-009/010 复核：编辑重建 selected* 时保留标准 media 块，
+  // 否则"追加记录"会用旧字段覆盖掉标准结构（providerMetadata 丢失）。
+  selectedMovie = (e.type === 'movie' && e.poster) ? { poster: e.poster, title: e.title, release_date: e.release_date || '', original_title: e.original_title || '', media: e.media || null } : null;
+  selectedBook = (e.type === 'book' && e.cover) ? { cover:e.cover, authors:e.author, publisher:e.publisher, isbn:e.isbn, categories:e.genres, description:e.book_description, pageCount:e.page_count, media: e.media || null } : null;
   if (e.type === 'event' && e.category) setEventCategory(e.category);
   if (e.type === 'book' && e.reading_status) setReadingStatus(e.reading_status);
   // Show existing entries count
@@ -2701,6 +2703,8 @@ async function saveCapture() {
     // Update base fields if changed by search
     if (selectedType === 'movie' && selectedMovie) {
       Object.assign(merged, { poster:selectedMovie.poster, release_date:selectedMovie.release_date, original_title:selectedMovie.original_title, director:selectedMovie.director, genres:selectedMovie.genres, description:selectedMovie.description, provider:selectedMovie.provider, external_id:selectedMovie.external_id });
+      // ARCH-009 复核：重新搜索选择时会带来新的标准 media 块；编辑重建场景保留原块
+      if (selectedMovie.media) merged.media = selectedMovie.media;
     }
     if (selectedType === 'book' && selectedBook) {
       merged.cover = selectedBook.cover;
