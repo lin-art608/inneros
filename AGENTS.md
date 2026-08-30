@@ -35,6 +35,7 @@
 | `functions/_infra/errors.js` | 统一错误模型（ARCH-002）：ok/fail/errors.*/ServiceError + requestId |
 | `functions/api/v1/` | 新版 API（统一信封）：me / memories(GET+POST，POST 支持传标准 media) / media/search / media/detail |
 | `app.js` 电影链路 | ARCH-009：搜索与详情走 `InnerOSApi` → `/api/v1/media/search\|detail`，`mediaToWorkFields()` 做标准结构→本地字段映射；v1 失败回退 `/api/douban` |
+| `app.js` 书籍链路 | ARCH-010：同电影，`mediaToWorkFields(m,'book')` 映射书籍扩展字段（cover/authors/publisher/isbn/...）；保存带标准 `media` 块 |
 | `src/services/api-client.js` | 前端统一 API Client（InnerOSApi，经典脚本命名空间；新调用必经） |
 | `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/media-domain/memory-service/media-service/sync-service（node 直接运行） |
 | `tests/integration/sync-route.test.mjs` | ARCH-008.2 集成测试：真实 `onRequestPost/Get` + Cookie 会话 + 内存 D1 仿真（按 SQL 模式处理，未知 SQL 抛错防漂移）。**改同步相关代码后必跑** |

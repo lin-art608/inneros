@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.12.2';
+const APP_VERSION = 'v1.13.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -104,14 +104,15 @@ async function downloadImageAsDataURL(url) {
   return null;
 }
 
-// === 标准 Media → 本地记录字段（ARCH-009） ===
+// === 标准 Media → 本地记录字段（ARCH-009 / ARCH-010） ===
 // v1 接口返回的是 InnerOS 标准 Media 结构（externalId/title/originalTitle/poster/releaseDate/
 // creators/genres/score/description/source/providerMetadata）。这里把它映射成既有 UI 与
 // IndexedDB 读取的字段名，同时把标准结构整体保留在 media 字段（含 providerMetadata），
 // 这样换 Provider（如 TMDB）时 UI 读取方式不变；第三方原始 JSON 只存在于 providerMetadata。
-function mediaToWorkFields(m) {
+// type 用于书籍扩展字段映射（cover/authors/publisher/isbn/...）。
+function mediaToWorkFields(m, type) {
   const meta = m.providerMetadata || {};
-  return {
+  const fields = {
     external_id: String(m.externalId || ''),
     title: m.title || '',
     original_title: m.originalTitle || '',
@@ -125,6 +126,18 @@ function mediaToWorkFields(m) {
     provider: m.source || 'douban',
     media: m,
   };
+  // ARCH-010：书籍扩展字段（书籍的 creators[0] = 作者；译者/出版社/ISBN/页数在 providerMetadata）
+  if (type === 'book' || m.mediaType === 'book') {
+    fields.cover = m.poster || '';
+    fields.authors = (m.creators && m.creators[0]) || '';
+    fields.publisher = meta.publisher || '';
+    fields.isbn = meta.isbn || '';
+    fields.categories = m.genres || [];
+    fields.pageCount = meta.pageCount || 0;
+    fields.publishedDate = m.releaseDate || '';
+    fields.book_description = m.description || '';
+  }
+  return fields;
 }
 
 // === Public provider adapters (no API keys) ===
@@ -146,7 +159,7 @@ const ContentProvider = {
       try {
         const res = await InnerOSApi.get(`/api/v1/media/search?type=movie&query=${encodeURIComponent(query)}`);
         const items = (res.data && res.data.items) || [];
-        if (items.length > 0) return items.map(mediaToWorkFields);
+        if (items.length > 0) return items.map(x => mediaToWorkFields(x, 'movie'));
       } catch (e) {
         console.warn('[movie] v1 搜索失败，回退 /api/douban：', (e && (e.code || e.message)) || e);
       }
@@ -162,7 +175,17 @@ const ContentProvider = {
     }));
   },
   async searchBook(query) {
-    // V1.2 §5/§P1：书籍改走豆瓣读书（googleapis.com 在中国大陆常被墙/超时），经 /api/douban 代理
+    // ARCH-010 书籍垂直切片：优先走 v1 标准接口（MediaService → DoubanAdapter 书籍标准模型），
+    // 失败自动回退旧 /api/douban（同样是 Adapter 输出，非豆瓣原始 JSON）。
+    if (window.InnerOSApi) {
+      try {
+        const res = await InnerOSApi.get(`/api/v1/media/search?type=book&query=${encodeURIComponent(query)}`);
+        const items = (res.data && res.data.items) || [];
+        if (items.length > 0) return items.map(x => mediaToWorkFields(x, 'book'));
+      } catch (e) {
+        console.warn('[book] v1 搜索失败，回退 /api/douban：', (e && (e.code || e.message)) || e);
+      }
+    }
     const res = await fetch(`/api/douban?type=book&q=${encodeURIComponent(query)}`);
     if (!res.ok) throw new Error('图书数据源暂时不可用');
     const data = await res.json();
@@ -347,9 +370,18 @@ async function enrichWorkDetail(type, r) {
   if (type === 'movie' && window.InnerOSApi) {
     try {
       const res = await InnerOSApi.get(`/api/v1/media/detail?type=movie&id=${encodeURIComponent(r.external_id)}`);
-      if (res.data && res.data.title) return mediaToWorkFields(res.data);
+      if (res.data && res.data.title) return mediaToWorkFields(res.data, 'movie');
     } catch (e) {
       console.warn('[movie] v1 详情失败，回退 /api/douban：', (e && (e.code || e.message)) || e);
+    }
+  }
+  // ARCH-010：书籍详情同样走 v1 标准接口（Adapter 内部 rexxar + HTML 兜底补 ISBN 等），失败回退旧接口
+  if (type === 'book' && window.InnerOSApi) {
+    try {
+      const res = await InnerOSApi.get(`/api/v1/media/detail?type=book&id=${encodeURIComponent(r.external_id)}`);
+      if (res.data && res.data.title) return mediaToWorkFields(res.data, 'book');
+    } catch (e) {
+      console.warn('[book] v1 详情失败，回退 /api/douban：', (e && (e.code || e.message)) || e);
     }
   }
   try {
@@ -2714,6 +2746,8 @@ async function saveCapture() {
       merged.genres = selectedBook.categories;
       merged.book_description = selectedBook.description;
       merged.page_count = selectedBook.pageCount;
+      // ARCH-010：追加时同样保留/刷新标准 media 块（与电影路径一致）
+      if (selectedBook.media) merged.media = selectedBook.media;
       // 豆瓣详情补全（V1.2 §4.2：客观资料来自 Provider，不可手填）
       if (selectedBook.rating) merged.rating = selectedBook.rating;
       if (selectedBook.translator) merged.translator = selectedBook.translator;
@@ -2764,6 +2798,8 @@ async function saveCapture() {
         entry.isbn = selectedBook.isbn;
         entry.genres = selectedBook.categories;
         entry.book_description = selectedBook.description;
+        // ARCH-010：标准 media 块随记录落库（providerMetadata 隔离第三方原始数据），同步到其他设备
+        if (selectedBook.media) entry.media = selectedBook.media;
         entry.page_count = selectedBook.pageCount;
         if (selectedBook.rating) entry.rating = selectedBook.rating;
         if (selectedBook.translator) entry.translator = selectedBook.translator;

@@ -7,6 +7,23 @@
 
 ## [Unreleased]
 
+### V1.13.0 架构升级 ARCH-010（书籍完整垂直切片，2026-08-30）
+
+- **目标**：证明 ARCH-009 建立的 Media/Provider/Memory/Sync 模式可复用，书籍链路全走新架构，无第二套同步/专用数据库
+- **审计（3.1）**：书籍此前搜索走旧 `/api/douban`、详情走旧 detail、保存只落 legacy 字段。发现 3 处缺口——① 书籍 suggest 丢作者（`mapSuggestItem` 未收 `author_name`）② rexxar 书籍详情**实测不返回 ISBN**（`isbn13=None`）③ 保存路径不带标准 `media` 块
+- **Adapter（`_adapters/douban-adapter.js`）**：`mapSuggestItem` 把 `author_name` 收入 `creators`；`searchMedia` 输出补 `mediaType`（标准模型要求）；新增 `mergeBookDetail()` 纯函数——rexxar 缺 ISBN/出版社/页数时回退书籍详情页 HTML 解析补齐（已有一律不覆盖）；`getMediaDetail` book 分支接入合并
+- **前端（app.js）**：`mediaToWorkFields(m, type)` 增加书籍扩展字段（cover/authors/publisher/isbn/categories/pageCount/publishedDate/book_description）；`searchBook` / 书籍详情改走 `InnerOSApi → /api/v1/media/search|detail`（v1 失败回退旧接口）；书籍保存（新条目 + 追加）均带标准 `media` 块
+- **复用验证**：`MediaService` 的 `SUPPORTED` 本就含 book，`memoryToMemoryPatch` 已有书籍分支，`SyncService` 未动——书籍**零新增** Service/Repository/同步
+- **未改**：D1 schema / IndexedDB v4 / 旧 `/api/*` 协议 / UI 布局 / 未重写 app.js
+
+#### 实测
+- 单元：`douban-adapter.test.mjs` 新增书籍 suggest 作者 + `mergeBookDetail` 合并（补齐/不覆盖）断言；8 套测试全绿（单测 7 + 集成 1）
+- 集成（wrangler 本地 D1）：搜"百年孤独"返回带作者候选 → 详情拿到作者/评分 9.3/**ISBN 9787544253994**/出版社/页数/简介 → 设备 A 保存 → 设备 B pull 到（含 ISBN + 标准 media 块）→ 修改 → 设备 B 可拉到新版本 → 删除 → 不被旧快照复活
+- ARCH-009 回归：电影「A 修改 → B 更新」同步验证通过（rating 8.1 → 9.0）
+
+#### 已知问题（本轮未改，记录）
+- `memories.id` 为全局主键（非 `(user_id, id)` 复合）：若某客户端复用他账号已存在的 id，`upsertNewer` 首次插入会撞 `UNIQUE` 报错而非干净跳过。生产用 UUID 全局唯一故不触发；根治需改表结构（明确禁止），仅记录。
+
 ### V1.12.2 架构升级 ARCH-009 复核补充（追加记录保留标准 media 块，2026-08-30）
 
 - **背景**：按精确开发指导 2.1 对电影链路做全量审计（searchMovie / media/search / media/detail / selectedMovie / douban 原始字段泄漏）。结论：链路完整、豆瓣原始字段**零泄漏**（grep 实证只在 Adapter）；发现 1 个小缺口——"追加记录"路径重建 `selectedMovie` 时丢失标准 `media` 块，再次保存会用旧字段覆盖、`providerMetadata` 丢失

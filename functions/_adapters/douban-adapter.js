@@ -13,6 +13,8 @@ async function fetchDouban(url, referer, accept) {
 }
 
 // ---- 标准结构映射（纯函数，可单测）----
+// ARCH-010：书籍 suggest 带 author_name（作者）——它是书籍的 creator，必须进入标准模型，
+// 否则 v1 搜索结果的书籍没有作者（旧接口行为回归）。
 export function mapSuggestItem(it) {
   return {
     externalId: String(it.id),
@@ -20,7 +22,7 @@ export function mapSuggestItem(it) {
     originalTitle: it.sub_title || '',
     poster: it.img || it.pic || '',
     year: it.year || '',
-    creators: [],
+    creators: it.author_name ? [it.author_name] : [],
     genres: [],
     score: null,
     source: 'douban',
@@ -67,6 +69,22 @@ export function mapBookDetail(d, id) {
   };
 }
 
+// ARCH-010：书籍详情合并（纯函数，可单测）。
+// rexxar book API 实测不返回 ISBN（isbn13=None）；出版社/页数偶有缺失。
+// 用书籍详情页 HTML 解析结果补齐缺失字段，已有一律不覆盖。
+export function mergeBookDetail(media, htmlData) {
+  if (!htmlData) return media;
+  const meta = media.providerMetadata || {};
+  meta.isbn = meta.isbn || htmlData.isbn || '';
+  meta.publisher = meta.publisher || htmlData.publisher || '';
+  meta.pageCount = meta.pageCount || htmlData.pageCount || 0;
+  media.providerMetadata = meta;
+  if (!media.description) media.description = htmlData.description || '';
+  if (!media.creators.length && htmlData.authors) media.creators = [htmlData.authors];
+  if (!media.releaseDate) media.releaseDate = htmlData.publishedDate || '';
+  return media;
+}
+
 // ---- 标准接口（方案第八节 searchMedia / getMediaDetail）----
 export async function searchMedia({ type, query }) {
   const kind = type === 'book' ? 'book' : 'movie';
@@ -74,15 +92,22 @@ export async function searchMedia({ type, query }) {
   const res = await fetchDouban(`https://${kind}.douban.com/j/subject_suggest?q=${encodeURIComponent(query)}`, referer, 'application/json, text/javascript, */*; q=0.01');
   const data = await res.json();
   const raw = Array.isArray(data) ? data : [];
-  return raw.map(mapSuggestItem);
+  return raw.map(it => ({ ...mapSuggestItem(it), mediaType: kind })); // ARCH-010：标准模型必须带 mediaType
 }
 
 export async function getMediaDetail({ type, id }) {
   if (type === 'book') {
     const res = await fetchDouban(`https://m.douban.com/rexxar/api/v2/book/${id}`, `https://m.douban.com/book/subject/${id}/`, 'application/json');
-    if (!res.ok && false) {} // fetchDouban 已抛错
     const d = await res.json();
-    return mapBookDetail(d, id);
+    const media = mapBookDetail(d, id);
+    media.mediaType = 'book';
+    // rexxar 缺 ISBN 等字段时，用详情页 HTML 兜底（失败不影响主数据）
+    if (!media.providerMetadata.isbn || !media.providerMetadata.publisher || !media.providerMetadata.pageCount) {
+      try {
+        mergeBookDetail(media, await bookDetailHtml(id));
+      } catch (e) { /* 兜底失败保留 rexxar 数据 */ }
+    }
+    return media;
   }
   const res = await fetchDouban(`https://m.douban.com/rexxar/api/v2/movie/${id}`, `https://m.douban.com/movie/${id}/`, 'application/json');
   const d = await res.json();
