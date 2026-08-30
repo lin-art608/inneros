@@ -95,31 +95,9 @@ export function createMemoryRepository(db) {
         .bind(entryId, userId).run();
     },
 
-    // ---- 操作日志（游标源）----
-    async opExists(userId, opId) {
-      const r = await db.prepare('SELECT 1 FROM operations WHERE op_id = ? AND user_id = ?').bind(opId, userId).first();
-      return !!r;
-    },
-    async recordOperation({ opId, userId, deviceId, kind, entityId, payload, createdAt }) {
-      await db.prepare('INSERT INTO operations(op_id, user_id, device_id, kind, entity_id, payload, created_at) VALUES(?,?,?,?,?,?,?)')
-        .bind(opId, userId, deviceId, kind, entityId || '', JSON.stringify(payload || {}), createdAt).run();
-    },
-    async listOperationsSince(userId, cursor, excludeDeviceId, limit) {
-      const r = excludeDeviceId
-        ? await db.prepare('SELECT seq, op_id, device_id, kind, entity_id, payload, created_at FROM operations WHERE user_id = ? AND seq > ? AND device_id != ? ORDER BY seq LIMIT ?')
-            .bind(userId, cursor, excludeDeviceId, limit).all()
-        : await db.prepare('SELECT seq, op_id, device_id, kind, entity_id, payload, created_at FROM operations WHERE user_id = ? AND seq > ? ORDER BY seq LIMIT ?')
-            .bind(userId, cursor, limit).all();
-      return r.results.map(o => ({ ...o, payload: safeParse(o.payload) }));
-    },
-    async maxSeq(userId) {
-      const r = await db.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM operations WHERE user_id = ?').bind(userId).first();
-      return r ? r.m : 0;
-    },
-    async updateDeviceCursor(userId, deviceId) {
-      await db.prepare('UPDATE devices SET last_seq = (SELECT COALESCE(MAX(seq),0) FROM operations WHERE user_id = ?) WHERE id = ? AND user_id = ?')
-        .bind(userId, deviceId, userId).run();
-    },
+    // 注意：操作日志与设备游标（opExists/record/listSince/maxSeq/updateCursor）
+    // 已于 ARCH-008 迁出到 _repositories/operation-repository.js 与 device-repository.js，
+    // 本 Repository 只负责 memory / memory_entries（attachments 待补，见 CHANGELOG 已知问题）。
   };
 }
 

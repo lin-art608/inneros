@@ -19,19 +19,22 @@
 | `server.py` | 本地服务 :8765。代理：`/img`（豆瓣图）、`/api/douban`、`/api/sports`、`/api/auth`+`/api/sync`（**反代到 pages.dev**）、`/api/search` |
 | `functions/_lib.js` | D1 schema 自建（IF NOT EXISTS）/ PBKDF2 / Cookie 会话 |
 | `functions/api/auth/[action].js` | register / login / logout / me / send-code（Resend 验证码） |
-| `functions/api/sync/[action].js` | push（幂等批量）/ pull（游标增量） |
+| `functions/api/sync/[action].js` | push（幂等批量）/ pull（游标增量）。**ARCH-008 后为薄路由**：只 auth/parse/service/response，编排在 sync-service |
 | `functions/api/douban.js` | 豆瓣 suggest + rexxar 详情（电影/书籍简介、评分） |
 | `functions/api/sports.js` | 足球=TheSportsDB(key 3)、CS2=Liquipedia（teamsearch/matches/leagueseason/cs2matches） |
 | `functions/_lib.js` | D1 schema 自建（IF NOT EXISTS）/ PBKDF2 / Cookie 会话（旧共享库，逐步收敛） |
 | `functions/_domain/memory.js` | Memory 领域模型：normalizeMemory（旧字段→标准结构）/validateMemory/canonicalType/validateOperation |
-| `functions/_repositories/memory-repository.js` | Memory 的 D1 访问集中：upsertNewer/tombstone/appendEntry/updateEntryContent/listByUser |
+| `functions/_repositories/memory-repository.js` | Memory 的 D1 访问集中：upsertNewer/tombstone/appendEntry/updateEntryContent/listByUser。**只管 memory/entry**（操作日志与设备已迁出，别再加同步方法） |
+| `functions/_repositories/operation-repository.js` | ARCH-008 操作日志访问：opExists（幂等判据）/record/listSince（游标增量+排除设备）/maxSeq |
+| `functions/_repositories/device-repository.js` | ARCH-008 设备访问：ensureDevice/getCursor/updateCursor（last_seq 由 Service 传入，便于脱离 D1 单测） |
 | `functions/_services/memory-service.js` | Memory 业务编排：createMemory（领域校验）/list（归一化）/append（空追加拒绝）/delete（墓碑）/NOT_FOUND 语义 |
 | `functions/_services/media-service.js` | 媒体编排：Provider 选择（movie/book→douban）/query 校验/错误映射（第三方原始错误只进日志） |
+| `functions/_services/sync-service.js` | ARCH-008 同步编排：push（validateOperation→幂等→applyOperation→推进游标）/pull（增量+排除本机）。`applyOperation` 的 kind→repository 分发在此，勿搬回路由 |
 | `functions/_adapters/douban-adapter.js` | 豆瓣适配器：searchMedia/getMediaDetail 标准结构 + 旧形状兼容输出 |
 | `functions/_infra/errors.js` | 统一错误模型（ARCH-002）：ok/fail/errors.*/ServiceError + requestId |
 | `functions/api/v1/` | 新版 API（统一信封）：me / memories(GET+POST) / media/search |
 | `src/services/api-client.js` | 前端统一 API Client（InnerOSApi，经典脚本命名空间；新调用必经） |
-| `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/memory-service/media-service（node 直接运行） |
+| `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/memory-service/media-service/sync-service（node 直接运行） |
 | `CHANGELOG.md` | 每轮迭代必更新（日期 + 根因 + Fixed/Changed + 实测） |
 
 ## 命令

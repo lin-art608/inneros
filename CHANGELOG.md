@@ -7,6 +7,27 @@
 
 ## [Unreleased]
 
+### V1.11.0 架构升级 ARCH-008（同步系统收口，2026-08-30）
+
+- **根因**：同步职责混在 `MemoryRepository`（opExists/recordOperation/listOperationsSince/maxSeq/updateDeviceCursor），且 `sync/[action].js` 路由里直接编排同步流程 + 内联 `applyOp`，业务编排泄漏到路由层（v1.9 方案第二节两个问题之一）
+- **新增 `_repositories/operation-repository.js`**：opExists（幂等判据）/ record / listSince（游标增量 + 排除来源设备）/ maxSeq；操作日志的 D1 访问集中
+- **新增 `_repositories/device-repository.js`**：ensureDevice / getCursor / updateCursor。游标值由 Service 传入（不再在 repo 里写子查询），使 SyncService 可脱离 D1 单测
+- **新增 `_services/sync-service.js`**（依赖注入 4 个依赖）：push（domain.validateOperation 校验 → op_id 幂等 → applyOperation 分发 → 推进游标）、pull（增量回放 + 排除本机）；原路由里的 `applyOp` 下沉为 Service 的 `applyOperation`
+- **`sync/[action].js` 瘦身为薄路由**：只做 auth / parse / service / response，响应形状与旧协议完全一致
+
+#### 保持不变（回归判据）
+op_id 幂等 · seq 单调递增 · cursor 增量 · pull 排除本机 · upsert 新者胜（败方进 `_conflicts`）
+· 删除墓碑优先（旧快照不复活）· append_entry 幂等 · D1 表结构未改 · IndexedDB v4 未改 · 前端行为未改
+
+#### 实测
+- 单元：`node tests/unit/sync-service.test.mjs` 7 组（fake repository）全通过——幂等/未知 kind 单条失败不中断整批/新者胜+败方保留/墓碑不复活/append 幂等/pull 排除本机/cursor 增量/请求级校验
+- 回归：errors 5/5、domain-memory、douban-adapter、memory-service、media-service 全绿；`node --check app.js`、`git diff --check` 通过
+- 集成（wrangler 本地 D1，`pages dev . --d1 DB --port 8788`）：注册 → push 2 条（applied=2）→ 重放（applied=0/skipped=2）→ pull 本机 0 条 → 设备 B 拿到 2 条 → cursor 增量只剩最后一条 → `/api/v1/memories` 读回已归一化（type=media）
+- 环境：wrangler 用 `npm i --no-save` 装进 node_modules（**package.json 未改动**，node_modules 已 gitignore）
+
+#### 已知问题（本轮未改，建议下轮处理）
+- `memory-repository` 缺 `upsertAttachment` 方法，导致 `upsert_attachment` 操作在 `applyOperation` 中会抛 `repo.upsertAttachment is not a function`，被 catch 成单条 error。属既有缺陷（非本轮引入），修它需要新增方法 + 决定 attachments 写入语义，已停下等你确认
+
 ### V1.10.0 架构升级 ARCH-007（Application Service 层，2026-08-30）
 
 - **memory-service**（依赖注入 repository+domain）：createMemory（先领域校验，updated_at 服务端生成）、list/get（normalizeMemory 归一化 + NOT_FOUND 语义）、appendEntry（空追加 400 拒绝）、deleteMemory（墓碑）、updateEntryContent（空白拒绝）
