@@ -99,9 +99,48 @@ function resetFetch(impl) { fetchLog = []; fetchImpl = impl; }
   const body = await callFixtures('?team=50');
   assert.ok(fetchLog.some(u => u.includes('team=50&last=5')), '单队查询必须走 last 接口');
   assert.ok(fetchLog.some(u => u.includes('team=50&next=10')), '单队查询必须走 next 接口');
+  assert.ok(fetchLog.every(u => u.includes('timezone=Asia%2FShanghai')), '所有查询带北京时区');
   assert.equal(body.data.matches.length, 2, '主队查询不受热门联赛过滤（league 999 保留）');
   const ids = body.data.matches.map(m => m.status);
   assert.ok(ids.includes('finished') && ids.includes('upcoming'), '最近+未来按时间合并');
+}
+
+// ---------- 4.5 V1.20.1：API-Football 请求失败（限流/密钥异常）→ fallback:true（前端降级旧数据源） ----------
+{
+  resetFetch(() => ({ ok: false, status: 429, json: async () => ({}) }));
+  const body = await callFixtures('?date=2026-08-31');
+  assert.equal(body.success, true);
+  assert.equal(body.data.fallback, true, 'API 失败必须标记 fallback，前端才回退 TheSportsDB');
+  assert.deepEqual(body.data.matches, []);
+}
+
+// ---------- 4.6 teams 搜索：中文别名（API-Football 只认英文名） ----------
+{
+  const { onRequestGet: teamsGet } = await import('../../functions/api/v1/football/teams.js');
+  async function callTeams(query) {
+    const req = new Request('http://localhost/api/v1/football/teams' + query);
+    const res = await teamsGet({ request: req, env: { FOOTBALL_API_KEY: 'test-key-123456' } });
+    return res.json();
+  }
+  // 中文 → 英文搜索词
+  resetFetch((u) => {
+    assert.ok(u.includes('search=Manchester%20City'), '中文"曼城"应转成英文搜索词: ' + u);
+    return { ok: true, json: async () => ({ response: [{ team: { id: 50, name: 'Manchester City', logo: '', country: 'England', founded: 1880 } }] }) };
+  });
+  let body = await callTeams('?search=' + encodeURIComponent('曼城'));
+  assert.equal(body.data.teams.length, 1);
+  assert.equal(body.data.teams[0].name, 'Manchester City');
+  // 无映射的中文词 → 不发请求，如实返回空（禁止假数据）
+  resetFetch(() => { throw new Error('不应发起请求'); });
+  body = await callTeams('?search=' + encodeURIComponent('不存在的队'));
+  assert.deepEqual(body.data.teams, []);
+  // 英文词直接透传
+  resetFetch((u) => {
+    assert.ok(u.includes('search=Arsenal'));
+    return { ok: true, json: async () => ({ response: [{ team: { id: 42, name: 'Arsenal', logo: '', country: 'England' } }] }) };
+  });
+  body = await callTeams('?search=Arsenal');
+  assert.equal(body.data.teams.length, 1);
 }
 
 // ---------- 5. league+next：赛事页未来 tab 的 URL 构造 ----------

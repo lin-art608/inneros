@@ -160,6 +160,9 @@
     const range = buildDayRange(ctx.tab || 'today');
     const team = ctx.team || null;
     const comp = ctx.competition || null;
+    // V1.20.1：赛事页不再按今天/明天分类——直接展示完整赛程（宽窗口 + 隐藏已结束，
+    // 空结果时由 Provider 的 next=N 自然递推到下一场比赛）
+    const isComp = (ctx.scope || 'all') === 'competition';
     return {
       sport: ctx.sport,
       scope: ctx.scope || 'all',
@@ -167,9 +170,9 @@
       team: team ? { id: String(team.id || ''), name: team.name || '', full: team.full || team.name || '' } : null,
       competitionId: comp ? String(comp.id != null ? comp.id : comp.name) : null,
       competitionName: comp ? (comp.name || '') : '',
-      from: range.from,
-      to: range.to,
-      status: 'all',
+      from: isComp ? todayKey() : range.from,
+      to: isComp ? dateKeyOffset(60) : range.to,
+      status: isComp ? 'upcoming' : 'all',
     };
   }
 
@@ -207,14 +210,12 @@
 
   // 足球 Provider：API-Football（/api/v1/football/**）
   // scope=team → 单队查询（last+next，不下载热门联赛再前端筛选）
-  // scope=competition → league 指定联赛；未来 tab 用 next=N
+  // scope=competition → league+next=25 完整未来赛程（V1.20.1 起赛事页不做日期分类）
   // scope=all → 按日期逐天拉（后端已做热门联赛过滤，仅赛事发现）
   function buildFootballUrls(q) {
     if (q.scope === 'team') return ['/api/v1/football/fixtures?team=' + encodeURIComponent(q.teamId)];
     if (q.scope === 'competition') {
-      const id = encodeURIComponent(q.competitionId);
-      if (q.from === q.to) return ['/api/v1/football/fixtures?league=' + id + '&date=' + q.from];
-      return ['/api/v1/football/fixtures?league=' + id + '&next=25'];
+      return ['/api/v1/football/fixtures?league=' + encodeURIComponent(q.competitionId) + '&next=25'];
     }
     const urls = [];
     for (let d = new Date(q.from + 'T12:00:00'); localDateKey(d) <= q.to; d.setDate(d.getDate() + 1)) {
@@ -288,6 +289,8 @@
     let matches = rawList.map(m => normalizeMatch(m, q.sport));
     // 日期过滤（本地时区自然日）
     matches = matches.filter(m => inDateRange(m, q.from, q.to));
+    // V1.20.1：赛事页（status=upcoming）隐藏已结束场次，只递推展示未开赛/直播
+    if (q.status === 'upcoming') matches = matches.filter(m => m.status.state !== 'finished');
     // 去重 + 排序（live 优先，其余按 startAt 升序）
     matches = dedupeMatches(matches);
     matches = sortMatches(matches);
@@ -332,12 +335,17 @@
     'NiP': 'NiP', 'Complexity': 'COL', 'Evil Geniuses': 'EG', 'paiN Gaming': 'paiN',
     'Imperial': 'Imperial', 'The MongolZ': '蒙古队', 'Team Falcons': 'Falcons',
     'Falcons': 'Falcons', 'Aurora Gaming': 'Aurora', 'BetBoom Team': 'BetBoom',
-    'TYLOO': '天禄', 'RA': 'RA', 'Wings Up': 'Wings Up', 'Dplus KIA': 'DK',
-    'T1': 'T1', 'Gen.G': 'Gen.G', 'DRX': 'DRX', 'Lynn Vision': 'LVG',
-    '9z Team': '9z', 'SAW': 'SAW', 'AMKAL': 'AMKAL', 'Eternal Fire': '永恒之火',
-    'Sangal': 'Sangal', 'Metizport': 'Metizport', 'Preasy': 'Preasy',
-    'Apeks': 'Apeks', 'BIG': 'BIG', 'Sprout': 'Sprout', 'HEET': 'HEET',
+    'BetBoom': 'BetBoom', 'TYLOO': '天禄', 'RA': 'RA', 'Rare Atom': 'RA',
+    'Wings Up': 'Wings Up', 'Dplus KIA': 'DK', 'T1': 'T1', 'Gen.G': 'Gen.G',
+    'DRX': 'DRX', 'Lynn Vision': 'LVG', '9z Team': '9z', '9z': '9z',
+    'SAW': 'SAW', 'AMKAL': 'AMKAL', 'Eternal Fire': '永恒之火', 'Sangal': 'Sangal',
+    'Metizport': 'Metizport', 'Preasy': 'Preasy', 'Apeks': 'Apeks', 'BIG': 'BIG',
+    'Sprout': 'Sprout', 'HEET': 'HEET', 'Virtus.pro': 'VP', 'Fnatic': 'FNC',
+    'GamerLegion': 'GL', 'B8': 'B8', '3DMAX': '3DMAX', 'Nexus': 'Nexus',
+    'PARIVISION': 'PARIVISION', 'FUT Esports': 'FUT', 'FUT': 'FUT',
+    'Legacy': 'Legacy', 'magic': 'magic', 'FlyQuest': 'FLY', 'M80': 'M80',
   };
+  // V1.20.1：整串精确映射（优先）+ 通用词逐个替换（兜底），保证赛事名尽量中文化
   const CS2_TOURNAMENT_CN = {
     'BLAST Premier Spring Groups': 'BLAST 春季小组赛',
     'BLAST Premier Fall Groups': 'BLAST 秋季小组赛',
@@ -352,14 +360,33 @@
     'IEM Dallas': 'IEM 达拉斯',
     'IEM Chengdu': 'IEM 成都',
     'IEM Sydney': 'IEM 悉尼',
+    'IEM Melbourne': 'IEM 墨尔本',
+    'IEM Bucharest': 'IEM 布加勒斯特',
     'Intel Extreme Masters': 'IEM 英特尔极限大师赛',
     'ESL Pro League': 'ESL 职业联赛',
     'ESL Challenger': 'ESL 挑战者联赛',
     'PGL Major': 'PGL Major',
+    'PGL Astana': 'PGL 阿斯塔纳',
     'DreamHack Masters': 'DreamHack 大师赛',
     'Thunderpick World Championship': 'Thunderpick 世界锦标赛',
     'RMR': 'RMR Major 预选赛',
     'Regional Major Ranking': 'RMR Major 预选赛',
+    'BLAST Premier': 'BLAST 超级赛',
+    'BLAST Open': 'BLAST 公开赛',
+    'BLAST Bounty': 'BLAST 赏金赛',
+    'Esports World Cup': '电竞世界杯',
+    'FISSURE Playground': 'FISSURE 系列赛',
+    'FISSURE Masters': 'FISSURE 大师赛',
+    'StarLadder Major': 'StarLadder Major 世界锦标赛',
+  };
+  // 通用词替换：按长度降序替换（避免 Group 先吃掉 Group A），品牌词（BLAST/IEM/ESL/PGL 等）保留
+  const CS2_TOURNAMENT_WORDS = {
+    'Groups': '小组赛', 'Group A': 'A组', 'Group B': 'B组', 'Group C': 'C组', 'Group D': 'D组',
+    'Playoffs': '季后赛', 'Play-offs': '季后赛', 'Playoff': '季后赛',
+    'Semifinals': '半决赛', 'Quarterfinals': '四分之一决赛', 'Finals': '总决赛', 'Final': '决赛',
+    'Season': '赛季', 'Qualifier': '预选赛', 'Stage 1': '第一阶段', 'Stage 2': '第二阶段', 'Stage 3': '第三阶段',
+    'Fall': '秋季', 'Spring': '春季', 'Winter': '冬季', 'Summer': '夏季',
+    'World Championship': '世界锦标赛', 'Championship': '锦标赛',
   };
   function cs2TeamCN(name) {
     if (!name) return name;
@@ -367,10 +394,14 @@
   }
   function cs2TournamentCN(name) {
     if (!name) return name;
-    for (const key in CS2_TOURNAMENT_CN) {
-      if (name.includes(key)) return name.replace(key, CS2_TOURNAMENT_CN[key]);
+    let out = String(name);
+    for (const key of Object.keys(CS2_TOURNAMENT_CN).sort((a, b) => b.length - a.length)) {
+      if (out.includes(key)) out = out.split(key).join(CS2_TOURNAMENT_CN[key]);
     }
-    return name;
+    for (const key of Object.keys(CS2_TOURNAMENT_WORDS).sort((a, b) => b.length - a.length)) {
+      out = out.split(key).join(CS2_TOURNAMENT_WORDS[key]);
+    }
+    return out;
   }
 
   // ========== 7. 图片代理（API-Football 图片需要 key） ==========
@@ -519,8 +550,8 @@
       title = `该${ctx.sport === 'cs2' ? '战队' : '球队'}${tabLabel}没有比赛`;
       desc = '试试其他日期，或回首页查看全部赛程';
     } else if (ctx.scope === 'competition') {
-      title = `${tabLabel}没有该赛事的比赛`;
-      desc = '试试其他日期，或换一个赛事';
+      title = '该赛事暂无未开赛的比赛';
+      desc = '本赛季赛程可能已收官，或数据源暂未覆盖该赛事';
     } else {
       title = `${tabLabel}没有比赛`;
       desc = '试试其他日期，或点击上方主队/赛事查看专属赛程';
@@ -555,6 +586,16 @@
       if (document.getElementById('sp-list-content') === contentEl) contentEl.innerHTML = renderError(e);
       return;
     }
+    // V1.20.1：当天无比赛时不显示空态，自动递推展示接下来 9 天内的比赛
+    if (!result.matches.length && (ctx.scope || 'all') === 'all' && (ctx.tab || 'today') !== 'future') {
+      const wide = { ...q, from: todayKey(), to: dateKeyOffset(9) };
+      try {
+        const wideResult = await querySchedule(wide);
+        if (wideResult.matches.length) {
+          result = { matches: wideResult.matches, stale: wideResult.stale, degraded: wideResult.degraded, widened: true };
+        }
+      } catch (e) { /* 递推失败保持空态 */ }
+    }
     await enrichBadges(result.matches, ctx.sport);
     if (document.getElementById('sp-list-content') !== contentEl) return; // 页面已切走，丢弃本次渲染
     if (result.matches.length === 0) {
@@ -562,9 +603,13 @@
       return;
     }
     let html = '';
+    if (result.widened) {
+      const tabLabel = (DAY_TABS.find(t => t.key === (ctx.tab || 'today')) || DAY_TABS[0]).label;
+      html += `<div class="sp-notice">${escapeHtml(tabLabel)}没有比赛，以下自动递推显示接下来的赛程</div>`;
+    }
     if (result.stale) html += `<div class="sp-notice sp-notice-stale">数据获取失败，以下为最近一次成功数据，可能已过期</div>`;
-    if (result.degraded === 'legacy') html += `<div class="sp-notice">当前环境未配置足球数据源（FOOTBALL_API_KEY），以下为旧数据源（TheSportsDB）赛程</div>`;
-    else if (result.degraded === 'no-key') html += `<div class="sp-notice">当前环境未配置足球数据源（FOOTBALL_API_KEY），暂无法查询主队/联赛赛程</div>`;
+    if (result.degraded === 'legacy') html += `<div class="sp-notice">足球数据源（API-Football）暂不可用，以下为旧数据源（TheSportsDB）赛程，可能不含全部联赛</div>`;
+    else if (result.degraded === 'no-key') html += `<div class="sp-notice">足球数据源（API-Football）暂不可用（未配置 FOOTBALL_API_KEY 或已限流），暂无法查询主队/联赛赛程</div>`;
     const groups = groupByLocalDate(result.matches);
     for (const g of groups) {
       html += `<div class="sp-date-group"><div class="sp-date-label">${escapeHtml(g.label)}</div><div class="sp-grid">`;
@@ -676,7 +721,7 @@
     const ctx = view.params;
     const isTeam = ctx.scope === 'team';
     const title = isTeam ? (ctx.team.name || '') : (ctx.competition.name || '');
-    const sub = `${ctx.sport === 'football' ? '足球' : 'CS2'} · ${isTeam ? '主队赛程' : '赛事赛程'}`;
+    const sub = `${ctx.sport === 'football' ? '足球' : 'CS2'} · ${isTeam ? '主队赛程' : '赛事完整赛程'}`;
     let scopeHtml;
     if (isTeam) {
       scopeHtml = renderBadge(ctx.team.badge, ctx.team.name);
@@ -686,6 +731,8 @@
         ? `<img src="${logo}" class="sp-league-logo" alt="" loading="lazy" onerror="this.style.display='none'">`
         : '<span class="sp-event-emoji">🏆</span>';
     }
+    // V1.20.1：赛事页不再按今天/明天分类，直接展示完整未来赛程（含递推到下一场）；主队页保留日期 tab
+    const tabsHtml = isTeam ? renderTabs(ctx.tab || 'today') : '';
     container.innerHTML = `<div class="sp-page-header">
         <button class="sp-back-btn" onclick="window.InnerOSSports.back()">← 返回</button>
         <div class="sp-scope-header">
@@ -696,7 +743,7 @@
           </div>
         </div>
       </div>
-      ${renderTabs(ctx.tab || 'today')}
+      ${tabsHtml}
       <div class="sp-container" id="sp-list-content">${renderSkeleton(6)}</div>`;
     loadList();
   }
@@ -779,6 +826,44 @@
   }
 
   // ========== 16. 搜索添加主队弹窗 ==========
+  // V1.20.1：API-Football 搜索只认英文名，中文关键词命中率低——弹窗默认展示热门队伍推荐（中文名直选）
+  const FOOTBALL_POPULAR_TEAMS = [
+    { id: '50', name: '曼城', full: 'Manchester City', logo: 'https://media-1.api-sports.io/football/teams/50.png' },
+    { id: '42', name: '阿森纳', full: 'Arsenal', logo: 'https://media-1.api-sports.io/football/teams/42.png' },
+    { id: '40', name: '利物浦', full: 'Liverpool', logo: 'https://media-1.api-sports.io/football/teams/40.png' },
+    { id: '33', name: '曼联', full: 'Manchester United', logo: 'https://media-1.api-sports.io/football/teams/33.png' },
+    { id: '49', name: '切尔西', full: 'Chelsea', logo: 'https://media-1.api-sports.io/football/teams/49.png' },
+    { id: '47', name: '热刺', full: 'Tottenham', logo: 'https://media-1.api-sports.io/football/teams/47.png' },
+    { id: '541', name: '皇马', full: 'Real Madrid', logo: 'https://media-1.api-sports.io/football/teams/541.png' },
+    { id: '529', name: '巴萨', full: 'FC Barcelona', logo: 'https://media-1.api-sports.io/football/teams/529.png' },
+    { id: '157', name: '拜仁', full: 'Bayern Munich', logo: 'https://media-1.api-sports.io/football/teams/157.png' },
+    { id: '505', name: '国米', full: 'Inter', logo: 'https://media-1.api-sports.io/football/teams/505.png' },
+    { id: '489', name: 'AC米兰', full: 'AC Milan', logo: 'https://media-1.api-sports.io/football/teams/489.png' },
+    { id: '85', name: '巴黎', full: 'Paris Saint Germain', logo: 'https://media-1.api-sports.io/football/teams/85.png' },
+  ];
+  const CS2_POPULAR_TEAMS = [
+    { id: 'lp:Natus Vincere', name: 'NAVI', full: 'Natus Vincere', logo: '' },
+    { id: 'lp:Team Spirit', name: 'Spirit', full: 'Team Spirit', logo: '' },
+    { id: 'lp:Team Vitality', name: 'Vitality', full: 'Team Vitality', logo: '' },
+    { id: 'lp:FaZe Clan', name: 'FaZe', full: 'FaZe Clan', logo: '' },
+    { id: 'lp:G2 Esports', name: 'G2', full: 'G2 Esports', logo: '' },
+    { id: 'lp:MOUZ', name: 'MOUZ', full: 'MOUZ', logo: '' },
+    { id: 'lp:Team Falcons', name: 'Falcons', full: 'Team Falcons', logo: '' },
+    { id: 'lp:Aurora Gaming', name: 'Aurora', full: 'Aurora Gaming', logo: '' },
+    { id: 'lp:FURIA Esports', name: 'FURIA', full: 'FURIA Esports', logo: '' },
+    { id: 'lp:The MongolZ', name: 'The MongolZ 蒙古队', full: 'The MongolZ', logo: '' },
+    { id: 'lp:TYLOO', name: 'TYLOO 天禄', full: 'TYLOO', logo: '' },
+    { id: 'lp:Lynn Vision', name: 'LVG', full: 'Lynn Vision', logo: '' },
+  ];
+  function renderPopularTeams(sport) {
+    const list = sport === 'football' ? FOOTBALL_POPULAR_TEAMS : CS2_POPULAR_TEAMS;
+    return `<div class="sp-popular-title">热门${sport === 'football' ? '球队' : '战队'}（点击直接添加）</div>
+      <div class="sp-popular-grid">` + list.map(t => `
+        <div class="sp-popular-item" onclick="window.InnerOSSports.confirmAddTeam('${escapeHtml(t.id)}', '${escapeHtml(t.name)}', '${escapeHtml(proxyImg(t.logo || ''))}', '${sport}', '${escapeHtml(t.full || '')}')">
+          ${renderBadge(proxyImg(t.logo || ''), t.name)}
+          <span class="sp-popular-name">${escapeHtml(t.name)}</span>
+        </div>`).join('') + `</div>`;
+  }
   async function searchFootballTeams(q) {
     const res = await window.InnerOSApi.get('/api/v1/football/teams?search=' + encodeURIComponent(q));
     return (res.data && res.data.teams) || [];
@@ -805,10 +890,8 @@
           <button class="sp-modal-close" onclick="window.InnerOSSports.closeAddTeamModal()">×</button>
         </div>
         <div class="sp-modal-body">
-          <input type="text" class="sp-search-input" id="sp-team-search-input" placeholder="输入球队名称搜索..." autocomplete="off">
-          <div class="sp-search-results" id="sp-team-search-results">
-            <div class="sp-search-hint">输入球队名称，如"曼城"、"皇马"、"NAVI"</div>
-          </div>
+          <input type="text" class="sp-search-input" id="sp-team-search-input" placeholder="输入球队名称（支持中文，如"曼城"、"NAVI"）..." autocomplete="off">
+          <div class="sp-search-results" id="sp-team-search-results">${renderPopularTeams(sport)}</div>
         </div>
       </div>`;
     document.body.appendChild(modal);
@@ -821,7 +904,7 @@
       const q = input.value.trim();
       clearTimeout(searchTimer);
       if (q.length < 1) {
-        results.innerHTML = '<div class="sp-search-hint">输入球队名称，如"曼城"、"皇马"、"NAVI"</div>';
+        results.innerHTML = renderPopularTeams(sport);
         return;
       }
       results.innerHTML = '<div class="sp-search-loading">搜索中...</div>';
@@ -831,7 +914,7 @@
           teams = sport === 'football' ? await searchFootballTeams(q) : await searchCS2Teams(q);
         } catch (e) { teams = []; }
         if (!teams.length) {
-          results.innerHTML = '<div class="sp-search-empty">未找到相关球队，试试其他关键词</div>';
+          results.innerHTML = `<div class="sp-search-empty">未找到「${escapeHtml(q)}」——可输入英文名重试（数据源只认英文名），或从下方热门队伍中选择</div>` + renderPopularTeams(sport);
           return;
         }
         results.innerHTML = teams.map(t => {
@@ -944,6 +1027,8 @@
       teamIdentityKeys: teamIdentityKeys,
       filterCS2ByTeam: filterCS2ByTeam,
       competitionKey: competitionKey,
+      cs2TeamCN: cs2TeamCN,
+      cs2TournamentCN: cs2TournamentCN,
       DAY_TABS: DAY_TABS,
       POPULAR_LEAGUES: POPULAR_LEAGUES,
       TTL: TTL,

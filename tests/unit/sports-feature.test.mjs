@@ -159,6 +159,12 @@ function C() {
   assert.equal(q.status, 'all');
   const q2 = Core.buildQuery({ sport: 'cs2', scope: 'competition', competition: { id: 'BLAST Premier Fall Groups', name: 'BLAST 秋季小组赛' }, tab: 'today' });
   assert.equal(q2.competitionId, 'BLAST Premier Fall Groups');
+  // V1.20.1：赛事页宽窗口（今天起 60 天）+ status=upcoming（隐藏已结束）
+  assert.equal(q2.from, Core.todayKey(), '赛事页从今天开始');
+  assert.equal(q2.to, Core.dateKeyOffset(60), '赛事页 60 天宽窗口');
+  assert.equal(q2.status, 'upcoming', '赛事页隐藏已结束场次');
+  const q3 = Core.buildQuery({ sport: 'football', scope: 'all', tab: 'today' });
+  assert.equal(q3.status, 'all', '首页/主队页不过滤状态');
 }
 
 // ---------- 10. Provider 请求构造：主队查询不受热门联赛过滤 ----------
@@ -169,12 +175,10 @@ function C() {
   assert.equal(teamUrls.length, 1);
   assert.ok(teamUrls[0].includes('team=50'));
   assert.ok(!teamUrls[0].includes('league='));
-  // 足球 competition：指定联赛
+  // 足球 competition：完整未来赛程（V1.20.1 起恒走 league+next，不再按日期分类）
   const compUrls = Core.buildFootballUrls({ scope: 'competition', competitionId: '39', from: '2026-08-31', to: '2026-08-31' });
-  assert.ok(compUrls[0].includes('league=39') && compUrls[0].includes('date=2026-08-31'));
-  // 足球 competition 未来：league + next
-  const compFuture = Core.buildFootballUrls({ scope: 'competition', competitionId: '39', from: Core.dateKeyOffset(3), to: Core.dateKeyOffset(9) });
-  assert.ok(compFuture[0].includes('league=39') && compFuture[0].includes('next=25'));
+  assert.ok(compUrls[0].includes('league=39') && compUrls[0].includes('next=25'), '赛事页请求完整赛程: ' + compUrls[0]);
+  assert.ok(!compUrls[0].includes('date='), '赛事页不做日期过滤');
   // 首页 scope=all 未来：+3..+9 逐天
   const allFuture = Core.buildFootballUrls({ scope: 'all', from: Core.dateKeyOffset(3), to: Core.dateKeyOffset(9) });
   assert.equal(allFuture.length, 7);
@@ -257,6 +261,38 @@ function C() {
   const r = await h.S.Core.querySchedule(q);
   assert.equal(r.matches.length, 1, '赛事页以 competitionId 为第一过滤条件');
   assert.equal(r.matches[0].competition.name, 'IEM 科隆');
+}
+
+// ---------- 14.5 CS2 赛事名多词翻译（V1.20.1：英文赛事名中文化） ----------
+{
+  const Core = C();
+  assert.equal(Core.cs2TournamentCN('BLAST Open Fall 2026 - Group A'), 'BLAST 公开赛 秋季 2026 - A组');
+  assert.equal(Core.cs2TournamentCN('FISSURE Playground #3 - Group B'), 'FISSURE 系列赛 #3 - B组');
+  assert.equal(Core.cs2TournamentCN('Esports World Cup 2026 - Groups'), '电竞世界杯 2026 - 小组赛');
+  assert.equal(Core.cs2TournamentCN('IEM Melbourne'), 'IEM 墨尔本');
+  assert.equal(Core.cs2TournamentCN('BLAST Premier Fall Groups'), 'BLAST 秋季小组赛', '整串精确映射优先');
+  assert.equal(Core.cs2TournamentCN('StarLadder Major'), 'StarLadder Major 世界锦标赛');
+  assert.equal(Core.cs2TournamentCN(''), '');
+}
+
+// ---------- 14.6 querySchedule：赛事页（status=upcoming）过滤已结束场次 ----------
+{
+  const tsFuture = new Date(); tsFuture.setDate(tsFuture.getDate() + 1); tsFuture.setHours(18, 0, 0, 0);
+  const raw = [
+    { id: 'f1', home_id: '50', home_name: 'Man City', away_id: '42', away_name: 'Arsenal', ts: tsFuture.getTime(), league: 'Premier League', league_id: '39', status: 'upcoming' },
+    { id: 'f2', home_id: '33', home_name: 'Man Utd', away_id: '49', home_badge: '', away_name: 'Chelsea', ts: tsFuture.getTime() + 3600e3, league: 'Premier League', league_id: '39', status: 'finished', home_score: 2, away_score: 1 },
+  ];
+  const h = load({
+    getImpl: async (path) => {
+      assert.ok(path.includes('league=39') && path.includes('next=25'), '赛事页走 league+next: ' + path);
+      return { data: { matches: raw } };
+    },
+    fetchImpl: async () => ({ ok: true, json: async () => ({ matches: [] }) }),
+  });
+  const q = h.S.Core.buildQuery({ sport: 'football', scope: 'competition', competition: { id: '39', name: '英超' }, tab: 'today' });
+  const r = await h.S.Core.querySchedule(q);
+  assert.equal(r.matches.length, 1, '已结束场次在赛事页不显示');
+  assert.equal(r.matches[0].id, 'f1');
 }
 
 // ---------- 15. 缓存：TTL 内切换日期/主队不重复请求 ----------

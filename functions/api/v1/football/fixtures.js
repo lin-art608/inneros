@@ -5,7 +5,9 @@
 //   team=id           过滤球队（单队最近 5 场 + 未来 10 场）
 //   live=all          仅实时比赛
 //   next=10           未来 N 场（与 league 组合：联赛未来赛程）
-// 未配置 FOOTBALL_API_KEY 时返回 { matches: [], fallback: true }，前端回退旧接口。
+// 所有查询带 timezone=Asia/Shanghai（按北京时间自然日过滤与展示，跨午夜场次不漏）。
+// 未配置 FOOTBALL_API_KEY **或 API-Football 请求失败（限流/密钥异常）** 时均返回
+// { matches: [], fallback: true }，前端回退旧接口（V1.20.1 修复）。
 
 import { fetchFootball, normalizeFixture, hasKey, POPULAR_LEAGUES } from '../../../_services/football-client.js';
 import { ok, fail, errors } from '../../../_infra/errors.js';
@@ -33,8 +35,8 @@ export async function onRequestGet(context) {
     } else if (team) {
       // 球队最近+未来赛程
       const [last, nextRes] = await Promise.all([
-        fetchFootball(`/fixtures?team=${encodeURIComponent(team)}&last=5`, env, 120),
-        fetchFootball(`/fixtures?team=${encodeURIComponent(team)}&next=10`, env, 120),
+        fetchFootball(`/fixtures?team=${encodeURIComponent(team)}&last=5&timezone=Asia%2FShanghai`, env, 120),
+        fetchFootball(`/fixtures?team=${encodeURIComponent(team)}&next=10&timezone=Asia%2FShanghai`, env, 120),
       ]);
       const matches = [
         ...((last?.response || []).map(normalizeFixture)),
@@ -42,17 +44,20 @@ export async function onRequestGet(context) {
       ].sort((a, b) => (a.ts || 0) - (b.ts || 0));
       return ok({ matches, count: matches.length });
     } else if (leagueParam && next) {
-      // 指定联赛未来 N 场（赛事页"未来" tab；主队查询不受热门联赛过滤）
-      path = `/fixtures?league=${encodeURIComponent(leagueParam)}&next=${encodeURIComponent(next)}`;
+      // 指定联赛未来 N 场（赛事页完整赛程；主队查询不受热门联赛过滤）
+      path = `/fixtures?league=${encodeURIComponent(leagueParam)}&next=${encodeURIComponent(next)}&timezone=Asia%2FShanghai`;
     } else {
       // 按日期赛程（默认今天，北京时间）
       const date = dateParam || getBeijingDate();
       path = `/fixtures?date=${date}`;
       if (leagueParam) path += `&league=${encodeURIComponent(leagueParam)}`;
+      path += '&timezone=Asia%2FShanghai';
     }
 
     const data = await fetchFootball(path, env, 60); // 赛程缓存 60s
-    if (!data) return ok({ matches: [], fallback: false, message: 'API-Football 请求失败' });
+    // V1.20.1 fix：API-Football 请求失败（限流/密钥异常）时也必须标记 fallback:true，
+    // 前端才回退 TheSportsDB 旧数据源——此前返回 false 导致足球页全空
+    if (!data) return ok({ matches: [], fallback: true, message: 'API-Football 请求失败（可能限流或密钥异常），已回退旧数据源' });
 
     let matches = (data.response || []).map(normalizeFixture);
 

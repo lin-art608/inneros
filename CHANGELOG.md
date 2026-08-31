@@ -7,6 +7,25 @@
 
 ## [Unreleased]
 
+### V1.20.1 Sports Center V2 用户反馈修复：足球空数据 / CS2 英文 / 中文搜索 / 赛事页改完整赛程（2026-08-31）
+
+用户实测反馈四项问题逐一修复。**根因 1（最严重）**：线上 `FOOTBALL_API_KEY` 已配置但 API-Football 请求失败（限流或密钥异常，接口返回"API-Football 请求失败"），而 `fixtures.js` 此时错误地标记 `fallback:false` → 前端不降级旧数据源 → 足球页全空（旧数据源 TheSportsDB 本身正常，当天有英超/西甲/意甲 3 场）。
+
+- **fix：足球空数据（根因：fallback 语义错误）**——`fixtures.js` 在 API-Football 请求失败（429 限流/密钥异常）时改为返回 `fallback:true`，前端立即回退 TheSportsDB 旧数据源；降级提示条改为"足球数据源暂不可用"（不再误导为"未配置 key"）。**注意：API-Football 免费档 100 次/天限流是常态，降级链路从此真正生效**
+- **fix：中文搜索（根因：API-Football search 只认英文名）**——`teams.js` 与 `server.py` 双端加中文别名表（60+ 常用队：曼城/阿仙奴/枪手/皇马/巴萨/拜仁/国米/中超各队…），中文关键词转英文再查 API；无映射的中文词如实返回空 + 提示换英文
+- **feat：热门队伍推荐栏**——添加主队弹窗打开即展示 12 支热门球队（曼城/阿森纳/利物浦/曼联/切尔西/热刺/皇马/巴萨/拜仁/国米/AC米兰/巴黎，含真实队徽）与 12 支热门 CS2 战队（NAVI/Spirit/Vitality/FaZe/G2/MOUZ/Falcons/Aurora/FURIA/蒙古队/天禄/LVG），点击直接添加；搜索无结果时也展示推荐栏兜底
+- **fix：CS2 赛事名英文（根因：映射表覆盖不足）**——映射表从 22 条扩到 70+：整串精确映射（长词优先替换）+ 通用词替换兜底（Groups→小组赛/Group A→A组/Playoffs→季后赛/Fall→秋季/Season→赛季…），BLAST Open/FISSURE/电竞世界杯/StarLadder Major 等当前进行赛事全部可译；战队表补 VP/FNC/magic/FUT/Legacy/FlyQuest/M80 等
+- **fix：赛事页按今天/明天分类 + "无比赛"空态**——赛事页（scope=competition）去掉日期 tab，直接展示完整未来赛程：足球恒走 `league+next=25`（递推下一场比赛）、CS2 用 60 天宽窗口；已结束场次过滤不显示（status=upcoming）；空态文案改为"该赛事暂无未开赛的比赛"。首页当天无比赛时自动递推展示未来 9 天赛程 + 顶部提示条（不再冷冰冰显示"没有比赛"）
+- **fix：时区**——所有 API-Football 查询补 `timezone=Asia/Shanghai`，避免跨午夜场次漏/错组
+- **Changed：主队页保留日期 tab**（跨天查询是主队页刚需），只有赛事页去掉
+- **未改**：D1 / 同步 / 媒体链路 / 统一 Match 模型。
+
+#### 实测
+- 单测：sports-feature 新增 3 组（buildQuery 宽窗口/CS2 多词翻译/赛事页过滤已结束）、sports-backend 新增 2 组（API 429→fallback:true/中文别名搜索），全量 12 套测试通过
+- `node --check` app.js / sports.js 通过；`py_compile` server.py 通过
+- 线上诊断（python UA 直探）：API-Football 请求失败已确认（返回 message「API-Football 请求失败」），TheSportsDB 与 Liquipedia 正常；修复部署后足球页应显示 TheSportsDB 赛程 + 降级提示条
+- **遗留告知用户**：API-Football 免费档限流（100 次/天）配额用尽时长时间降级是预期行为；如需足球主链稳定需升级付费档或换数据源
+
 ### V1.20.0 Sports Center V2：足球 + CS2 统一赛程中心（2026-08-31）
 
 按施工方案（`InnerOS Sports Center V2 足球/CS2 统一赛程中心`）完成统一重构。用户只理解三个层次：**我的主队 / 赛事 / 日期**，底层 Provider（API-Football / Liquipedia）差异全部被统一模型屏蔽。
