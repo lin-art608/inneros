@@ -263,19 +263,22 @@ function parseLpTicker(html) {
 // A 级以上赛事白名单（S-Tier / A-Tier），只保留这些赛事的比赛
 const CS2_TIER1_KEYWORDS = [
   'BLAST Premier', 'BLAST.tv', 'BLAST World Final', 'BLAST Spring Final', 'BLAST Fall Final',
+  'BLAST Open', 'BLAST Showdown', 'BLAST Spring Groups', 'BLAST Fall Groups',
   'IEM', 'Intel Extreme Masters',
   'ESL Pro League',
-  'PGL Major', 'Major',
+  'PGL Major', 'PGL Cluj', 'PGL Bucharest', 'PGL Astana', 'Major',
   'DreamHack Masters',
   'Thunderpick World Championship',
   'RMR', 'Regional Major Ranking',
-  'ESL Challenger at', 'IEM Katowice', 'IEM Cologne', 'IEM Rio', 'IEM Dallas', 'IEM Chengdu',
-  'BLAST Showdown',
+  'Esports World Cup',
+  'FISSURE Playground', 'FISSURE Masters',
+  'BLAST Bounty',
 ];
 // 排除关键词（明确的 B 级及以下）
 const CS2_TIER_EXCLUDE = [
   'Open Qualifier', 'Closed Qualifier', 'Regional League', 'ESEA', '5E', 'Perfect World',
   'Champions Cup Finals', 'CCT', 'Elisa', 'Pinnacle Cup', 'Funspark', 'REPUBLEAGUE',
+  'ECL', 'United21', 'NODWIN', 'Clutch Series', 'YaLLa', 'Snow Sweet', 'Malta',
 ];
 function isCS2Tier1(league) {
   if (!league) return false;

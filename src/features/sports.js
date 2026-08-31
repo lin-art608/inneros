@@ -112,6 +112,8 @@
     if (!name) return name;
     return CS2_TEAM_CN[name] || name;
   }
+  // 队名归一化匹配键（小写去符号），兼容全称/短名/中文名
+  function normKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9一-鿿]/g, ''); }
   function cs2TournamentCN(name) {
     if (!name) return name;
     for (const key in CS2_TOURNAMENT_CN) {
@@ -121,13 +123,25 @@
   }
 
   // ========== 数据获取 ==========
+  // 日期赛程内存缓存（5 分钟），避免切换 tab 重复消耗 API 配额
+  const fixturesCache = {};
+  const FIXTURES_TTL = 5 * 60 * 1000;
   async function fetchFootballFixtures(date) {
     const d = date || getToday();
+    const cached = fixturesCache[d];
+    if (cached && Date.now() - cached.ts < FIXTURES_TTL) return cached.data;
     try {
       const res = await window.InnerOSApi.get(`/api/v1/football/fixtures?date=${d}`);
-      if (res.data && res.data.fallback) return fetchLegacyFootball();
-      return (res.data && res.data.matches) || [];
-    } catch (e) { return fetchLegacyFootball(); }
+      let data;
+      if (res.data && res.data.fallback) data = await fetchLegacyFootball();
+      else data = (res.data && res.data.matches) || [];
+      fixturesCache[d] = { ts: Date.now(), data };
+      return data;
+    } catch (e) {
+      const fallback = await fetchLegacyFootball();
+      fixturesCache[d] = { ts: Date.now(), data: fallback };
+      return fallback;
+    }
   }
   async function fetchLegacyFootball() {
     try {
@@ -430,10 +444,11 @@
     let matches = await fetchFootballFixtures(date);
     if (leagueId) matches = matches.filter(m => String(m.league_id) === String(leagueId));
 
-    // 无比赛时回退：拉取最近 3 天 + 未来 3 天
+    // 无比赛时回退：拉取最近 2 天 + 未来 2 天（有内存缓存，不重复消耗配额）
+    let fallbackNotice = '';
     if (matches.length === 0) {
       const all = [];
-      for (let offset = -3; offset <= 3; offset++) {
+      for (let offset = -2; offset <= 2; offset++) {
         if (offset === 0) continue;
         const d = getDateOffset(offset);
         let dayMatches = await fetchFootballFixtures(d);
@@ -441,9 +456,7 @@
         all.push(...dayMatches);
       }
       matches = all;
-      if (matches.length) {
-        contentEl.innerHTML = `<div class="sp-no-today-notice">当天无比赛，以下为最近几天的赛程</div>` + contentEl.innerHTML;
-      }
+      if (matches.length) fallbackNotice = `<div class="sp-no-today-notice">当天无比赛，以下为最近几天的赛程</div>`;
     }
 
     matches = await enrichBadges(matches, 'football');
@@ -452,15 +465,13 @@
       return;
     }
     const groups = groupByDate(matches);
-    let html = '';
+    let html = fallbackNotice;
     for (const g of groups) {
       html += `<div class="sp-date-group"><div class="sp-date-label">${formatDateLabel(g.date)}</div><div class="sp-grid">`;
       for (const m of g.matches) html += renderMatchCard(m, 'football', false);
       html += `</div></div>`;
     }
-    // 保留无比赛提示
-    const notice = contentEl.querySelector('.sp-no-today-notice');
-    contentEl.innerHTML = (notice ? notice.outerHTML : '') + html;
+    contentEl.innerHTML = html;
   }
 
   // ========== 主队赛程页 ==========
@@ -479,11 +490,11 @@
     if (sport === 'football') {
       matches = await fetchFootballTeamFixtures(teamId);
     } else {
+      // CS2：用归一化键模糊匹配（兼容 Liquipedia 全称/短名/中文名）
       const all = await fetchCS2Matches();
-      const cnName = cs2TeamCN(teamName);
+      const keys = new Set([normKey(teamId), normKey(teamName), normKey(cs2TeamCN(teamName))].filter(Boolean));
       matches = all.filter(m =>
-        m.home_name === teamName || m.away_name === teamName ||
-        m.home_name === cnName || m.away_name === cnName
+        [m.home_id, m.home_name, m.away_id, m.away_name].some(x => keys.has(normKey(x)))
       );
     }
     matches = await enrichBadges(matches, sport);

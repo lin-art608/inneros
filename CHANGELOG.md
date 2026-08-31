@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+### V1.19.3 修复 CS2 A级白名单漏判 + 足球赛程缓存 + CS2主队模糊匹配（2026-08-31）
+
+- **fix：CS2 A级白名单漏判**——线上实测发现 "BLAST Open Fall 2026"（24场）和 "Esports World Cup"（电竞世界杯）被误杀（白名单只有 BLAST Premier，没覆盖 BLAST Open）；同时 ECL/United21/NODWIN Clutch Series 等小赛事漏网。白名单补充 BLAST Open/BLAST Bounty/PGL 分站/FISSURE Playground/FISSURE Masters/Esports World Cup；排除表补充 ECL/United21/NODWIN/Clutch Series/YaLLa/Snow Sweet/Malta
+- **fix：足球赛程重复消耗 API 配额**——切换今天/明天/后天 tab 会重复请求同一天数据，新增 5 分钟内存缓存；无比赛回退范围从 ±3 天收窄到 ±2 天，并修复回退提示被覆盖的渲染 bug
+- **fix：CS2 主队赛程匹配失败**——Liquipedia 搜索返回全称（Natus Vincere）而赛程显示中文短名（NAVI）导致精确匹配失败，改为归一化键模糊匹配（小写去符号，兼容全称/短名/中文名/id）
+- **排查记录**：v1.19.1/v1.19.2 代码已在 git 仓库但 Cloudflare Pages 线上仍为 v1.19.0——属部署未触发，非代码问题；需在 CF Dashboard 检查 Git 集成或手动 Retry deployment
+
+#### 实测
+- `node --check`：app.js / sports.js / sports.js(后端) 全部通过
+- 线上接口探测：CS2 旧接口返回 49 场（含 BLAST Open 24 场需保留、ECL/CCT/United21 等需过滤），验证白名单修正方向
+
 ### V1.19.2 赛事界面修复（搜索式添加主队+去首字母fallback+联赛logo代理+无比赛回退+CS2 A级过滤）（2026-08-31）
 
 - **fix：主队添加逻辑重构**——不再调用不存在的 `openTeamSelector`（会弹 alert），改为内置搜索弹窗：
