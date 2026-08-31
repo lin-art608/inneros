@@ -1,13 +1,13 @@
 // GET /api/v1/football/image?url=xxx —— API-Football 图片代理
-// media-1.api-sports.io 的图片需要 API key 才能访问，通过后端代理解决 CORS/鉴权问题。
-// 缓存 24 小时。
-import { hasKey } from '../../../_services/football-client.js';
+// media-1.api-sports.io 的图片 CDN 是公开的，**不需要也不携带 API key**
+// （V1.20.2 修复：带坏 key 请求会被上游拒绝，导致队徽全挂只剩字母）。
+// 后端代理只为统一 CORS。缓存 24 小时。
 import { errors } from '../../../_infra/errors.js';
 
 const ALLOWED_HOSTS = ['media-1.api-sports.io', 'media.api-sports.io'];
 
 export async function onRequestGet(context) {
-  const { request, env } = context;
+  const { request } = context;
   const url = new URL(request.url);
   const target = url.searchParams.get('url');
 
@@ -23,12 +23,8 @@ export async function onRequestGet(context) {
     return errors.validation('不允许的图片域名');
   }
 
-  const headers = {};
-  if (hasKey(env)) headers['x-apisports-key'] = env.FOOTBALL_API_KEY;
-
   try {
     const res = await fetch(target, {
-      headers,
       cf: { cacheEverything: true, cacheTtl: 86400 },
     });
     if (!res.ok) return new Response('图片获取失败', { status: 404 });

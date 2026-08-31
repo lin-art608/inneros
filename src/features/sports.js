@@ -252,6 +252,9 @@
       [m.home_id, m.home_name, m.away_id, m.away_name].some(x => keys.has(normKey(x))));
   }
   function competitionKey(s) { return normKey(s); }
+  // V1.20.2：CS2 赛事基础名（剥掉 " - Group A/Playoffs" 等阶段后缀）——
+  // 同一赛事的 A/B 组在首页合并为一张赛事卡，赛事页也展示全部小组
+  function cs2BaseLeague(league) { return String(league || '').split(' - ')[0].trim(); }
 
   // ========== 5. SportsScheduleService ==========
   // query → Provider 拉取 → scope 过滤 → normalizeMatch → 日期过滤 → 去重 → 排序
@@ -281,7 +284,7 @@
     // scope 过滤（Provider 侧第一过滤条件）
     if (q.sport === 'cs2') {
       if (q.scope === 'team') rawList = filterCS2ByTeam(rawList, q.team);
-      else if (q.scope === 'competition') rawList = rawList.filter(m => competitionKey(m.league) === competitionKey(q.competitionId));
+      else if (q.scope === 'competition') rawList = rawList.filter(m => competitionKey(cs2BaseLeague(m.league)) === competitionKey(q.competitionId));
     } else if (q.scope === 'competition') {
       rawList = rawList.filter(m => String(m.league_id) === String(q.competitionId));
     }
@@ -687,12 +690,13 @@
       return;
     }
     // CS2：从 A 级赛程派生赛事列表（与日期列表共用同一缓存，零额外请求）
+    // V1.20.2：按基础名聚合——同一赛事的 Group A/B 合并为一张卡（不再分开显示）
     try {
       const r = await fetchRaw(buildCS2Url({ scope: 'all' }));
       const raw = (r.data && r.data.matches) || [];
       const byComp = new Map();
       for (const m of raw) {
-        const key = m.league || '其他赛事';
+        const key = cs2BaseLeague(m.league) || '其他赛事';
         if (!byComp.has(key)) byComp.set(key, { league: key, count: 0, nextTs: Infinity });
         const c = byComp.get(key);
         c.count++;
@@ -842,18 +846,18 @@
     { id: '85', name: '巴黎', full: 'Paris Saint Germain', logo: 'https://media-1.api-sports.io/football/teams/85.png' },
   ];
   const CS2_POPULAR_TEAMS = [
-    { id: 'lp:Natus Vincere', name: 'NAVI', full: 'Natus Vincere', logo: '' },
-    { id: 'lp:Team Spirit', name: 'Spirit', full: 'Team Spirit', logo: '' },
-    { id: 'lp:Team Vitality', name: 'Vitality', full: 'Team Vitality', logo: '' },
-    { id: 'lp:FaZe Clan', name: 'FaZe', full: 'FaZe Clan', logo: '' },
-    { id: 'lp:G2 Esports', name: 'G2', full: 'G2 Esports', logo: '' },
-    { id: 'lp:MOUZ', name: 'MOUZ', full: 'MOUZ', logo: '' },
-    { id: 'lp:Team Falcons', name: 'Falcons', full: 'Team Falcons', logo: '' },
-    { id: 'lp:Aurora Gaming', name: 'Aurora', full: 'Aurora Gaming', logo: '' },
-    { id: 'lp:FURIA Esports', name: 'FURIA', full: 'FURIA Esports', logo: '' },
-    { id: 'lp:The MongolZ', name: 'The MongolZ 蒙古队', full: 'The MongolZ', logo: '' },
-    { id: 'lp:TYLOO', name: 'TYLOO 天禄', full: 'TYLOO', logo: '' },
-    { id: 'lp:Lynn Vision', name: 'LVG', full: 'Lynn Vision', logo: '' },
+    { id: 'lp:Natus Vincere', name: 'NAVI', full: 'Natus Vincere', logo: 'https://r2.thesportsdb.com/images/media/team/badge/jzfnzf1761226695.png' },
+    { id: 'lp:Team Spirit', name: 'Spirit', full: 'Team Spirit', logo: 'https://r2.thesportsdb.com/images/media/team/badge/wgjk2p1714390105.png' },
+    { id: 'lp:Team Vitality', name: 'Vitality', full: 'Team Vitality', logo: 'https://r2.thesportsdb.com/images/media/team/badge/1k8hie1761293957.png' },
+    { id: 'lp:FaZe Clan', name: 'FaZe', full: 'FaZe Clan', logo: 'https://r2.thesportsdb.com/images/media/team/badge/mk07e01549466609.png' },
+    { id: 'lp:G2 Esports', name: 'G2', full: 'G2 Esports', logo: 'https://r2.thesportsdb.com/images/media/team/badge/0vkww41675440633.png' },
+    { id: 'lp:MOUZ', name: 'MOUZ', full: 'MOUZ', logo: 'https://r2.thesportsdb.com/images/media/team/badge/7coikd1705438948.png' },
+    { id: 'lp:Team Falcons', name: 'Falcons', full: 'Team Falcons', logo: 'https://r2.thesportsdb.com/images/media/team/badge/xqtl881714340183.png' },
+    { id: 'lp:Aurora Gaming', name: 'Aurora', full: 'Aurora Gaming', logo: 'https://liquipedia.net/commons/images/thumb/3/32/Aurora_Gaming_2025_full_allmode.png/600px-Aurora_Gaming_2025_full_allmode.png' },
+    { id: 'lp:FURIA Esports', name: 'FURIA', full: 'FURIA Esports', logo: 'https://r2.thesportsdb.com/images/media/team/badge/es3htk1705439167.png' },
+    { id: 'lp:The MongolZ', name: 'The MongolZ 蒙古队', full: 'The MongolZ', logo: 'https://liquipedia.net/commons/images/thumb/2/2b/The_MongolZ_2024_03_allmode.png/600px-The_MongolZ_2024_03_allmode.png' },
+    { id: 'lp:TYLOO', name: 'TYLOO 天禄', full: 'TYLOO', logo: 'https://liquipedia.net/commons/images/thumb/5/5f/TyLoo_2016_allmode.png/600px-TyLoo_2016_allmode.png' },
+    { id: 'lp:Lynn Vision', name: 'LVG', full: 'Lynn Vision', logo: 'https://liquipedia.net/commons/images/thumb/b/b5/Lynn_Vision_Gaming_2024_full_allmode.png/600px-Lynn_Vision_Gaming_2024_full_allmode.png' },
   ];
   function renderPopularTeams(sport) {
     const list = sport === 'football' ? FOOTBALL_POPULAR_TEAMS : CS2_POPULAR_TEAMS;
@@ -1029,6 +1033,7 @@
       competitionKey: competitionKey,
       cs2TeamCN: cs2TeamCN,
       cs2TournamentCN: cs2TournamentCN,
+      cs2BaseLeague: cs2BaseLeague,
       DAY_TABS: DAY_TABS,
       POPULAR_LEAGUES: POPULAR_LEAGUES,
       TTL: TTL,

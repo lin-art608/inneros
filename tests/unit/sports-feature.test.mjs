@@ -275,6 +275,16 @@ function C() {
   assert.equal(Core.cs2TournamentCN(''), '');
 }
 
+// ---------- 14.55 CS2 赛事按基础名聚合（V1.20.2：同赛事 A/B 组不再分卡） ----------
+{
+  const Core = C();
+  assert.equal(Core.cs2BaseLeague('BLAST Open Fall 2026 - Group A'), 'BLAST Open Fall 2026');
+  assert.equal(Core.cs2BaseLeague('FISSURE Playground #3 - Group B'), 'FISSURE Playground #3');
+  assert.equal(Core.cs2BaseLeague('IEM Cologne'), 'IEM Cologne', '无分组后缀原样返回');
+  assert.equal(Core.cs2BaseLeague(''), '');
+  assert.equal(Core.cs2BaseLeague(null), '', '空值兜底');
+}
+
 // ---------- 14.6 querySchedule：赛事页（status=upcoming）过滤已结束场次 ----------
 {
   const tsFuture = new Date(); tsFuture.setDate(tsFuture.getDate() + 1); tsFuture.setHours(18, 0, 0, 0);

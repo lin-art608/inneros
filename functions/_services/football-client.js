@@ -5,6 +5,19 @@
 
 const BASE = 'https://v3.football.api-sports.io';
 
+// V1.20.2：记录最近一次上游状态码，供路由写进错误 message（用户可在 UI 直接看到
+// 是 401（key 无效）/403（被封禁）/429（限流）——排查不用猜）
+let _lastStatus = 0;
+export function lastFootballStatus() { return _lastStatus; }
+export function footballStatusHint() {
+  const s = _lastStatus;
+  if (s === 401) return `HTTP 401：FOOTBALL_API_KEY 无效或已重置，请到 Cloudflare Pages → Settings → Variables 核对`;
+  if (s === 403) return `HTTP 403：key 被封禁或订阅过期（dashboard.api-football.com 查看）`;
+  if (s === 429) return `HTTP 429：免费档 100 次/天已用尽（UTC 0 点重置），明天自动恢复`;
+  if (s > 0) return `HTTP ${s}`;
+  return '';
+}
+
 export function hasKey(env) {
   return !!(env && env.FOOTBALL_API_KEY && env.FOOTBALL_API_KEY.length > 5);
 }
@@ -20,9 +33,11 @@ export async function fetchFootball(path, env, cacheTtl = 300) {
     cf: { cacheEverything: true, cacheTtl },
   });
   if (!res.ok) {
+    _lastStatus = res.status;
     console.error('[football] API', res.status, path);
     return null;
   }
+  _lastStatus = 0;
   return res.json();
 }
 

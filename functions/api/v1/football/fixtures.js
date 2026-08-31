@@ -9,7 +9,7 @@
 // 未配置 FOOTBALL_API_KEY **或 API-Football 请求失败（限流/密钥异常）** 时均返回
 // { matches: [], fallback: true }，前端回退旧接口（V1.20.1 修复）。
 
-import { fetchFootball, normalizeFixture, hasKey, POPULAR_LEAGUES } from '../../../_services/football-client.js';
+import { fetchFootball, normalizeFixture, hasKey, POPULAR_LEAGUES, footballStatusHint } from '../../../_services/football-client.js';
 import { ok, fail, errors } from '../../../_infra/errors.js';
 
 export async function onRequestGet(context) {
@@ -57,7 +57,8 @@ export async function onRequestGet(context) {
     const data = await fetchFootball(path, env, 60); // 赛程缓存 60s
     // V1.20.1 fix：API-Football 请求失败（限流/密钥异常）时也必须标记 fallback:true，
     // 前端才回退 TheSportsDB 旧数据源——此前返回 false 导致足球页全空
-    if (!data) return ok({ matches: [], fallback: true, message: 'API-Football 请求失败（可能限流或密钥异常），已回退旧数据源' });
+    // V1.20.2：message 带上游 HTTP 状态码（401=key 无效 / 403=封禁 / 429=限流），排查不用猜
+    if (!data) return ok({ matches: [], fallback: true, message: 'API-Football 请求失败' + (footballStatusHint() ? '（' + footballStatusHint() + '），已回退旧数据源' : '（可能限流或密钥异常），已回退旧数据源') });
 
     let matches = (data.response || []).map(normalizeFixture);
 

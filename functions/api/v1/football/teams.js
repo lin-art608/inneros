@@ -2,7 +2,7 @@
 // 用于主队添加时的搜索选择。缓存 1 小时。
 // API-Football 的 search 只支持英文名：中文关键词先经 CN_ALIAS 转成英文再查
 // （与 server.py /api/sports?type=teamsearch 的 cn_alias 同源，双端保持一致）。
-import { fetchFootball, hasKey } from '../../../_services/football-client.js';
+import { fetchFootball, hasKey, footballStatusHint } from '../../../_services/football-client.js';
 import { ok, errors } from '../../../_infra/errors.js';
 
 const CN_ALIAS = {
@@ -46,7 +46,7 @@ export async function onRequestGet(context) {
 
   try {
     const data = await fetchFootball(`/teams?search=${encodeURIComponent(term)}`, env, 3600);
-    if (!data || !data.response) return ok({ teams: [], fallback: true, message: 'API-Football 请求失败，请稍后重试' });
+    if (!data || !data.response) return ok({ teams: [], fallback: true, message: 'API-Football 请求失败' + (footballStatusHint() ? '（' + footballStatusHint() + '）' : '，请稍后重试') });
     const teams = data.response.map(item => ({
       id: String(item.team?.id || ''),
       name: item.team?.name || '',

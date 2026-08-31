@@ -7,6 +7,23 @@
 
 ## [Unreleased]
 
+### V1.20.2 网站图标 / 队徽代理修复 / CS2 赛事分组聚合 / 足球 API 诊断码（2026-08-31）
+
+用户第二轮实测反馈五项处理。**根因 1（队徽只剩字母）**：`image.js` 图片代理给公开 CDN `media-1.api-sports.io` 附带了 `x-apisports-key` 头，而该 CDN 本不需要 key——**带着无效/限流 key 请求会被上游直接拒绝**，队徽全部 404，前端 onerror 隐藏 img 只剩字母兜底。**根因 2（同赛事 A/B 组分卡）**：赛事列表按完整 league 名（含 ` - Group A/B` 后缀）分组，同一赛事被拆成多张卡。
+
+- **feat：网站图标（favicon）**——用户上传图片裁剪生成 `icon.png`（256px）+ `apple-touch-icon.png`（180px），`index.html` 加 `<link rel="icon">` / apple-touch-icon / `theme-color`（浏览器标签页 + 手机主屏图标生效）
+- **fix：队徽全挂只剩字母（根因：图片代理带坏 key）**——`image.js` 去掉 `x-apisports-key` 头：媒体 CDN 公开可访问，带无效 key 反而被拒；代理仅为统一 CORS，缓存 24h 不变
+- **fix：CS2 热门战队无徽章**——`CS2_POPULAR_TEAMS` 12 支全部补真实徽章直链（TheSportsDB r2 7 支 + Liquipedia 5 支，实测均 200 OK；站点全局 `no-referrer` 命名策略下 Liquipedia 直连可用），点击添加时弹窗与添加后主队 chip 均显示队徽
+- **fix：同赛事 A/B 组分开显示（根因：按完整 league 名分组）**——新增 `cs2BaseLeague()`（剥离 ` - Group A/B` 等后缀取基础名）：赛事发现按基础名聚合（同赛事 Group A/B 合并一张卡，显示总场次 + 最近开赛日）、竞赛页 `scope=competition` 过滤同步按基础名比较（点开聚合卡能看到该赛事全部分组场次）
+- **feat：足球 API 诊断码（供用户排查）**——`football-client.js` 记录最近一次上游 HTTP 状态码，`footballStatusHint()` 映射为人话：**401 = FOOTBALL_API_KEY 无效或已重置（去 Cloudflare Pages → Settings → Variables 核对）/ 403 = key 被封禁或订阅过期 / 429 = 免费档 100 次/天用尽（UTC 0 点重置）**；`fixtures.js` / `teams.js` 的 fallback message 直接带状态码，UI 可见、排查不用猜
+- **调研结论（不订阅 HLTV）**：HLTV 无官方 API，Premium 订阅仅去广告 + 部分 demo 下载，不含数据接口；网上 HLTV API 均为第三方爬虫（违反 ToS + 不稳定）。现有 Liquipedia 官方开放 API 即免费合规最优解，已在 `项目.md` 已知限制中记录
+
+#### 实测
+- 单测：sports-feature 新增 14.55 组（cs2BaseLeague 聚合 5 断言：A/B 组剥离/无后缀原样/空值兜底），全量 12 套测试通过；`node --check` 全部改动文件通过
+- 徽章 URL 直连验证：Liquipedia（TyLoo 等 5 支）与 TheSportsDB r2（NAVI 等 7 支）均 HTTP 200 image/png
+- 线上诊断（python UA 直探）：`/api/v1/football/fixtures` 与 `/api/v1/football/teams` 均确认 API-Football 请求失败（**teams 返回带 message → key 已配置、是上游拒绝而非未配置**）；V1.20.2 部署后 message 将显示具体状态码（401/403/429），用户按提示去 Cloudflare 变量页 / api-football 控制台排查
+- favicon：本地 `icon.png` 94KB / `apple-touch-icon.png` 47KB，index.html 引用就位
+
 ### V1.20.1 Sports Center V2 用户反馈修复：足球空数据 / CS2 英文 / 中文搜索 / 赛事页改完整赛程（2026-08-31）
 
 用户实测反馈四项问题逐一修复。**根因 1（最严重）**：线上 `FOOTBALL_API_KEY` 已配置但 API-Football 请求失败（限流或密钥异常，接口返回"API-Football 请求失败"），而 `fixtures.js` 此时错误地标记 `fallback:false` → 前端不降级旧数据源 → 足球页全空（旧数据源 TheSportsDB 本身正常，当天有英超/西甲/意甲 3 场）。
