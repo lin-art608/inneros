@@ -300,6 +300,14 @@ async function cs2Matches() {
   // 只保留 A 级以上赛事
   return all.filter(m => isCS2Tier1(m.league));
 }
+// V2 Sports Center：主队查询用全量 ticker（不套 A 级白名单），
+// 保证 scope=team 不被 Tier1 过滤截断；赛事发现/赛事页继续用 cs2Matches()。
+async function cs2MatchesAll() {
+  const d = await lpFetch(`${LP_API}?action=parse&page=Liquipedia:Matches&format=json&prop=text`);
+  const html = d.parse && d.parse.text && d.parse.text['*'];
+  if (!html) throw new Error('liquipedia empty');
+  return parseLpTicker(html);
+}
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
@@ -355,7 +363,8 @@ export async function onRequestGet(context) {
       return jsonResponse({ matches: all.slice(0, 40) });
     }
     if (type === 'cs2matches') {
-      const matches = await cs2Matches();
+      // tier=all：主队查询用全量（不受 A 级白名单过滤）；默认只返回 A 级以上赛事
+      const matches = url.searchParams.get('tier') === 'all' ? await cs2MatchesAll() : await cs2Matches();
       return jsonResponse({ matches });
     }
     return jsonResponse({ error: 'unknown type' }, 400);

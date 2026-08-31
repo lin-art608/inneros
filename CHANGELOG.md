@@ -7,6 +7,27 @@
 
 ## [Unreleased]
 
+### V1.20.0 Sports Center V2：足球 + CS2 统一赛程中心（2026-08-31）
+
+按施工方案（`InnerOS Sports Center V2 足球/CS2 统一赛程中心`）完成统一重构。用户只理解三个层次：**我的主队 / 赛事 / 日期**，底层 Provider（API-Football / Liquipedia）差异全部被统一模型屏蔽。
+
+- **feat：统一比赛模型（Match）**——`src/features/sports.js` 完整重写（约 950 行），所有比赛归一为标准结构：`id/sport/startAt(ts)/status{state,label,detail}/home/away{id,name,logo}/competition{id,name,logo}/score/provider/format`；UI 禁止理解 Provider 原始对象，`normalizeMatch` 为唯一入口
+- **feat：统一查询模型（SportsScheduleQuery）**——`buildQuery` 产出 `{sport, scope:team|competition|all, teamId, competitionId, from, to}`；`SportsScheduleService.querySchedule` 流水线：Provider 拉取 → scope 过滤 → normalize → 本地时区日期过滤 → 去重 → 排序（live 优先）
+- **feat：日期时区统一**——按用户本地时区自然日分组（今天/明天/后天/未来=+3..+9 天逐天），跨午夜场次正确归组；足球"未来"逐天拉、CS2 一次拉全量前端过滤
+- **fix：主队查询被过滤截断（根因）**——旧版足球主队页拉热门联赛再前端筛（漏掉非热门联赛的主队比赛）、CS2 主队被 A 级白名单截断（B 级赛事如 ECL 的主队比赛直接消失）。修复：足球 `scope=team` 走单队接口 `?team=id`（last=5+next=10，不做热门联赛过滤）；CS2 `scope=team` 请求 `tier=all` 拉全量 ticker，前端按标准化 team identity（lp: 前缀/全称/短名/中文）匹配
+- **feat：比赛状态扩展**——`normalizeFixture` 新增 postponed（PST/SUSP/INT）/ cancelled（CANC/ABD）状态映射，推迟/取消场次比分强制置空（API 残留旧比分不再透传）+ `league_logo` 透传；前端状态徽章新增"已推迟/已取消"
+- **feat：赛事页"未来"支持**——`fixtures.js` 支持 `league+next=N` 组合（联赛未来赛程，不受热门联赛过滤）
+- **feat：Provider 短 TTL 缓存与降级**——原始数据按 URL 缓存（普通 120s / 含直播 30s），失败回退最近成功数据并标记 `stale`（UI 提示条"以下为最近一次成功数据"）；首次失败抛错走统一 error + 重试；CS2 赛事发现与日期列表共用同一缓存，零额外请求
+- **feat：未配置 key 降级提示**——无 `FOOTBALL_API_KEY` 时首页回退 TheSportsDB 旧数据源（degraded=legacy），主队/联赛查询如实提示（degraded=no-key），禁止假数据
+- **Changed：双端同步**——`server.py` cs2matches 同步 `tier=all` 参数与 A 级白名单（与线上 `functions/api/sports.js` 行为一致，此前本地返回全量与线上不一致）
+- **Removed：死代码**——app.js 删除 V1 迁移残留的 `groupCSMatches`，体育渲染全部委托 `window.InnerOSSports`（app.js 仅保留 2 个薄委托函数）
+- **未改**：D1 schema / IndexedDB v4 / 同步逻辑 / 媒体链路 / 其他页面。
+
+#### 实测
+- `node --check`：app.js / sports.js / media.js / api-client.js 全部通过；`python -m py_compile` server.py 通过
+- 单测：新增 `tests/unit/sports-feature.test.mjs`（18 组：normalizeMatch/mapState/日期分组/Query 构造/URL 构造/主队 tier=all/B 级保留/缓存 TTL/降级回退）+ `tests/unit/sports-backend.test.mjs`（9 组：normalizeFixture 状态映射/fixtures 路由过滤豁免/CS2 tier 白名单）；`run-all.sh` 全套 12 套测试通过
+- 线上探测：本机网络受限（curl 000），部署后按侧边栏版本号 v1.20.0 确认生效
+
 ### V1.19.4 修复"我的主队"显示几百个旧队伍的问题（2026-08-31）
 
 - **fix：主队区域显示几百个队伍**——旧版本代码自动把赛程中所有队伍 upsert 进 IndexedDB teams 表，新代码 `getFollowedTeams` 不加区分全部读出，导致"我的主队"区域密密麻麻几百个 chip。修复：搜索弹窗添加的队伍标记 `source:'manual'`，`getFollowedTeams` 只返回 `source==='manual'` 的记录，旧的自动保存记录全部过滤

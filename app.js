@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.19.4';
+const APP_VERSION = 'v1.20.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -826,24 +826,7 @@ async function navigate(page, fromPop = false) {
   closeSidebar();
 }
 
-// === Resources: CS Esports ===
-// CS 赛事分组：按"赛事"聚合（league_url 去锚点优先，无链接时按联赛名去阶段后缀），
-// 阶段 = 联赛名 " - " 之后的部分（Group A / Playoffs / 半决赛…），供赛事详情页分组展示
-function groupCSMatches(matches) {
-  const groups = new Map();
-  for (const m of matches) {
-    const base = ((m.league_url || m.league || '').split('#')[0]) || m.league;
-    if (!groups.has(base)) {
-      groups.set(base, { key: base, name: (m.league.split(' - ')[0] || m.league), url: m.league_url || '', matches: [], stages: new Map() });
-    }
-    const g = groups.get(base);
-    g.matches.push(m);
-    if (!g.stages.has(m.league)) g.stages.set(m.league, []);
-    g.stages.get(m.league).push(m);
-  }
-  return [...groups.values()];
-}
-
+// === Resources: CS Esports / Football（V2 起渲染迁 src/features/sports.js）===
 async function renderResourceCS() {
   const container = document.getElementById('content');
   await window.InnerOSSports.renderCS2(container);

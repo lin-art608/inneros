@@ -16,16 +16,16 @@
 | 文件 | 内容 |
 |---|---|
 | `index.html` | 单页外壳，全部 CSS 内联。页面路由：today / quickchat(速信) / timeline / library / search / onthisday / random / year-review / settings / res-cs / res-football / res-ai / res-links / knowledge / ai-assistant |
-| `app.js` | 前端主逻辑（渐进式拆分中，新功能优先放 `src/features/`）。分节：TYPE_META / 图片代理 / ContentProvider / IndexedDB v4 / 账户与同步引擎 / 速记对话 / 收藏赛程 / Sports 渲染 / 各页渲染 / History 返回栈 |
+| `app.js` | 前端主逻辑（渐进式拆分中，新功能优先放 `src/features/`）。分节：TYPE_META / 图片代理 / ContentProvider / IndexedDB v4 / 账户与同步引擎 / 速记对话 / 各页渲染 / History 返回栈（Sports 渲染已全部迁出，仅剩 2 个薄委托） |
 | `src/features/media.js` | 前端媒体数据层（电影/书籍/音乐搜索+详情+字段映射，IIFE + `window.InnerOSMedia`） |
-| `src/features/footprint.js` | 前端足迹地图（Leaflet+高德矢量瓦片，地理编码+标记+相册，IIFE + `window.InnerOSFootprint`） |
+| `src/features/sports.js` | V1.20.0 Sports Center V2 统一赛程中心（足球+CS2，IIFE + `window.InnerOSSports`）。统一 Match 模型 + SportsScheduleQuery + Provider 层（短 TTL 缓存/失败降级 stale）+ 本地时区日期分组。**主队查询（scope=team）足球走单队接口、CS2 走 tier=all，均不受热门联赛/A 级白名单过滤**；纯逻辑经 `Core` 导出供 node vm 单测 |
 | `src/services/api-client.js` | 前端统一 API Client（`window.InnerOSApi`，兼容新旧信封） |
 | `server.py` | 本地服务 :8765。代理：`/img`（豆瓣图）、`/api/douban`、`/api/sports`、`/api/auth`+`/api/sync`（**反代到 pages.dev**）、`/api/search` |
 | `functions/_lib.js` | D1 schema 自建（IF NOT EXISTS）/ PBKDF2 / Cookie 会话 |
 | `functions/api/auth/[action].js` | register / login / logout / me / send-code（Resend 验证码） |
 | `functions/api/sync/[action].js` | push（幂等批量）/ pull（游标增量）。**ARCH-008 后为薄路由**：只 auth/parse/service/response，编排在 sync-service |
 | `functions/api/douban.js` | 豆瓣 suggest + rexxar 详情（电影/书籍简介、评分） |
-| `functions/api/sports.js` | 足球=TheSportsDB(key 3)、CS2=Liquipedia（teamsearch/matches/leagueseason/cs2matches） |
+| `functions/api/sports.js` | 足球=TheSportsDB(key 3)、CS2=Liquipedia（teamsearch/matches/leagueseason/cs2matches）。**cs2matches 默认只回 A 级白名单赛事，`tier=all` 回全量（主队查询用）**；server.py 同逻辑 |
 | `functions/_lib.js` | D1 schema 自建（IF NOT EXISTS）/ PBKDF2 / Cookie 会话（旧共享库，逐步收敛） |
 | `functions/_domain/memory.js` | Memory 领域模型：normalizeMemory（旧字段→标准结构；有标准 `media` 块时以其为准）/validateMemory/canonicalType/validateOperation |
 | `functions/_domain/media.js` | ARCH-009 Media 领域模型：normalizeMedia/validateMedia/**mediaToMemoryPatch**（标准 Media → 记忆记录补丁；第三方原始 JSON 只进 providerMetadata） |
@@ -44,7 +44,7 @@
 | `app.js` 音乐链路 | ARCH-011：搜索/详情走 v1（`/api/v1/media/search\|detail?type=music` → iTunes），`mediaToWorkFields(m,'music')` 映射 artist/album/preview_url/track_price；v1 失败回退旧直连 iTunes；保存带标准 `media` 块 |
 | `src/services/api-client.js` | 前端统一 API Client（InnerOSApi，经典脚本命名空间；新调用必经） |
 | `src/features/media.js` | ARCH-012/1.16.1 前端媒体数据层：`mediaToWorkFields`/`searchMovie`/`searchBook`/`searchMusic`/`enrichWorkDetail` 从 app.js 迁出（IIFE + `window.InnerOSMedia`）。**唯一前端媒体数据入口**；app.js 的 `ContentProvider`/`enrichWorkDetail` 现为薄委托。**第三方 URL（/api/douban、itunes）只存在于本文件的「兼容 fallback 层」（legacy* 函数），feature 主链始终走 v1** |
-| `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/itunes-adapter/media-domain/media-feature/memory-service/media-service/sync-service（node 直接运行） |
+| `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/itunes-adapter/media-domain/media-feature/memory-service/media-service/sync-service/sports-feature/sports-backend（node 直接运行；sports 系覆盖统一 Match/主队不过滤/缓存降级/tier 白名单） |
 | `tests/integration/sync-route.test.mjs` | ARCH-008.2 集成测试：真实 `onRequestPost/Get` + Cookie 会话 + 内存 D1 仿真（按 SQL 模式处理，未知 SQL 抛错防漂移）。**改同步相关代码后必跑** |
 | `tests/e2e/media-sync-e2e.py` | ARCH-013 真实 D1 端到端：电影/书籍/音乐 搜索→详情→保存→刷新→pull→删除→pull + 跨设备同步 + 幂等 + 墓碑 + user isolation + 稳定错误码。**需先起 wrangler**（零第三方依赖，Python 直接跑） |
 | `tests/run-all.sh` | 零依赖快速测试入口：一条命令跑全部单测 + 集成（**不含** E2E） |

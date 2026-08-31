@@ -480,7 +480,12 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({'matches': all_events[:40]})
                 return
             if stype == 'cs2matches':
-                self._send_json({'matches': self._lp_cs2_matches()})
+                # tier=all：主队查询用全量（V2 统一赛程中心，不被 A 级白名单截断）；默认只返回 A 级以上赛事
+                all_matches = self._lp_cs2_matches()
+                if params.get('tier', [''])[0] == 'all':
+                    self._send_json({'matches': all_matches})
+                else:
+                    self._send_json({'matches': [m for m in all_matches if self._is_cs2_tier1(m.get('league'))]})
                 return
             self._send_json({'error': 'unknown type'}, 400)
         except Exception:
@@ -558,6 +563,39 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
         matches = self._parse_lp_ticker(html)
         self.__class__._lp_cache = {'ts': now, 'data': matches}
         return matches
+
+    # CS2 A 级以上赛事白名单（与线上 functions/api/sports.js CS2_TIER1_KEYWORDS/CS2_TIER_EXCLUDE 保持一致）
+    CS2_TIER1_KEYWORDS = [
+        'BLAST Premier', 'BLAST.tv', 'BLAST World Final', 'BLAST Spring Final', 'BLAST Fall Final',
+        'BLAST Open', 'BLAST Showdown', 'BLAST Spring Groups', 'BLAST Fall Groups',
+        'IEM', 'Intel Extreme Masters',
+        'ESL Pro League',
+        'PGL Major', 'PGL Cluj', 'PGL Bucharest', 'PGL Astana', 'Major',
+        'DreamHack Masters',
+        'Thunderpick World Championship',
+        'RMR', 'Regional Major Ranking',
+        'Esports World Cup',
+        'FISSURE Playground', 'FISSURE Masters',
+        'BLAST Bounty',
+    ]
+    CS2_TIER_EXCLUDE = [
+        'Open Qualifier', 'Closed Qualifier', 'Regional League', 'ESEA', '5E', 'Perfect World',
+        'Champions Cup Finals', 'CCT', 'Elisa', 'Pinnacle Cup', 'Funspark', 'REPUBLEAGUE',
+        'ECL', 'United21', 'NODWIN', 'Clutch Series', 'YaLLa', 'Snow Sweet', 'Malta',
+    ]
+
+    @staticmethod
+    def _is_cs2_tier1(league):
+        if not league:
+            return False
+        lower = league.lower()
+        for ex in MemoryOSHandler.CS2_TIER_EXCLUDE:
+            if ex.lower() in lower:
+                return False
+        for kw in MemoryOSHandler.CS2_TIER1_KEYWORDS:
+            if kw.lower() in lower:
+                return True
+        return False
 
     @classmethod
     def _parse_lp_ticker(cls, html):

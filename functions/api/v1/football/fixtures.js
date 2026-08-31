@@ -1,10 +1,10 @@
 // GET /api/v1/football/fixtures —— 足球赛程（API-Football 代理）
 // 参数：
 //   date=YYYY-MM-DD  指定日期（默认今天，UTC+8）
-//   league=id         过滤联赛（可多个，逗号分隔）
-//   team=id           过滤球队
+//   league=id         过滤联赛（与 date 或 next 组合）
+//   team=id           过滤球队（单队最近 5 场 + 未来 10 场）
 //   live=all          仅实时比赛
-//   next=10           球队未来 N 场（需配合 team）
+//   next=10           未来 N 场（与 league 组合：联赛未来赛程）
 // 未配置 FOOTBALL_API_KEY 时返回 { matches: [], fallback: true }，前端回退旧接口。
 
 import { fetchFootball, normalizeFixture, hasKey, POPULAR_LEAGUES } from '../../../_services/football-client.js';
@@ -41,6 +41,9 @@ export async function onRequestGet(context) {
         ...((nextRes?.response || []).map(normalizeFixture)),
       ].sort((a, b) => (a.ts || 0) - (b.ts || 0));
       return ok({ matches, count: matches.length });
+    } else if (leagueParam && next) {
+      // 指定联赛未来 N 场（赛事页"未来" tab；主队查询不受热门联赛过滤）
+      path = `/fixtures?league=${encodeURIComponent(leagueParam)}&next=${encodeURIComponent(next)}`;
     } else {
       // 按日期赛程（默认今天，北京时间）
       const date = dateParam || getBeijingDate();

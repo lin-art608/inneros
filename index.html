@@ -1201,6 +1201,20 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 .sp-search-result-add { font-size:12px; color:var(--accent); font-weight:600; }
 .sp-no-today-notice { padding:8px 14px; background:rgba(108,142,212,0.1); border:1px solid rgba(108,142,212,0.3); border-radius:10px; font-size:13px; color:var(--text-secondary); margin-bottom:16px; }
 
+/* Sports Center V2 统一赛程中心（V1.20.0） */
+.sp-postponed { background:rgba(176,141,87,0.15); color:#B08D57; }
+.sp-cancelled { background:var(--bg-subtle); color:var(--text-tertiary); }
+.sp-notice { font-size:12px; color:var(--text-secondary); background:var(--bg-subtle); border:1px solid var(--border); border-radius:10px; padding:8px 14px; margin-bottom:14px; line-height:1.6; }
+.sp-notice-stale { border-color:#B08D57; color:#B08D57; }
+.sp-scope-header { display:flex; align-items:center; gap:14px; flex:1; padding:10px 16px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius); min-width:0; }
+.sp-scope-header .sp-badge, .sp-scope-header .sp-league-logo { width:48px; height:48px; flex-shrink:0; }
+.sp-scope-info { min-width:0; }
+.sp-scope-name { font-size:17px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sp-scope-sub { font-size:12px; color:var(--text-secondary); margin-top:2px; }
+.sp-event-emoji { font-size:30px; width:48px; height:48px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.sp-event-meta { font-size:11px; color:var(--text-tertiary); text-align:center; }
+.sp-search-result-sub { font-size:11px; color:var(--text-tertiary); max-width:110px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
 </style>
 </head>
 <body data-theme="light">
@@ -1433,9 +1447,9 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <!-- Toast Container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="src/services/api-client.js?v=1.19.4"></script>
-<script src="src/features/media.js?v=1.19.4"></script>
-<script src="src/features/sports.js?v=1.19.4"></script>
-<script src="app.js?v=1.19.4"></script>
+<script src="src/services/api-client.js?v=1.20.0"></script>
+<script src="src/features/media.js?v=1.20.0"></script>
+<script src="src/features/sports.js?v=1.20.0"></script>
+<script src="app.js?v=1.20.0"></script>
 </body>
 </html>

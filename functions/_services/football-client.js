@@ -37,6 +37,10 @@ export function normalizeFixture(f) {
   const statusShort = fixture.status?.short || '';
   const isLive = ['1H', 'HT', '2H', 'ET', 'P', 'BT', 'LIVE'].includes(statusShort);
   const isFinished = ['FT', 'AET', 'PEN', 'MT', 'AWD', 'WO'].includes(statusShort);
+  // V2 统一状态：推迟 / 取消（前端 mapState 映射为 postponed/cancelled）
+  const isPostponed = ['PST', 'SUSP', 'INT'].includes(statusShort);
+  const isCancelled = ['CANC', 'ABD'].includes(statusShort);
+  const showScore = hasScore && !isPostponed && !isCancelled;
   const ts = fixture.date ? new Date(fixture.date).getTime() : null;
   const d = fixture.date ? fixture.date.slice(0, 10) : '';
   const t = fixture.date ? fixture.date.slice(11, 16) : '';
@@ -54,11 +58,12 @@ export function normalizeFixture(f) {
     time: t,
     league: league.name || '',
     league_id: String(league.id || ''),
+    league_logo: league.logo || '',
     round: f.league?.round || '',
-    status: isLive ? 'live' : (isFinished ? 'finished' : 'upcoming'),
+    status: isLive ? 'live' : (isFinished ? 'finished' : (isPostponed ? 'postponed' : (isCancelled ? 'cancelled' : 'upcoming'))),
     status_text: fixture.status?.long || '',
-    home_score: hasScore ? goals.home : null,
-    away_score: hasScore ? goals.away : null,
+    home_score: showScore ? goals.home : null,
+    away_score: showScore ? goals.away : null,
     importance: 3,
     tournament_weight: 3,
     venue: fixture.venue?.name || '',
