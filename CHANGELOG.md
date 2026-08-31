@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### V1.19.4 修复"我的主队"显示几百个旧队伍的问题（2026-08-31）
+
+- **fix：主队区域显示几百个队伍**——旧版本代码自动把赛程中所有队伍 upsert 进 IndexedDB teams 表，新代码 `getFollowedTeams` 不加区分全部读出，导致"我的主队"区域密密麻麻几百个 chip。修复：搜索弹窗添加的队伍标记 `source:'manual'`，`getFollowedTeams` 只返回 `source==='manual'` 的记录，旧的自动保存记录全部过滤
+- **未改**：其他逻辑不变。旧 IndexedDB 记录仍在但不显示，如需彻底清理可在浏览器控制台执行 `indexedDB.deleteDatabase('memory_os')`（会清空所有本地数据，谨慎）
+
+#### 实测
+- `node --check`：app.js / sports.js 通过
+- 逻辑验证：旧记录无 source 字段 → 不显示；搜索弹窗添加 → 带 source:'manual' → 正常显示
+
 ### V1.19.3 修复 CS2 A级白名单漏判 + 足球赛程缓存 + CS2主队模糊匹配（2026-08-31）
 
 - **fix：CS2 A级白名单漏判**——线上实测发现 "BLAST Open Fall 2026"（24场）和 "Esports World Cup"（电竞世界杯）被误杀（白名单只有 BLAST Premier，没覆盖 BLAST Open）；同时 ECL/United21/NODWIN Clutch Series 等小赛事漏网。白名单补充 BLAST Open/BLAST Bounty/PGL 分站/FISSURE Playground/FISSURE Masters/Esports World Cup；排除表补充 ECL/United21/NODWIN/Clutch Series/YaLLa/Snow Sweet/Malta

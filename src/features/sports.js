@@ -218,12 +218,14 @@
   ];
 
   // ========== 主队管理 ==========
+  // 只显示用户通过搜索弹窗手动添加的队伍（source==='manual'），
+  // 过滤掉旧版本代码自动从赛程 upsert 进 IndexedDB 的几百条记录
   async function getFollowedTeams(sport) {
     const teams = await window.dbGetTeams();
-    return teams.filter(t => t.sport === sport);
+    return teams.filter(t => t.sport === sport && t.source === 'manual');
   }
   async function addFollowedTeam(team, sport) {
-    await window.dbAddTeam({ ...team, sport });
+    await window.dbAddTeam({ ...team, sport, source: 'manual' });
   }
   async function removeFollowedTeam(id) {
     await window.dbDeleteTeam(id);
