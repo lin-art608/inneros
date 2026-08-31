@@ -1125,6 +1125,60 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 .sp-skel-badge { width:28px; height:28px; border-radius:50%; background:linear-gradient(90deg, var(--bg-subtle) 25%, var(--bg-elevated) 50%, var(--bg-subtle) 75%); background-size:200% 100%; animation:skel 1.5s infinite; }
 @keyframes skel { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
 
+
+/* 赛事页面层级（V1.19.1） */
+.sp-page-header { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+.sp-back-btn { padding:6px 14px; border:1px solid var(--border); border-radius:16px; background:var(--bg-elevated); color:var(--text-secondary); font-size:13px; cursor:pointer; transition:all 0.2s; font-family:var(--font-sans); }
+.sp-back-btn:hover { border-color:var(--accent); color:var(--text); }
+.sp-page-title { font-size:20px; font-weight:700; color:var(--text); }
+.sp-section { margin-bottom:28px; }
+.sp-section-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.sp-section-title { font-size:15px; font-weight:600; color:var(--text); }
+.sp-add-btn { padding:5px 14px; border:1px solid var(--accent); border-radius:14px; background:transparent; color:var(--accent); font-size:12px; font-weight:600; cursor:pointer; transition:all 0.2s; font-family:var(--font-sans); }
+.sp-add-btn:hover { background:var(--accent); color:#fff; }
+.sp-teams-row { display:flex; flex-wrap:wrap; gap:8px; }
+.sp-team-chip { display:flex; align-items:center; gap:6px; padding:6px 10px 6px 6px; border:1px solid var(--border); border-radius:20px; background:var(--bg-elevated); cursor:pointer; transition:all 0.2s; }
+.sp-team-chip:hover { box-shadow:var(--shadow); border-color:var(--accent); }
+.sp-team-chip .sp-badge, .sp-team-chip .sp-badge-fallback { width:24px; height:24px; }
+.sp-team-chip-name { font-size:13px; font-weight:600; color:var(--text); }
+.sp-team-remove { width:18px; height:18px; border:none; background:var(--bg-subtle); color:var(--text-tertiary); border-radius:50%; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
+.sp-team-remove:hover { background:#C75450; color:#fff; }
+.sp-empty-inline { font-size:13px; color:var(--text-tertiary); padding:8px 0; }
+.sp-league-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:12px; }
+.sp-league-card { display:flex; flex-direction:column; align-items:center; gap:8px; padding:16px 12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-elevated); cursor:pointer; transition:all 0.2s; }
+.sp-league-card:hover { box-shadow:var(--shadow); transform:translateY(-2px); border-color:var(--accent); }
+.sp-league-logo { width:48px; height:48px; object-fit:contain; }
+.sp-league-name { font-size:14px; font-weight:600; color:var(--text); text-align:center; }
+.sp-tournament-group { margin-bottom:20px; }
+.sp-tournament-name { font-size:14px; font-weight:600; color:var(--text-secondary); margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+/* 比赛详情 */
+.sp-detail-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:24px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:20px; }
+.sp-detail-team { display:flex; flex-direction:column; align-items:center; gap:8px; flex:1; min-width:0; }
+.sp-detail-team .sp-badge, .sp-detail-team .sp-badge-fallback { width:56px; height:56px; }
+.sp-detail-team-name { font-size:16px; font-weight:700; color:var(--text); text-align:center; }
+.sp-detail-score { display:flex; flex-direction:column; align-items:center; gap:4px; min-width:120px; }
+.sp-detail-score-num { font-size:32px; font-weight:800; color:var(--text); }
+.sp-detail-status { font-size:12px; font-weight:600; color:var(--text-secondary); }
+.sp-detail-date { font-size:12px; color:var(--text-tertiary); }
+.sp-detail-venue { font-size:11px; color:var(--text-tertiary); text-align:center; }
+.sp-detail-section { margin-bottom:24px; }
+.sp-detail-section-title { font-size:15px; font-weight:600; color:var(--text); margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+.sp-events-list { display:flex; flex-direction:column; gap:6px; }
+.sp-event-item { display:flex; align-items:center; gap:10px; padding:8px 12px; background:var(--bg-elevated); border-radius:8px; font-size:13px; }
+.sp-event-time { font-weight:700; color:var(--accent); min-width:36px; }
+.sp-event-icon { font-size:16px; }
+.sp-event-text { color:var(--text); flex:1; }
+.sp-lineup { margin-bottom:16px; }
+.sp-lineup-team { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--text); margin-bottom:8px; }
+.sp-lineup-team .sp-badge, .sp-lineup-team .sp-badge-fallback { width:20px; height:20px; }
+.sp-lineup-players { display:flex; flex-wrap:wrap; gap:6px; }
+.sp-player { padding:4px 10px; background:var(--bg-subtle); border-radius:12px; font-size:12px; color:var(--text-secondary); }
+.sp-team-header { display:flex; align-items:center; gap:16px; padding:20px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:20px; }
+.sp-team-header .sp-badge, .sp-team-header .sp-badge-fallback { width:56px; height:56px; }
+.sp-team-header-info { flex:1; }
+.sp-team-header-name { font-size:20px; font-weight:700; color:var(--text); }
+.sp-team-header-desc { font-size:13px; color:var(--text-secondary); margin-top:4px; }
+
 </style>
 </head>
 <body data-theme="light">
@@ -1357,9 +1411,9 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <!-- Toast Container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="src/services/api-client.js?v=1.19.0"></script>
-<script src="src/features/media.js?v=1.19.0"></script>
-<script src="src/features/sports.js?v=1.19.0"></script>
-<script src="app.js?v=1.19.0"></script>
+<script src="src/services/api-client.js?v=1.19.1"></script>
+<script src="src/features/media.js?v=1.19.1"></script>
+<script src="src/features/sports.js?v=1.19.1"></script>
+<script src="app.js?v=1.19.1"></script>
 </body>
 </html>
