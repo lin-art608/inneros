@@ -8,7 +8,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@300;400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
 /* ============================================================
    Personal Memory OS — Phase 1 Data System
@@ -863,28 +862,6 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 .yr-breakdown-num { font-size:13px; font-weight:600; color:var(--text); min-width:24px; text-align:right; }
 
 /* ============================================================
-   Footprint Map（足迹地图 — 高德矢量瓦片）
-   ============================================================ */
-.fp-map { height:62vh; min-height:420px; border-radius:var(--radius); border:1px solid var(--border); overflow:hidden; margin-bottom:24px; z-index:1; box-shadow:var(--shadow); }
-.fp-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
-.fp-add-btn { padding:8px 18px; font-size:14px; }
-.fp-progress { font-size:13px; color:var(--text-secondary); }
-.fp-popup { font-family:var(--font-sans); min-width:200px; }
-.fp-popup-title { font-size:15px; font-weight:600; color:var(--text); margin-bottom:4px; }
-.fp-popup-addr { font-size:12px; color:var(--text-secondary); margin-bottom:4px; }
-.fp-popup-date { font-size:12px; color:var(--text-tertiary); margin-bottom:8px; }
-.fp-popup-actions { margin-top:8px; }
-.fp-popup-btn { padding:4px 12px; font-size:12px; }
-.fp-photos { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin-top:6px; }
-.fp-photo-thumb { width:100%; aspect-ratio:1; object-fit:cover; border-radius:4px; cursor:pointer; transition:transform 0.2s; }
-.fp-photo-thumb:hover { transform:scale(1.05); }
-.fp-photo-more { display:flex; align-items:center; justify-content:center; background:var(--bg-subtle); border-radius:4px; font-size:12px; font-weight:600; color:var(--text-secondary); aspect-ratio:1; }
-.leaflet-container { font-family:var(--font-sans); background:#e8eef5; }
-.leaflet-popup-content-wrapper { border-radius:12px; box-shadow:var(--shadow-lg); }
-.leaflet-popup-content { margin:12px 16px; }
-.leaflet-control-attribution { font-size:10px; background:rgba(255,255,255,0.8); }
-
-/* ============================================================
    P3: Sports Data Layer — Team Logos, Match Cards, Team Selector
    ============================================================ */
 .team-logo { display:inline-flex; align-items:center; justify-content:center; border-radius:50%; font-weight:700; font-family:var(--font-sans); flex-shrink:0; line-height:1; position:relative; overflow:hidden; }
@@ -1108,6 +1085,46 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
   .my-teams-bar { gap:8px; }
   .my-teams-list { gap:6px; }
 }
+
+/* ============================================================
+   Sports（赛事界面 — 足球/CS2 统一卡片）
+   ============================================================ */
+.sp-tabs { display:flex; gap:8px; margin-bottom:20px; }
+.sp-tab { padding:8px 20px; border:1px solid var(--border); border-radius:20px; background:var(--bg-elevated); color:var(--text-secondary); font-size:14px; cursor:pointer; transition:all 0.2s; font-family:var(--font-sans); }
+.sp-tab:hover { border-color:var(--accent); color:var(--text); }
+.sp-tab-active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.sp-container { min-height:300px; }
+.sp-date-group { margin-bottom:28px; }
+.sp-date-label { font-size:14px; font-weight:600; color:var(--text); margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
+.sp-date-live { color:#C75450; }
+.sp-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:12px; }
+.sp-card { background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; transition:all 0.2s; }
+.sp-card:hover { box-shadow:var(--shadow); transform:translateY(-1px); }
+.sp-card-live { border-color:#C75450; box-shadow:0 0 0 1px rgba(199,84,80,0.2); }
+.sp-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.sp-league { font-size:12px; color:var(--text-tertiary); font-weight:500; }
+.sp-status { font-size:11px; font-weight:600; padding:2px 8px; border-radius:10px; }
+.sp-live { background:rgba(199,84,80,0.12); color:#C75450; animation:pulse 2s infinite; }
+.sp-finished { background:var(--bg-subtle); color:var(--text-tertiary); }
+.sp-upcoming { background:rgba(90,139,173,0.12); color:#5A8BAD; }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.6;} }
+.sp-card-body { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.sp-team { display:flex; align-items:center; gap:8px; flex:1; min-width:0; }
+.sp-team-home { justify-content:flex-end; text-align:right; }
+.sp-team-away { justify-content:flex-start; text-align:left; }
+.sp-team-name { font-size:14px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px; }
+.sp-badge { width:28px; height:28px; object-fit:contain; flex-shrink:0; }
+.sp-badge-fallback { width:28px; height:28px; border-radius:50%; background:var(--bg-subtle); color:var(--text-secondary); font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.sp-vs { display:flex; flex-direction:column; align-items:center; min-width:60px; }
+.sp-score { font-size:18px; font-weight:700; color:var(--text); }
+.sp-time { font-size:14px; font-weight:600; color:var(--text-secondary); }
+.sp-card-footer { font-size:11px; color:var(--text-tertiary); margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+/* 骨架屏 */
+.sp-skeleton { pointer-events:none; }
+.sp-skel-line { height:12px; background:linear-gradient(90deg, var(--bg-subtle) 25%, var(--bg-elevated) 50%, var(--bg-subtle) 75%); background-size:200% 100%; animation:skel 1.5s infinite; border-radius:4px; }
+.sp-skel-badge { width:28px; height:28px; border-radius:50%; background:linear-gradient(90deg, var(--bg-subtle) 25%, var(--bg-elevated) 50%, var(--bg-subtle) 75%); background-size:200% 100%; animation:skel 1.5s infinite; }
+@keyframes skel { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+
 </style>
 </head>
 <body data-theme="light">
@@ -1211,10 +1228,6 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
           <button class="nav-item" data-page="year-review" onclick="navigate('year-review')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L13.09 8.26L19 7L14.74 11.74L16.84 17.16L11 14L5.16 17.16L7.26 11.74L3 7L8.91 8.26L12 2z"/></svg>
             <span class="nav-label"><span class="nav-cn">年度回顾</span><span class="nav-en">Year Review</span></span>
-          </button>
-          <button class="nav-item" data-page="footprint" onclick="navigate('footprint')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-            <span class="nav-label"><span class="nav-cn">足迹</span><span class="nav-en">Footprint</span></span>
           </button>
         </div>
       </div>
@@ -1344,10 +1357,9 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <!-- Toast Container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="src/services/api-client.js?v=1.18.0"></script>
-<script src="src/features/media.js?v=1.18.0"></script>
-<script src="src/features/footprint.js?v=1.18.0"></script>
-<script src="app.js?v=1.18.0"></script>
+<script src="src/services/api-client.js?v=1.19.0"></script>
+<script src="src/features/media.js?v=1.19.0"></script>
+<script src="src/features/sports.js?v=1.19.0"></script>
+<script src="app.js?v=1.19.0"></script>
 </body>
 </html>

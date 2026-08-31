@@ -7,6 +7,29 @@
 
 ## [Unreleased]
 
+### V1.19.0 赛事系统重做（API-Football + 统一卡片界面 + 队徽缓存）+ 移除足迹（2026-08-31）
+
+- **Removed：足迹地图功能**——用户要求暂时移除，集中精力做赛事。删除 `src/features/footprint.js`、`functions/api/v1/geocode.js`、导航入口、Leaflet CSS/JS、足迹相关 CSS、app.js 委托函数。
+- **feat：足球后端切换 API-Football**（`functions/_services/football-client.js` + `functions/api/v1/football/`）：
+  - `GET /api/v1/football/fixtures?date=YYYY-MM-DD&league=id&team=id&live=all` —— 赛程（默认今天+常用联赛，缓存 60s）
+  - `GET /api/v1/football/leagues?action=list|standings` —— 常用联赛列表（内置免 key）+ 积分榜
+  - API key 从 CF 环境变量 `FOOTBALL_API_KEY` 读取；未配置时自动回退旧 TheSportsDB 接口
+  - 覆盖英超/西甲/德甲/意甲/法甲/欧冠/欧联/中超，队徽高清稳定，实时比分 15s 更新
+- **feat：前端赛事模块**（`src/features/sports.js`，`window.InnerOSSports`）：
+  - 足球/CS2 统一卡片界面（队徽+队名+比分/时间+联赛+状态徽章）
+  - 足球：今天/明天/后天 tab 切换，按日期分组
+  - CS2：直播中/即将开始/已结束 三栏分类
+  - 队徽 IndexedDB `teams` 表本地缓存（避免重复请求，提升渲染速度），加载失败自动降级文字占位
+  - 骨架屏加载，直播中脉冲动画
+  - app.js `renderResourceFootball`/`renderResourceCS` 改为 4 行薄委托，app.js 减少 582 行（3480→2898）
+- **CS2 后端**：继续用 Liquipedia（已实测验证的 ticker 解析），前端队徽缓存大幅提升显示稳定性
+- **未改**：D1 schema / IndexedDB v4 / 同步逻辑 / 其他页面。
+
+#### 实测
+- `node --check`：app.js / sports.js / football-client.js / fixtures.js / leagues.js 全部通过
+- `git diff --check`：通过
+- 逻辑验证：未配置 FOOTBALL_API_KEY 时自动回退旧接口；配置后走 API-Football；队徽缓存命中后二次加载零网络请求
+
 ### V1.18.0 足迹地图重做（高德矢量瓦片+添加地点+照片相册）+ AGENTS.md 拆分约定（2026-08-30）
 
 - **Changed（架构约定）**：AGENTS.md 解除"app.js 有意单文件，勿建议拆分"的硬约束，改为**渐进式拆分**——新增功能/页面优先放入 `src/features/` 独立模块（IIFE + `window.InnerOSXxx` 命名空间），触碰既有大块逻辑时顺手迁出；app.js 保留生命周期/事件协调/兼容入口。结构地图同步更新。
