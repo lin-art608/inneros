@@ -260,11 +260,42 @@ function parseLpTicker(html) {
   return matches;
 }
 
+// A 级以上赛事白名单（S-Tier / A-Tier），只保留这些赛事的比赛
+const CS2_TIER1_KEYWORDS = [
+  'BLAST Premier', 'BLAST.tv', 'BLAST World Final', 'BLAST Spring Final', 'BLAST Fall Final',
+  'IEM', 'Intel Extreme Masters',
+  'ESL Pro League',
+  'PGL Major', 'Major',
+  'DreamHack Masters',
+  'Thunderpick World Championship',
+  'RMR', 'Regional Major Ranking',
+  'ESL Challenger at', 'IEM Katowice', 'IEM Cologne', 'IEM Rio', 'IEM Dallas', 'IEM Chengdu',
+  'BLAST Showdown',
+];
+// 排除关键词（明确的 B 级及以下）
+const CS2_TIER_EXCLUDE = [
+  'Open Qualifier', 'Closed Qualifier', 'Regional League', 'ESEA', '5E', 'Perfect World',
+  'Champions Cup Finals', 'CCT', 'Elisa', 'Pinnacle Cup', 'Funspark', 'REPUBLEAGUE',
+];
+function isCS2Tier1(league) {
+  if (!league) return false;
+  const lower = league.toLowerCase();
+  for (const ex of CS2_TIER_EXCLUDE) {
+    if (lower.includes(ex.toLowerCase())) return false;
+  }
+  for (const kw of CS2_TIER1_KEYWORDS) {
+    if (lower.includes(kw.toLowerCase())) return true;
+  }
+  return false;
+}
+
 async function cs2Matches() {
   const d = await lpFetch(`${LP_API}?action=parse&page=Liquipedia:Matches&format=json&prop=text`);
   const html = d.parse && d.parse.text && d.parse.text['*'];
   if (!html) throw new Error('liquipedia empty');
-  return parseLpTicker(html);
+  const all = parseLpTicker(html);
+  // 只保留 A 级以上赛事
+  return all.filter(m => isCS2Tier1(m.league));
 }
 
 export async function onRequestGet(context) {

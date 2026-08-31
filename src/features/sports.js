@@ -1,6 +1,6 @@
-// InnerOS 前端赛事模块（ARCH-015 / V1.19.1）
-// 足球：赛事列表 → 联赛赛程（今天/明天/后天）→ 比赛详情；主队管理
-// CS2：赛事列表（中文名）→ 赛程 → 详情；主队管理
+// InnerOS 前端赛事模块（ARCH-015 / V1.19.2）
+// 足球：赛事列表 → 联赛赛程 → 比赛详情；主队搜索添加；无比赛回退最近几天
+// CS2：A级以上赛事（中文名）→ 赛程 → 详情；主队管理
 // IIFE + window.InnerOSSports
 (function () {
   'use strict';
@@ -62,6 +62,13 @@
     return matches;
   }
 
+  // ========== 图片代理（API-Football 图片需要 key） ==========
+  function proxyImg(url) {
+    if (!url) return '';
+    if (url.includes('api-sports.io')) return '/api/v1/football/image?url=' + encodeURIComponent(url);
+    return url;
+  }
+
   // ========== CS2 中文名映射 ==========
   const CS2_TEAM_CN = {
     'Natus Vincere': 'NAVI', 'NAVI': 'NAVI', 'FaZe Clan': 'FaZe', 'FaZe': 'FaZe',
@@ -70,21 +77,36 @@
     'Liquid': 'Liquid', 'FURIA Esports': 'FURIA', 'FURIA': 'FURIA', 'Astralis': 'Astralis',
     'Heroic': 'Heroic', 'Cloud9': 'C9', 'ENCE': 'ENCE', 'Ninjas in Pyjamas': 'NiP',
     'NiP': 'NiP', 'Complexity': 'COL', 'Evil Geniuses': 'EG', 'paiN Gaming': 'paiN',
-    'Imperial': 'Imperial', 'FURIA Esports': 'FURIA', 'The MongolZ': '蒙古队',
-    'Team Falcons': 'Falcons', 'Falcons': 'Falcons', 'Aurora Gaming': 'Aurora',
-    'BetBoom Team': 'BetBoom', 'Winstrike': 'Winstrike', 'Entropiq': 'Entropiq',
-    'TYLOO': '天禄', 'RA': 'RA', 'Wings Up': 'Wings Up', 'Checkmate': 'Checkmate',
-    'Dplus KIA': 'DK', 'T1': 'T1', 'Gen.G': 'Gen.G', 'DRX': 'DRX',
+    'Imperial': 'Imperial', 'The MongolZ': '蒙古队', 'Team Falcons': 'Falcons',
+    'Falcons': 'Falcons', 'Aurora Gaming': 'Aurora', 'BetBoom Team': 'BetBoom',
+    'TYLOO': '天禄', 'RA': 'RA', 'Wings Up': 'Wings Up', 'Dplus KIA': 'DK',
+    'T1': 'T1', 'Gen.G': 'Gen.G', 'DRX': 'DRX', 'Lynn Vision': 'LVG',
+    '9z Team': '9z', 'SAW': 'SAW', 'AMKAL': 'AMKAL', 'Eternal Fire': '永恒之火',
+    'Sangal': 'Sangal', 'Metizport': 'Metizport', 'Preasy': 'Preasy',
+    'Apeks': 'Apeks', 'BIG': 'BIG', 'Sprout': 'Sprout', 'HEET': 'HEET',
   };
   const CS2_TOURNAMENT_CN = {
-    'BLAST Premier': 'BLAST  Premier', 'IEM': 'IEM 英特尔极限大师赛',
-    'ESL Pro League': 'ESL 职业联赛', 'ESL Challenger': 'ESL 挑战者联赛',
-    'PGL Major': 'PGL Major', 'BLAST.tv Major': 'BLAST Major',
-    'DreamHack': 'DreamHack', 'BLAST Open': 'BLAST Open',
-    'IEM Katowice': 'IEM 卡托维兹', 'IEM Cologne': 'IEM 科隆',
-    'IEM Rio': 'IEM 里约', 'IEM Dallas': 'IEM 达拉斯',
-    'BLAST World Final': 'BLAST 世界总决赛', 'BLAST Spring Final': 'BLAST 春季总决赛',
-    'BLAST Fall Final': 'BLAST 秋季总决赛',
+    'BLAST Premier Spring Groups': 'BLAST 春季小组赛',
+    'BLAST Premier Fall Groups': 'BLAST 秋季小组赛',
+    'BLAST Premier Spring Final': 'BLAST 春季总决赛',
+    'BLAST Premier Fall Final': 'BLAST 秋季总决赛',
+    'BLAST Premier World Final': 'BLAST 世界总决赛',
+    'BLAST Premier Showdown': 'BLAST 赏金赛',
+    'BLAST.tv Major': 'BLAST Major',
+    'IEM Katowice': 'IEM 卡托维兹',
+    'IEM Cologne': 'IEM 科隆',
+    'IEM Rio': 'IEM 里约',
+    'IEM Dallas': 'IEM 达拉斯',
+    'IEM Chengdu': 'IEM 成都',
+    'IEM Sydney': 'IEM 悉尼',
+    'Intel Extreme Masters': 'IEM 英特尔极限大师赛',
+    'ESL Pro League': 'ESL 职业联赛',
+    'ESL Challenger': 'ESL 挑战者联赛',
+    'PGL Major': 'PGL Major',
+    'DreamHack Masters': 'DreamHack 大师赛',
+    'Thunderpick World Championship': 'Thunderpick 世界锦标赛',
+    'RMR': 'RMR  Major 预选赛',
+    'Regional Major Ranking': 'RMR Major 预选赛',
   };
   function cs2TeamCN(name) {
     if (!name) return name;
@@ -121,6 +143,12 @@
       return (res.data && res.data.matches) || [];
     } catch (e) { return []; }
   }
+  async function searchFootballTeams(q) {
+    try {
+      const res = await window.InnerOSApi.get(`/api/v1/football/teams?search=${encodeURIComponent(q)}`);
+      return (res.data && res.data.teams) || [];
+    } catch (e) { return []; }
+  }
   async function fetchFootballFixtureDetail(fixtureId) {
     try {
       const res = await window.InnerOSApi.get(`/api/v1/football/fixture?id=${fixtureId}`);
@@ -140,9 +168,26 @@
       }));
     } catch (e) { return []; }
   }
+  async function searchCS2Teams(q) {
+    try {
+      const res = await fetch(`/api/sports?type=teamsearch&sport=cs2&q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      return (data.results || []).map(t => ({
+        id: t.id || t.provider_team_id || t.name,
+        name: cs2TeamCN(t.name) || t.name,
+        logo: t.badge || t.logo || '',
+        full: t.full || t.name,
+      }));
+    } catch (e) { return []; }
+  }
   function getToday() {
     const now = new Date();
     const bj = new Date(now.getTime() + 8 * 3600 * 1000);
+    return bj.toISOString().slice(0, 10);
+  }
+  function getDateOffset(offset) {
+    const now = new Date();
+    const bj = new Date(now.getTime() + 8 * 3600 * 1000 + offset * 86400000);
     return bj.toISOString().slice(0, 10);
   }
 
@@ -174,10 +219,10 @@
   function escapeHtml(str) {
     return String(str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
+  // 队徽：无 fallback 首字母圆形，加载失败直接隐藏
   function renderBadge(badge, name) {
-    const fallback = `<span class="sp-badge-fallback">${escapeHtml((name || '?').slice(0, 2))}</span>`;
-    if (!badge) return fallback;
-    return `<img src="${badge}" class="sp-badge" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">${fallback.replace('style="display:none"', 'style="display:none"')}`;
+    if (!badge) return '';
+    return `<img src="${badge}" class="sp-badge" alt="" onerror="this.style.display='none'">`;
   }
   function renderMatchCard(m, sport, showLeague) {
     const isLive = m.status === 'live';
@@ -234,11 +279,12 @@
   function formatDateLabel(dateStr) {
     if (!dateStr || dateStr === '未知') return '未知日期';
     const d = new Date(dateStr + 'T00:00:00+08:00');
-    const today = new Date();
-    const todayStr = new Date(today.getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
-    const tomorrow = new Date(today.getTime() + 8 * 3600 * 1000 + 86400000).toISOString().slice(0, 10);
-    if (dateStr === todayStr) return '今天';
+    const today = getToday();
+    const tomorrow = getDateOffset(1);
+    const yesterday = getDateOffset(-1);
+    if (dateStr === today) return '今天';
     if (dateStr === tomorrow) return '明天';
+    if (dateStr === yesterday) return '昨天';
     const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     return `${dateStr.slice(5)} ${weekdays[d.getDay()]}`;
   }
@@ -247,6 +293,68 @@
       <button class="sp-back-btn" onclick="window.InnerOSSports.back()">← 返回</button>
       <div class="sp-page-title">${escapeHtml(title)}</div>
     </div>`;
+  }
+
+  // ========== 搜索添加主队弹窗 ==========
+  function openAddTeamModal(sport) {
+    const modal = document.createElement('div');
+    modal.className = 'sp-modal-overlay';
+    modal.id = 'sp-add-team-modal';
+    modal.innerHTML = `
+      <div class="sp-modal">
+        <div class="sp-modal-header">
+          <span class="sp-modal-title">添加${sport === 'football' ? '足球' : 'CS2'}主队</span>
+          <button class="sp-modal-close" onclick="window.InnerOSSports.closeAddTeamModal()">×</button>
+        </div>
+        <div class="sp-modal-body">
+          <input type="text" class="sp-search-input" id="sp-team-search-input" placeholder="输入球队名称搜索..." autocomplete="off">
+          <div class="sp-search-results" id="sp-team-search-results">
+            <div class="sp-search-hint">输入球队名称，如"曼城"、"皇马"、"NAVI"</div>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const input = document.getElementById('sp-team-search-input');
+    const results = document.getElementById('sp-team-search-results');
+    let searchTimer = null;
+
+    input.addEventListener('input', () => {
+      const q = input.value.trim();
+      clearTimeout(searchTimer);
+      if (q.length < 1) {
+        results.innerHTML = '<div class="sp-search-hint">输入球队名称，如"曼城"、"皇马"、"NAVI"</div>';
+        return;
+      }
+      results.innerHTML = '<div class="sp-search-loading">搜索中...</div>';
+      searchTimer = setTimeout(async () => {
+        const teams = sport === 'football' ? await searchFootballTeams(q) : await searchCS2Teams(q);
+        if (!teams.length) {
+          results.innerHTML = '<div class="sp-search-empty">未找到相关球队，试试其他关键词</div>';
+          return;
+        }
+        results.innerHTML = teams.map(t => `
+          <div class="sp-search-result-item" onclick="window.InnerOSSports.confirmAddTeam('${t.id}', '${escapeHtml(t.name)}', '${proxyImg(t.logo)}', '${sport}')">
+            ${renderBadge(proxyImg(t.logo), t.name)}
+            <span class="sp-search-result-name">${escapeHtml(t.name)}</span>
+            <span class="sp-search-result-add">＋ 添加</span>
+          </div>`).join('');
+      }, 400);
+    });
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeAddTeamModal();
+    });
+    input.focus();
+  }
+  function closeAddTeamModal() {
+    const modal = document.getElementById('sp-add-team-modal');
+    if (modal) modal.remove();
+  }
+  async function confirmAddTeam(id, name, logo, sport) {
+    await addFollowedTeam({ id, name, badge: logo, provider: sport === 'football' ? 'api-football' : 'liquipedia' }, sport);
+    closeAddTeamModal();
+    render();
   }
 
   // ========== 足球首页：联赛列表 + 主队 ==========
@@ -261,11 +369,11 @@
     html += `<div class="sp-section">
       <div class="sp-section-header">
         <span class="sp-section-title">⭐ 我的主队</span>
-        <button class="sp-add-btn" onclick="window.InnerOSSports.addTeam('football')">＋ 添加</button>
+        <button class="sp-add-btn" onclick="window.InnerOSSports.openAddTeam('football')">＋ 添加主队</button>
       </div>
       <div class="sp-teams-row">`;
     if (followed.length === 0) {
-      html += `<div class="sp-empty-inline">还没有关注主队，点击「添加」选择你支持的球队</div>`;
+      html += `<div class="sp-empty-inline">还没有关注主队，点击「添加主队」搜索你支持的球队</div>`;
     } else {
       for (const t of followed) {
         html += `<div class="sp-team-chip" onclick="window.InnerOSSports.openTeam('${t.id}', '${escapeHtml(t.name)}', '${t.badge || ''}', 'football')">
@@ -282,8 +390,9 @@
       <div class="sp-section-header"><span class="sp-section-title">🏆 热门联赛</span></div>
       <div class="sp-league-grid">`;
     for (const league of POPULAR_LEAGUES) {
-      html += `<div class="sp-league-card" onclick="window.InnerOSSports.openLeague(${league.id}, '${league.name}', '${league.logo}')">
-        <img src="${league.logo}" class="sp-league-logo" alt="" onerror="this.style.display='none'">
+      const logo = proxyImg(league.logo);
+      html += `<div class="sp-league-card" onclick="window.InnerOSSports.openLeague(${league.id}, '${league.name}', '${logo}')">
+        <img src="${logo}" class="sp-league-logo" alt="" onerror="this.style.display='none'">
         <span class="sp-league-name">${league.name}</span>
       </div>`;
     }
@@ -292,7 +401,7 @@
     container.innerHTML = html;
   }
 
-  // ========== 联赛赛程页 ==========
+  // ========== 联赛赛程页（无比赛时回退最近几天） ==========
   async function renderLeaguePage(container, leagueId, leagueName, leagueLogo) {
     container.innerHTML = renderBackButton(leagueName) + `
       <div class="sp-tabs">
@@ -307,9 +416,7 @@
         container.querySelectorAll('.sp-tab').forEach(b => b.classList.remove('sp-tab-active'));
         btn.classList.add('sp-tab-active');
         const offset = parseInt(btn.dataset.offset || '0');
-        const targetDate = offset > 0
-          ? new Date(Date.now() + 8 * 3600 * 1000 + offset * 86400000).toISOString().slice(0, 10)
-          : getToday();
+        const targetDate = getDateOffset(offset);
         const content = document.getElementById('sp-league-content');
         if (content) content.innerHTML = renderSkeleton(6);
         await loadLeagueDate(targetDate, leagueId, content);
@@ -321,11 +428,27 @@
   async function loadLeagueDate(date, leagueId, contentEl) {
     if (!contentEl) return;
     let matches = await fetchFootballFixtures(date);
-    // 过滤联赛
     if (leagueId) matches = matches.filter(m => String(m.league_id) === String(leagueId));
+
+    // 无比赛时回退：拉取最近 3 天 + 未来 3 天
+    if (matches.length === 0) {
+      const all = [];
+      for (let offset = -3; offset <= 3; offset++) {
+        if (offset === 0) continue;
+        const d = getDateOffset(offset);
+        let dayMatches = await fetchFootballFixtures(d);
+        if (leagueId) dayMatches = dayMatches.filter(m => String(m.league_id) === String(leagueId));
+        all.push(...dayMatches);
+      }
+      matches = all;
+      if (matches.length) {
+        contentEl.innerHTML = `<div class="sp-no-today-notice">当天无比赛，以下为最近几天的赛程</div>` + contentEl.innerHTML;
+      }
+    }
+
     matches = await enrichBadges(matches, 'football');
     if (matches.length === 0) {
-      contentEl.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚽</div><div class="empty-state-title">当天没有该联赛的比赛</div><div class="empty-state-desc">换个日期看看</div></div>`;
+      contentEl.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚽</div><div class="empty-state-title">近期没有该联赛的比赛</div><div class="empty-state-desc">可能处于休赛期，换个联赛看看</div></div>`;
       return;
     }
     const groups = groupByDate(matches);
@@ -335,7 +458,9 @@
       for (const m of g.matches) html += renderMatchCard(m, 'football', false);
       html += `</div></div>`;
     }
-    contentEl.innerHTML = html;
+    // 保留无比赛提示
+    const notice = contentEl.querySelector('.sp-no-today-notice');
+    contentEl.innerHTML = (notice ? notice.outerHTML : '') + html;
   }
 
   // ========== 主队赛程页 ==========
@@ -354,7 +479,6 @@
     if (sport === 'football') {
       matches = await fetchFootballTeamFixtures(teamId);
     } else {
-      // CS2：从全部赛程中过滤
       const all = await fetchCS2Matches();
       const cnName = cs2TeamCN(teamName);
       matches = all.filter(m =>
@@ -390,18 +514,18 @@
     const followed = await getFollowedTeams('cs2');
     let html = `<div class="page-header">
       <div class="page-title">CS2 · Counter-Strike 2</div>
-      <div class="page-subtitle">赛事赛程 · Liquipedia 数据源 · 中文队名</div>
+      <div class="page-subtitle">A级以上赛事 · Liquipedia 数据源 · 中文队名</div>
     </div>`;
 
     // 我的主队
     html += `<div class="sp-section">
       <div class="sp-section-header">
         <span class="sp-section-title">⭐ 我的主队</span>
-        <button class="sp-add-btn" onclick="window.InnerOSSports.addTeam('cs2')">＋ 添加</button>
+        <button class="sp-add-btn" onclick="window.InnerOSSports.openAddTeam('cs2')">＋ 添加主队</button>
       </div>
       <div class="sp-teams-row">`;
     if (followed.length === 0) {
-      html += `<div class="sp-empty-inline">还没有关注主队，点击「添加」选择你支持的战队</div>`;
+      html += `<div class="sp-empty-inline">还没有关注主队，点击「添加主队」搜索你支持的战队</div>`;
     } else {
       for (const t of followed) {
         html += `<div class="sp-team-chip" onclick="window.InnerOSSports.openTeam('${t.id}', '${escapeHtml(t.name)}', '${t.badge || ''}', 'cs2')">
@@ -413,24 +537,22 @@
     }
     html += `</div></div>`;
 
-    // 全部赛程（按赛事分组）
+    // 全部赛事（按赛事分组）
     html += `<div class="sp-section">
-      <div class="sp-section-header"><span class="sp-section-title">🎮 全部赛事</span></div>
+      <div class="sp-section-header"><span class="sp-section-title">🎮 A级赛事</span></div>
       <div class="sp-container" id="sp-cs2-content">${renderSkeleton(8)}</div>
     </div>`;
 
     container.innerHTML = html;
 
-    // 加载赛程
     let matches = await fetchCS2Matches();
     matches = await enrichBadges(matches, 'cs2');
     const contentEl = document.getElementById('sp-cs2-content');
     if (!contentEl) return;
     if (matches.length === 0) {
-      contentEl.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎮</div><div class="empty-state-title">暂无赛事数据</div><div class="empty-state-desc">Liquipedia 数据获取中，请稍后刷新</div></div>`;
+      contentEl.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎮</div><div class="empty-state-title">暂无A级赛事</div><div class="empty-state-desc">近期可能没有顶级赛事，或 Liquipedia 数据获取中</div></div>`;
       return;
     }
-    // 按赛事分组
     const byTournament = {};
     for (const m of matches) {
       const t = m.league || '其他赛事';
@@ -470,7 +592,7 @@
 
       let html = `<div class="sp-detail-header">
         <div class="sp-detail-team">
-          ${renderBadge(teams.home?.logo, teams.home?.name)}
+          ${renderBadge(proxyImg(teams.home?.logo), teams.home?.name)}
           <span class="sp-detail-team-name">${escapeHtml(teams.home?.name || '')}</span>
         </div>
         <div class="sp-detail-score">
@@ -480,12 +602,11 @@
           <span class="sp-detail-venue">${escapeHtml(f.venue?.name || '')} ${escapeHtml(f.venue?.city || '')}</span>
         </div>
         <div class="sp-detail-team">
-          ${renderBadge(teams.away?.logo, teams.away?.name)}
+          ${renderBadge(proxyImg(teams.away?.logo), teams.away?.name)}
           <span class="sp-detail-team-name">${escapeHtml(teams.away?.name || '')}</span>
         </div>
       </div>`;
 
-      // 比赛事件
       if (events && events.length) {
         html += `<div class="sp-detail-section"><div class="sp-detail-section-title">📋 比赛事件</div><div class="sp-events-list">`;
         for (const ev of events) {
@@ -499,12 +620,11 @@
         html += `</div></div>`;
       }
 
-      // 阵容
       if (lineups && lineups.length) {
         html += `<div class="sp-detail-section"><div class="sp-detail-section-title">👥 阵容</div>`;
         for (const lu of lineups.slice(0, 2)) {
           html += `<div class="sp-lineup">
-            <div class="sp-lineup-team">${renderBadge(lu.team?.logo, lu.team?.name)} ${escapeHtml(lu.team?.name || '')} - ${escapeHtml(lu.formation || '')}</div>
+            <div class="sp-lineup-team">${renderBadge(proxyImg(lu.team?.logo), lu.team?.name)} ${escapeHtml(lu.team?.name || '')} - ${escapeHtml(lu.formation || '')}</div>
             <div class="sp-lineup-players">`;
           const starters = (lu.startXI || []).map(p => p.player?.name).filter(Boolean);
           html += starters.map(n => `<span class="sp-player">${escapeHtml(n)}</span>`).join('');
@@ -515,25 +635,11 @@
 
       contentEl.innerHTML = html;
     } else {
-      // CS2 详情：暂时显示基本信息
       const contentEl = document.getElementById('sp-detail-content');
       if (contentEl) {
-        contentEl.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎮</div><div class="empty-state-title">CS2 比赛详情</div><div class="empty-state-desc">CS2 详细数据（地图比分、选手数据）正在开发中，敬请期待</div></div>`;
+        contentEl.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎮</div><div class="empty-state-title">CS2 比赛详情</div><div class="empty-state-desc">CS2 详细数据（地图比分、选手数据）需要额外 API 支持，当前 Liquipedia 免费接口无法提供。如需此功能，可考虑订阅 HLTV 或 PandaScore API。</div></div>`;
       }
     }
-  }
-
-  // ========== 添加主队（复用 app.js 的 team selector） ==========
-  function addTeam(sport) {
-    if (typeof window.openTeamSelector === 'function') {
-      window.openTeamSelector(sport);
-    } else {
-      alert('球队选择器加载中，请稍后重试');
-    }
-  }
-  async function removeTeam(id, sport) {
-    await removeFollowedTeam(id);
-    render();
   }
 
   // ========== 主渲染入口 ==========
@@ -569,8 +675,10 @@
     openLeague: (leagueId, leagueName, leagueLogo) => navigateTo('football_league', { leagueId, leagueName, leagueLogo }),
     openTeam: (teamId, teamName, teamBadge, sport) => navigateTo(sport === 'football' ? 'football_team' : 'cs2_team', { teamId, teamName, teamBadge }),
     openMatchDetail: (matchId, sport) => navigateTo('match_detail', { matchId, sport }),
-    addTeam: addTeam,
-    removeTeam: removeTeam,
+    openAddTeam: (sport) => openAddTeamModal(sport),
+    closeAddTeamModal: closeAddTeamModal,
+    confirmAddTeam: confirmAddTeam,
+    removeTeam: async (id, sport) => { await removeFollowedTeam(id); render(); },
     back: goBack,
     refresh: render,
   });

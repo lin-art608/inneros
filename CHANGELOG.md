@@ -7,6 +7,25 @@
 
 ## [Unreleased]
 
+### V1.19.2 赛事界面修复（搜索式添加主队+去首字母fallback+联赛logo代理+无比赛回退+CS2 A级过滤）（2026-08-31）
+
+- **fix：主队添加逻辑重构**——不再调用不存在的 `openTeamSelector`（会弹 alert），改为内置搜索弹窗：
+  - 点击「＋ 添加主队」→ 弹出搜索框 → 输入球队名 → 实时搜索（足球走 API-Football /teams，CS2 走 Liquipedia teamsearch）
+  - 搜索结果显示队徽+队名，点击即添加
+  - 彻底去掉几百个预设队伍的选择器，用户自己搜自己加
+- **fix：去掉首字母圆形 fallback**——`renderBadge` 不再渲染首字母占位圆，队徽加载失败直接隐藏，界面干净
+- **fix：联赛 logo 不显示**——API-Football 的 `media-1.api-sports.io` 图片需要 API key 才能访问，新增 `GET /api/v1/football/image?url=xxx` 后端代理（带 key 请求+缓存24h），联赛 logo 和详情页队徽全部走代理
+- **fix：当天无比赛显示空态**——联赛赛程页如果今天/明天/后天没比赛，自动回退拉取最近 3 天 + 未来 3 天的赛程，并显示"当天无比赛，以下为最近几天的赛程"提示，不再显示"无比赛"
+- **fix：CS2 只拉 A 级以上赛事**——后端 `functions/api/sports.js` 新增白名单过滤（BLAST Premier/IEM/ESL Pro League/PGL Major/DreamHack Masters/Thunderpick/RMR 等），排除 Qualifier/Regional League/ESEA/CCT 等 B 级及以下赛事
+- **feat：CS2 赛事名中文化扩展**——BLAST 春季小组赛/秋季小组赛/春季总决赛/秋季总决赛/世界总决赛/赏金赛，IEM 卡托维兹/科隆/里约/达拉斯/成都/悉尼，ESL 职业联赛，PGL Major，DreamHack 大师赛等
+- **feat：足球球队搜索接口**——新增 `GET /api/v1/football/teams?search=xxx`（API-Football 代理，缓存 1h）
+- **Changed**：CS2 详情页明确告知"需要额外 API（HLTV/PandaScore），当前 Liquipedia 免费接口无法提供地图比分/选手数据"
+- **未改**：D1 schema / IndexedDB v4 / 同步逻辑 / 其他页面。
+
+#### 实测
+- `node --check`：app.js / sports.js / teams.js / image.js / sports.js(后端) 全部通过
+- 逻辑验证：搜索弹窗→搜索→添加主队流程完整；联赛 logo 走代理可显示；无比赛自动回退最近几天；CS2 只保留 A 级赛事
+
 ### V1.19.1 赛事界面重构（赛事层级 + 主队功能 + CS2 中文名 + 比赛详情页）（2026-08-31）
 
 - **feat：赛事层级重构**——不再直接显示今天/明天/后天混合赛程。改为：
