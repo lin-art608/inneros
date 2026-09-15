@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.20.2';
+const APP_VERSION = 'v1.21.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -970,7 +970,7 @@ function renderKnowledge() {
 function renderAIAssistant() {
   document.getElementById('content').innerHTML = `
     <div class="placeholder-page">
-      <div class="placeholder-icon">🤖</div>
+      <div class="assistant-pet-wrap" id="pet-container"><div class="assistant-pet-caption">你的私人助手</div></div>
       <div class="placeholder-title">AI Assistant · AI助手</div>
       <div class="placeholder-desc">你的私人AI助手。基于你的记忆数据，提供个性化建议、智能问答和自动化整理。记住你的一切，比你更懂你。</div>
       <div class="placeholder-features">
@@ -985,6 +985,8 @@ function renderAIAssistant() {
       </div>
       <button class="placeholder-cta" onclick="showToast('AI助手模块开发中，敬请期待')">即将上线</button>
     </div>`;
+  // 桌宠挂载（阶段 3）：模块独立于 src/pet，失败静默降级不影响页面
+  try { window.InnerOSPet && window.InnerOSPet.mount('#pet-container'); } catch (e) { console.warn('桌宠挂载失败', e); }
 }
 
 // === Entry Card ===
@@ -2094,6 +2096,7 @@ async function saveCapture() {
     merged.updated_at = now.toISOString();
     await dbPut(merged);
     showToast('已追加记录', 'success');
+    try { window.InnerOSPetEvents && window.InnerOSPetEvents.emit('record:created', { type: selectedType, bubble: '又添了一笔～' }); } catch (e) {}
     // 云同步：追加条目 + 基础信息变更
     try {
       if (authState.loggedIn) {
@@ -2150,6 +2153,8 @@ async function saveCapture() {
     if (!entry.id) entry.id = uuid();
     await dbAdd(entry);
     showToast('已保存', 'success');
+    // 桌宠事件（阶段 4）：保存成功 → jump；宠物不可用不影响主流程
+    try { window.InnerOSPetEvents && window.InnerOSPetEvents.emit('record:created', { type: selectedType, bubble: '记下啦～' }); } catch (e) {}
     // 云同步：登记 upsert + 首条 append + 附件（未登录自动跳过）
     try {
       await enqueueMemoryUpsert(entry);

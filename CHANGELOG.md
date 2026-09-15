@@ -7,6 +7,26 @@
 
 ## [Unreleased]
 
+### V1.21.0 桌宠网页化（阶段 0~4 一次落地，2026-08-31）
+
+> 依据《InnerOS 2D桌宠网页化_Azure可执行技术路线.docx》。原桌宠为 Python(PySide6) + PNG 序列帧，
+> 按方案"序列帧优先"路线迁移；桌面窗口能力（置顶/穿透/托盘）不迁移，只做网页内角色与交互。
+
+- **阶段 0 勘察**：`docs/pet-web-migration.md`（技术判定/素材清单/参数/渲染方案/回滚方式）
+- **素材**：96 帧复制入仓 `assets/pet/{idle,wave,jump,dance,feed}`；400×500→200×250、调色板量化、命名归一化；**13.1MB→3.4MB**
+- **阶段 1 独立 Demo**：`src/pet/*`（config/adapter/view/controller/events/mount 六模块）+ `pet-demo.html`，浏览器实测角色正常渲染动起来
+- **阶段 2 动作控制器**：优先级（dance6>feed5>jump4>wave3>idle0）/700ms 冷却+队列/循环次数/页面隐藏自动暂停/移动端降帧
+- **阶段 3 嵌入私人助手**：AI 助手页新增 `#pet-container`（app.js 仅 +3 行，逻辑全在 src/pet）；显隐/缩放记忆到 localStorage；独立样式 `src/pet/pet.css`
+- **阶段 4 事件接入**：本地事件总线 → 动作映射（打开助手=wave、保存记录=jump、导入作品=dance、thinking/error=idle），全部 try/catch 兜底，宠物故障不影响主流程
+- 对外 API：`InnerOSPet.play/setState/pause/resume/show/hide/say`、`InnerOSPetEvents.emit/on`
+
+#### 实测
+- pet-demo 页：挂载 ✓ 帧推进 ✓（idle_4→idle_1 循环）动作切换 ✓ 优先级拦截 ✓（dance 播放中 idle 无法打断）
+- AI 助手页：挂载 ✓ 问候 wave ✓ 模拟 `record:created` → jump + 气泡"记下啦～" ✓
+- 回归：今天/收藏/时间线/CS赛事/设置 五页零报错；图片自然尺寸 200×250 真实加载
+- 未做（方案要求留待后续）：点击角色进对话、Azure/AI 云端接入（与动画解耦，密钥不进前端）
+
+## [Unreleased] 之前
 ### 宣传动画 V2.2：海报墙始终不可见的三重根因修复（2026-08-31）
 
 用户三轮反馈"没有海报墙"。本轮放弃猜测，用 Node 虚拟时钟模拟器（DOM 桩 + rAF 主循环 + setTimeout 调度）把 90 秒动画完整跑了 5509 帧，结合 CSS 布局推演，确认**三重叠加根因**（前两轮修复了前两个，本轮找到压死骆驼的第三个）：

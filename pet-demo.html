@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InnerOS · 桌宠网页化 Demo</title>
+<link rel="stylesheet" href="src/pet/pet.css">
+<style>
+  :root { --bg:#F7F5F0; --bg-elevated:#fff; --text:#1C1C1C; --text-secondary:#77736D; --text-tertiary:#A8A29A; --border:#E6E1D8; --accent:#8B7355; --shadow:0 1px 3px rgba(0,0,0,.06),0 4px 12px rgba(0,0,0,.04); }
+  body { margin:0; font-family:-apple-system,'Segoe UI','Noto Sans SC',sans-serif; background:var(--bg); color:var(--text); padding:32px 20px 60px; }
+  .demo-header { max-width:720px; margin:0 auto 24px; }
+  .demo-header h1 { font-size:22px; margin:0 0 6px; }
+  .demo-header p { font-size:13px; color:var(--text-secondary); margin:0; line-height:1.6; }
+  .demo-stage { max-width:720px; margin:0 auto; background:var(--bg-elevated); border:1px solid var(--border); border-radius:16px; padding:28px 20px; box-shadow:var(--shadow); }
+  .demo-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:20px; }
+  .demo-actions button { padding:8px 16px; border:1px solid var(--border); border-radius:10px; background:var(--bg-elevated); color:var(--text-secondary); font-size:13px; cursor:pointer; }
+  .demo-actions button:hover { border-color:var(--accent); color:var(--accent); }
+  .demo-note { max-width:720px; margin:20px auto 0; font-size:12px; color:var(--text-tertiary); line-height:1.7; }
+</style>
+</head>
+<body>
+<div class="demo-header">
+  <h1>桌宠网页化 · 独立 Demo（阶段 1）</h1>
+  <p>此页仅用于验证「素材 + 渲染 + 动作控制」是否正常，不接入 AI、不读写任何 InnerOS 数据。角色素材来自本地桌宠 v10（PNG 序列帧 96 张）。</p>
+</div>
+
+<div class="demo-stage">
+  <div id="pet-root" class="assistant-pet-wrap"></div>
+  <div class="demo-actions">
+    <button onclick="InnerOSPet.play('idle',{force:true})">待机 idle</button>
+    <button onclick="InnerOSPet.play('wave',{force:true})">挥手 wave</button>
+    <button onclick="InnerOSPet.play('jump',{force:true})">跳跃 jump</button>
+    <button onclick="InnerOSPet.play('dance',{force:true})">庆祝 dance</button>
+    <button onclick="InnerOSPet.play('feed',{force:true})">喂食 feed</button>
+    <button onclick="InnerOSPet.pause()">暂停</button>
+    <button onclick="InnerOSPet.resume()">继续</button>
+    <button onclick="InnerOSPet.say('这是气泡文字示例～')">说句话</button>
+    <button onclick="InnerOSPet.hide()">隐藏</button>
+    <button onclick="InnerOSPet.show()">显示</button>
+    <button onclick="InnerOSPetEvents.emit('record:created',{type:'movie',bubble:'记录成功！'})">模拟保存记录事件</button>
+  </div>
+</div>
+
+<div class="demo-note">
+  说明：动作优先级 dance(6) &gt; feed(5) &gt; jump(4) &gt; wave(3) &gt; idle(0)；连续点击受 700ms 冷却约束，被拦下的动作会排队执行；页面切到后台会自动暂停动画。
+</div>
+
+<script src="src/pet/pet-config.js"></script>
+<script src="src/pet/pet-adapter.js"></script>
+<script src="src/pet/pet-view.js"></script>
+<script src="src/pet/pet-controller.js"></script>
+<script src="src/pet/pet-events.js"></script>
+<script src="src/pet/pet-mount.js"></script>
+<script>
+  // Demo 页：直接挂载（页面本身即容器）
+  window.addEventListener('DOMContentLoaded', () => {
+    const ok = window.InnerOSPet.mount('#pet-root');
+    if (!ok) document.getElementById('pet-root').innerHTML = '<p style="color:#c75450;font-size:13px">桌宠挂载失败，请检查控制台</p>';
+  });
+</script>
+</body>
+</html>

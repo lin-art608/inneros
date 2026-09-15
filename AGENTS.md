@@ -50,6 +50,7 @@
 | `tests/run-all.sh` | 零依赖快速测试入口：一条命令跑全部单测 + 集成（**不含** E2E） |
 | `tests/run-e2e.sh` | 完整 E2E 入口：自动起 wrangler 本地 D1 → 跑 Python E2E → 停止 wrangler（需先 `npm install --no-save wrangler`） |
 | `CHANGELOG.md` | 每轮迭代必更新（日期 + 根因 + Fixed/Changed + 实测） |
+| `src/pet/*` | 桌宠网页模块（config/adapter/view/controller/events/mount + pet.css）：挂载于 AI 助手页 `#pet-container`，对外 `window.InnerOSPet`。**桌面版桌宠素材源在仓库外，勿改动 assets/pet 帧命名规则（{action}_{i}.png）** |
 
 ## 命令
 ```
