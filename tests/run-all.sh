@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ARCH-013 测试护栏 · 统一测试入口
-# 跑所有零依赖测试（8 套单测 + 1 套集成），node 直接运行，无需安装任何包。
+# 跑所有零依赖测试（12 套单测 + 1 套集成），node 直接运行，无需安装任何包。
 # 用法：bash tests/run-all.sh
 #
 # 真实 D1 端到端（E2E）另见 tests/e2e/media-sync-e2e.py —— 需先起 wrangler：

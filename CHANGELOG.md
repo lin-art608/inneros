@@ -7,6 +7,38 @@
 
 ## [Unreleased]
 
+### V1.22.0 桌宠网页化（阶段 5~6：属性数值 + 交互 + 两个真实缺陷修复，2026-09-15）
+
+> 承 V1.21.0（阶段 0~4）。本轮把桌面版 v10 的「行为」补齐：属性数值 / 喂食 / 右键菜单等价物 / 自动说话，
+> 并修掉浏览器实测中发现的 2 个真实缺陷。**AI 对话（Azure/云端）仍不在范围内**——需密钥与付费服务，密钥一律不进前端。
+
+- **属性数值**（`src/pet/pet-state.js`）：心情/饥饿/体力/亲密，默认 `{80, 30, 90, 50}`，`feed = 饥饿-30 / 心情+5 / 亲密+2`，逐项对齐桌面版 v10 `State` 类；localStorage（键 `inneros_pet_state`）相当于桌面版 `pet_save.json`；数值夹 0~100；离线按 240 分钟上限补算；每分钟自然流逝（心情 -0.15 / 饥饿 +0.6 / 体力 -0.2）＋待机回体力（+0.9/min）；10 秒落盘且**无脏数据不写**。纯逻辑经 `InnerOSPetState.Core` 导出供 node vm 单测
+- **交互**（`src/pet/pet-interact.js`）：单击 260ms 开互动菜单（喂食/挥手/跳一跳/跳个舞/说句话/查看属性，等价桌面右键菜单）、双击直接喂食、文档点击/Escape 收面板、25~45 秒随机自动说话（**饿了优先 > 没体力 > 随机闲话**，同桌面版 `_bg_tick` 判定）
+- **五种状态**（方案验收项）：`idle / thinking / happy / error` 各有独立表现——`view.setVisualState()` 加 `pet-thinking/pet-happy/pet-error` 类；`setState('error')` 新增（原先只有 thinking/idle）
+- **单测** `tests/unit/pet-state.test.mjs`：默认值/越界夹取/奖励表/离线补算上限/档位文案与色调/饿了优先选句；已并入 `tests/run-all.sh`
+
+**修复（两个真实缺陷 + 一处泄漏）**
+
+1. **互动菜单永不隐藏，浮在角色上方吞掉点击**（实测点击角色超时，报 covered by `<div hidden class="pet-menu">`）。根因：作者样式 `.pet-menu { display:grid }` 覆盖浏览器 UA 样式表的 `[hidden] { display:none }`——**作者样式优先于 UA 样式，与选择器权重无关**，`hidden` 属性形同虚设。修复：显式补 `.pet-menu[hidden], .pet-stats[hidden], .pet-bubble[hidden] { display:none }`
+2. **隐藏角色后网页端没有回归入口**（桌面版有托盘图标，网页无等价物）。修复：`.pet-stage.pet-hidden` 由整块 `display:none` 改为只藏角色/控制条/浮层，新增常驻「唤醒桌宠」按钮（`.pet-wake` + `onWake`），隐藏时顺手收起浮层与气泡避免残留节点挡内容
+3. **切换页面桌面消失 / 越切越卡**：`mount()` 幂等化（容器还在就返回，容器被重渲染换掉则先 `teardown()` 再挂）；控制器 `destroy()` 补齐 `clearInterval(queueTimer)` 与 `visibilitychange` 摘监听——原先每次重挂泄漏一个 interval + 一个监听
+
+**Changed**
+
+- `index.html` / `pet-demo.html` 接入 `pet-state.js` + `pet-interact.js`，全部资源统一 `?v=1.22.0`；`APP_VERSION` → **v1.22.0**
+- `pet-demo.html` 增补 `feed()` / `openMenu()` / `stats()` 按钮，页头说明同步到阶段 1-5
+- 助手页桌宠说明文案改为「你的私人助手 · 点我一下试试」
+
+#### 实测（浏览器 127.0.0.1:8765）
+- 点击角色开菜单 → 喂食后属性面板 心情 85→91、亲密 52→55（含挥手 +1），与桌面契约一致；localStorage 随后落盘
+- 控制条：200→260px（+0.15×2）→120px（下限 0.6 生效）；暂停/继续 `isPaused` 正确翻转；隐藏 → 角色与控制条 `none`、唤醒按钮 `block`、flag `"0"`；唤醒 → 全部恢复
+- 隐藏态**跨刷新**保持：刷新后仍隐藏、唤醒按钮可见、`inneros_pet_visible` 仍为 `"0"`
+- 手机视口 375×812：角色 140×175，菜单 111px / 属性面板 150px 均在视口内不溢出，点击开菜单正常
+- 重复进出助手页 3 次：`.pet-stage` 恒为 1 个、帧图自然尺寸真实加载、无重复实例；非助手页无桌宠残留
+- 主功能回归：14 个页面逐一渲染，零 JS 报错
+- `pet-demo.html`：挂载 / 菜单 / 喂食气泡「好好吃～」/ 属性面板四行俱全
+- `bash tests/run-all.sh`：13 套测试全绿
+
 ### V1.21.0 桌宠网页化（阶段 0~4 一次落地，2026-08-31）
 
 > 依据《InnerOS 2D桌宠网页化_Azure可执行技术路线.docx》。原桌宠为 Python(PySide6) + PNG 序列帧，

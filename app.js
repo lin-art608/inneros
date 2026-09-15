@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.21.0';
+const APP_VERSION = 'v1.22.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -970,7 +970,7 @@ function renderKnowledge() {
 function renderAIAssistant() {
   document.getElementById('content').innerHTML = `
     <div class="placeholder-page">
-      <div class="assistant-pet-wrap" id="pet-container"><div class="assistant-pet-caption">你的私人助手</div></div>
+      <div class="assistant-pet-wrap" id="pet-container"><div class="assistant-pet-caption">你的私人助手 · 点我一下试试</div></div>
       <div class="placeholder-title">AI Assistant · AI助手</div>
       <div class="placeholder-desc">你的私人AI助手。基于你的记忆数据，提供个性化建议、智能问答和自动化整理。记住你的一切，比你更懂你。</div>
       <div class="placeholder-features">

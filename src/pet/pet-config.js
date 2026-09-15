@@ -48,5 +48,52 @@
       'assistant:answered': 'jump',
       'assistant:error': 'idle',
     },
+
+    // 属性数值（阶段 5）——数值与桌面版 v10 一致，localStorage 相当于 pet_save.json
+    state: {
+      storageKey: 'inneros_pet_state',
+      initial: { mood: 80, hunger: 30, energy: 90, intimacy: 50 },
+      // 每分钟自然变化（正数=增加）；桌面版数值恒定，网页版加上缓慢流逝让"饿了"等状态真正会出现
+      driftPerMinute: { mood: -0.15, hunger: 0.6, energy: -0.2, intimacy: 0 },
+      // 待机（且页面可见未暂停）时每分钟回体力
+      idleRegen: { energy: 0.9 },
+      // 离开补偿上限（分钟）：久别归来的数值变化按此截断
+      offlineCapMinutes: 240,
+      // 动作奖励：feed 三项与桌面版 State.feed() 完全一致
+      reward: {
+        feed:  { hunger: -30, mood: +5,  intimacy: +2 },
+        wave:  { mood: +1,  intimacy: +1 },
+        jump:  { mood: +2,  energy: -2, intimacy: +1 },
+        dance: { mood: +3,  energy: -4, intimacy: +2 },
+      },
+      // 结算与落盘周期（桌面版每 ≥10s 存一次）
+      tickMs: 60000,
+      saveIntervalMs: 10000,
+    },
+
+    // 自动说话（对齐桌面版 _bg_tick：25~45 秒随机，饿了优先）
+    ambient: {
+      enabled: true,
+      minMs: 25000,
+      maxMs: 45000,
+      hungryAt: 70,
+      lowEnergyAt: 25,
+      lines: {
+        hungry: '有点饿了…',
+        tired: '想歇一会儿…',
+        idle: ['嗯～', '好安静', '陪你待着', '…'],
+      },
+      talk: ['你好呀', '今天也辛苦了', '一直陪着你好吗', '要记得休息哦～'],
+    },
+
+    // 互动菜单（对齐桌面版右键菜单：喂食/挥手/跳一跳/跳个舞/说句话/查看属性）
+    menu: [
+      { id: 'feed',  label: '喂食' },
+      { id: 'wave',  label: '挥手' },
+      { id: 'jump',  label: '跳一跳' },
+      { id: 'dance', label: '跳个舞' },
+      { id: 'talk',  label: '说句话' },
+      { id: 'stats', label: '查看属性' },
+    ],
   };
 })();

@@ -44,13 +44,13 @@
 | `app.js` 音乐链路 | ARCH-011：搜索/详情走 v1（`/api/v1/media/search\|detail?type=music` → iTunes），`mediaToWorkFields(m,'music')` 映射 artist/album/preview_url/track_price；v1 失败回退旧直连 iTunes；保存带标准 `media` 块 |
 | `src/services/api-client.js` | 前端统一 API Client（InnerOSApi，经典脚本命名空间；新调用必经） |
 | `src/features/media.js` | ARCH-012/1.16.1 前端媒体数据层：`mediaToWorkFields`/`searchMovie`/`searchBook`/`searchMusic`/`enrichWorkDetail` 从 app.js 迁出（IIFE + `window.InnerOSMedia`）。**唯一前端媒体数据入口**；app.js 的 `ContentProvider`/`enrichWorkDetail` 现为薄委托。**第三方 URL（/api/douban、itunes）只存在于本文件的「兼容 fallback 层」（legacy* 函数），feature 主链始终走 v1** |
-| `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/itunes-adapter/media-domain/media-feature/memory-service/media-service/sync-service/sports-feature/sports-backend（node 直接运行；sports 系覆盖统一 Match/主队不过滤/缓存降级/tier 白名单） |
+| `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/itunes-adapter/media-domain/media-feature/memory-service/media-service/sync-service/sports-feature/sports-backend/pet-state（node 直接运行；sports 系覆盖统一 Match/主队不过滤/缓存降级/tier 白名单；pet-state 覆盖属性数值/奖励表/离线补算/饿了优先） |
 | `tests/integration/sync-route.test.mjs` | ARCH-008.2 集成测试：真实 `onRequestPost/Get` + Cookie 会话 + 内存 D1 仿真（按 SQL 模式处理，未知 SQL 抛错防漂移）。**改同步相关代码后必跑** |
 | `tests/e2e/media-sync-e2e.py` | ARCH-013 真实 D1 端到端：电影/书籍/音乐 搜索→详情→保存→刷新→pull→删除→pull + 跨设备同步 + 幂等 + 墓碑 + user isolation + 稳定错误码。**需先起 wrangler**（零第三方依赖，Python 直接跑） |
 | `tests/run-all.sh` | 零依赖快速测试入口：一条命令跑全部单测 + 集成（**不含** E2E） |
 | `tests/run-e2e.sh` | 完整 E2E 入口：自动起 wrangler 本地 D1 → 跑 Python E2E → 停止 wrangler（需先 `npm install --no-save wrangler`） |
 | `CHANGELOG.md` | 每轮迭代必更新（日期 + 根因 + Fixed/Changed + 实测） |
-| `src/pet/*` | 桌宠网页模块（config/adapter/view/controller/events/mount + pet.css）：挂载于 AI 助手页 `#pet-container`，对外 `window.InnerOSPet`。**桌面版桌宠素材源在仓库外，勿改动 assets/pet 帧命名规则（{action}_{i}.png）** |
+| `src/pet/*` | 桌宠网页模块（config/adapter/view/controller/events/mount + **state（属性数值）/interact（点击菜单·双击喂食·自动说话）** + pet.css）：挂载于 AI 助手页 `#pet-container`，对外 `window.InnerOSPet`；属性存 localStorage `inneros_pet_state`（不进 IndexedDB/不上云）。**桌面版桌宠素材源在仓库外，勿改动 assets/pet 帧命名规则（{action}_{i}.png）**。样式改浮层显隐时注意：作者 `display` 会盖过 UA 的 `[hidden]{display:none}`，需显式写 `[hidden]` 规则 |
 
 ## 命令
 ```

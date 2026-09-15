@@ -20,8 +20,8 @@
 </head>
 <body>
 <div class="demo-header">
-  <h1>桌宠网页化 · 独立 Demo（阶段 1）</h1>
-  <p>此页仅用于验证「素材 + 渲染 + 动作控制」是否正常，不接入 AI、不读写任何 InnerOS 数据。角色素材来自本地桌宠 v10（PNG 序列帧 96 张）。</p>
+  <h1>桌宠网页化 · 独立 Demo（阶段 1-5）</h1>
+  <p>此页仅用于验证「素材 + 渲染 + 动作控制 + 交互与属性」是否正常，不接入 AI、不读写任何 InnerOS 数据。角色素材来自本地桌宠 v10（PNG 序列帧 96 张）。单击角色 = 互动菜单，双击角色 = 喂食。</p>
 </div>
 
 <div class="demo-stage">
@@ -32,6 +32,9 @@
     <button onclick="InnerOSPet.play('jump',{force:true})">跳跃 jump</button>
     <button onclick="InnerOSPet.play('dance',{force:true})">庆祝 dance</button>
     <button onclick="InnerOSPet.play('feed',{force:true})">喂食 feed</button>
+    <button onclick="InnerOSPet.feed()">喂食并加值 feed()</button>
+    <button onclick="InnerOSPet.openMenu()">打开互动菜单</button>
+    <button onclick="console.log('当前属性', InnerOSPet.stats())">打印属性到控制台</button>
     <button onclick="InnerOSPet.pause()">暂停</button>
     <button onclick="InnerOSPet.resume()">继续</button>
     <button onclick="InnerOSPet.say('这是气泡文字示例～')">说句话</button>
@@ -42,14 +45,16 @@
 </div>
 
 <div class="demo-note">
-  说明：动作优先级 dance(6) &gt; feed(5) &gt; jump(4) &gt; wave(3) &gt; idle(0)；连续点击受 700ms 冷却约束，被拦下的动作会排队执行；页面切到后台会自动暂停动画。
+  说明：动作优先级 dance(6) &gt; feed(5) &gt; jump(4) &gt; wave(3) &gt; idle(0)；连续点击受 700ms 冷却约束，被拦下的动作会排队执行；页面切到后台会自动暂停动画。单击角色打开互动菜单（喂食/挥手/跳一跳/跳个舞/说句话/查看属性），双击角色直接喂食；属性数值存在 localStorage（键 inneros_pet_state），刷新后保留。
 </div>
 
 <script src="src/pet/pet-config.js"></script>
+<script src="src/pet/pet-state.js"></script>
 <script src="src/pet/pet-adapter.js"></script>
 <script src="src/pet/pet-view.js"></script>
 <script src="src/pet/pet-controller.js"></script>
 <script src="src/pet/pet-events.js"></script>
+<script src="src/pet/pet-interact.js"></script>
 <script src="src/pet/pet-mount.js"></script>
 <script>
   // Demo 页：直接挂载（页面本身即容器）
