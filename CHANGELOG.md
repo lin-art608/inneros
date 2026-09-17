@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+### V1.23.0 桌宠体验升级：高清渲染 / 自由拖动 / 右键菜单 / 自然待机（2026-09-17）
+
+> 承 V1.22.0。本轮针对用户反馈的四个体验问题集中优化，全部在前端完成，不引入新依赖、不改素材命名。
+
+- **高清渲染**（`src/pet/pet.css`）：`.pet-sprite` 改用 `image-rendering: -webkit-optimize-contrast / crisp-edges`，开启硬件加速（`transform:translateZ(0)` + `backface-visibility:hidden`），解决像素风角色在高 DPI 屏下发糊的问题
+- **自由拖动**（`src/pet/pet-view.js` + `pet-interact.js` + `pet-config.js`）：角色脱离文档流（`position:absolute`），左键按住即可拖动；位置自动保存到 localStorage（`inneros_pet_position`），刷新后恢复；首次加载居中显示；**无法拖出浏览器到桌面**（浏览器安全限制）
+- **交互改键**（`src/pet/pet-interact.js`）：左键点击 = 随机互动效果（wave/jump 二选一，1.2 秒冷却防狂点），右键 = 打开互动菜单（喂食/挥手/跳一跳/跳个舞/说句话/查看属性），双击 = 喂食（保留）；拖动后不触发点击效果
+- **自然待机微动作**（`src/pet/pet-controller.js` + `pet-view.js` + `pet-config.js` + `pet.css`）：idle 状态下随机触发四种微动作（眨眼 / 环顾四周 / 伸懒腰 / 整理衣服），权重 55/20/15/10，间隔 4~9 秒随机，通过 CSS transform 动画叠加在帧图之上，无需额外素材；非 idle 动作、页面隐藏、暂停时自动停止微动作
+
+**Changed**
+
+- `index.html`：pet 模块全部资源 `?v=1.23.0`；`APP_VERSION` → **v1.23.0**
+- `app.js` 助手页桌宠说明文案待更新（点我一下试试 → 左键互动/右键菜单）
+
 ### V1.22.0 桌宠网页化（阶段 5~6：属性数值 + 交互 + 两个真实缺陷修复，2026-09-15）
 
 > 承 V1.21.0（阶段 0~4）。本轮把桌面版 v10 的「行为」补齐：属性数值 / 喂食 / 右键菜单等价物 / 自动说话，

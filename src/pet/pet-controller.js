@@ -14,6 +14,43 @@
     let visual = 'idle';   // 表现层状态（阶段 5）：idle / thinking / happy / error，叠加在动作之上
     const API = {};
 
+    // ---- 待机微动作调度 ----
+    let microTimer = null;
+    const microCfg = config.microActions || {};
+    function pickMicroAction() {
+      const w = microCfg.weights || { blink: 100 };
+      const entries = Object.entries(w);
+      const total = entries.reduce((s, [, v]) => s + (v || 0), 0);
+      if (total <= 0) return entries[0]?.[0] || 'blink';
+      let r = Math.random() * total;
+      for (const [name, weight] of entries) {
+        r -= weight;
+        if (r <= 0) return name;
+      }
+      return entries[0]?.[0] || 'blink';
+    }
+    function scheduleMicro() {
+      if (!microCfg.enabled) return;
+      clearTimeout(microTimer);
+      const min = Number(microCfg.minInterval) || 4000;
+      const max = Math.max(min, Number(microCfg.maxInterval) || 9000);
+      const wait = min + Math.random() * (max - min);
+      microTimer = setTimeout(() => {
+        // 只在 idle 且页面可见、未暂停时触发微动作
+        if (current === config.fallback && !paused && !document.hidden) {
+          const name = pickMicroAction();
+          const dur = (microCfg.durations && microCfg.durations[name]) || 500;
+          try { view.triggerMicroAction && view.triggerMicroAction(name, dur); } catch (e) { /* 忽略 */ }
+        }
+        scheduleMicro();
+      }, wait);
+    }
+    function stopMicro() {
+      clearTimeout(microTimer);
+      microTimer = null;
+      try { view.stopMicroActions && view.stopMicroActions(); } catch (e) { /* 忽略 */ }
+    }
+
     function setVisual(name) {
       visual = name || 'idle';
       try { view.setVisualState(visual); } catch (e) { /* 视图不支持则忽略 */ }
@@ -66,6 +103,8 @@
       adapter.preloadAction(action).then(() => view.render(current, frame));
       view.render(current, frame); // 先用可能的缓存帧，避免空白
       setVisual(action === config.fallback ? 'idle' : 'happy');
+      // 微动作：只有 idle 时才启用，其他动作一律停掉
+      if (action === config.fallback) { scheduleMicro(); } else { stopMicro(); }
       startTimer();
       return true;
     };
@@ -80,20 +119,24 @@
       if (mapped) API.play(mapped, { force: true });
     };
 
-    API.pause = function () { paused = true; };
-    API.resume = function () { paused = false; startTimer(); };
+    API.pause = function () { paused = true; stopMicro(); };
+    API.resume = function () { paused = false; startTimer(); if (current === config.fallback) scheduleMicro(); };
     API.isPaused = function () { return paused; };
     API.currentAction = function () { return current; };
     API.currentVisual = function () { return visual; };
     // 彻底销毁：页面重渲染后需要重新挂载，旧定时器与监听必须清干净（否则越切页面越卡）
     API.destroy = function () {
       stopTimer();
+      stopMicro();
       clearInterval(queueTimer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
 
     // 页面隐藏自动暂停（省电/省流量），返回后恢复
-    function onVisibility() { if (document.hidden) API.pause(); else API.resume(); }
+    function onVisibility() {
+      if (document.hidden) { API.pause(); }
+      else { API.resume(); }
+    }
     if (config.pauseWhenHidden) {
       document.addEventListener('visibilitychange', onVisibility);
     }
@@ -105,6 +148,7 @@
 
     view.render(current, 0);
     startTimer();
+    scheduleMicro(); // 启动待机微动作调度
     return API;
   }
 

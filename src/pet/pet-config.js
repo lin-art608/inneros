@@ -95,5 +95,33 @@
       { id: 'talk',  label: '说句话' },
       { id: 'stats', label: '查看属性' },
     ],
+
+    // 拖拽：页面内自由拖动，位置记忆到 localStorage
+    drag: {
+      enabled: true,
+      storageKey: 'inneros_pet_position',
+    },
+
+    // 待机微动作：叠加在 idle 帧之上的自然小动作（眨眼/伸展/环顾/整理衣服）
+    microActions: {
+      enabled: true,
+      // 两次微动作之间的随机间隔（ms）
+      minInterval: 4000,
+      maxInterval: 9000,
+      // 各微动作的权重（越高越常出现）
+      weights: {
+        blink: 55,       // 眨眼：最常见
+        lookaround: 20,  // 环顾四周
+        stretch: 15,     // 伸懒腰
+        adjust: 10,      // 整理衣服/调整姿势
+      },
+      // 动画时长（ms），需与 CSS keyframes 时长一致
+      durations: {
+        blink: 360,
+        lookaround: 2000,
+        stretch: 1200,
+        adjust: 1500,
+      },
+    },
   };
 })();

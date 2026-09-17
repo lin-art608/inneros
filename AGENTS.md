@@ -50,7 +50,7 @@
 | `tests/run-all.sh` | 零依赖快速测试入口：一条命令跑全部单测 + 集成（**不含** E2E） |
 | `tests/run-e2e.sh` | 完整 E2E 入口：自动起 wrangler 本地 D1 → 跑 Python E2E → 停止 wrangler（需先 `npm install --no-save wrangler`） |
 | `CHANGELOG.md` | 每轮迭代必更新（日期 + 根因 + Fixed/Changed + 实测） |
-| `src/pet/*` | 桌宠网页模块（config/adapter/view/controller/events/mount + **state（属性数值）/interact（点击菜单·双击喂食·自动说话）** + pet.css）：挂载于 AI 助手页 `#pet-container`，对外 `window.InnerOSPet`；属性存 localStorage `inneros_pet_state`（不进 IndexedDB/不上云）。**桌面版桌宠素材源在仓库外，勿改动 assets/pet 帧命名规则（{action}_{i}.png）**。样式改浮层显隐时注意：作者 `display` 会盖过 UA 的 `[hidden]{display:none}`，需显式写 `[hidden]` 规则 |
+| `src/pet/*` | 桌宠网页模块（config/adapter/view/controller/events/mount + **state（属性数值）/interact（点击菜单·双击喂食·自动说话）** + pet.css）：挂载于 AI 助手页 `#pet-container`，对外 `window.InnerOSPet`；属性存 localStorage `inneros_pet_state`（不进 IndexedDB/不上云）。**桌面版桌宠素材源在仓库外，勿改动 assets/pet 帧命名规则（{action}_{i}.png）**。样式改浮层显隐时注意：作者 `display` 会盖过 UA 的 `[hidden]{display:none}`，需显式写 `[hidden]` 规则。**V1.23.0+ 新增**：`image-rendering:crisp-edges` 高清渲染、`pet-draggable` 自由拖动（位置存 `inneros_pet_position`）、右键菜单+左键互动效果、`microActions` 待机微动作（blink/lookaround/stretch/adjust，CSS transform 叠加，无需额外素材） |
 
 ## 命令
 ```
@@ -89,12 +89,26 @@ curl -X POST https://inneros.pages.dev/api/...     # 线上接口探测（部署
 - 注释、UI 文案、错误提示一律中文；错误提示必须是人话+下一步动作。
 - commit：`feat:`/`fix:`/`docs:`/`chore:` + 中文一句话（写明根因）。
 - 每轮迭代必须同步做四件事：
-  1. `app.js` 顶部 `APP_VERSION` 递增（次版本 +0.1；紧急修复 +0.0.1），同时更新 `index.html` 的 `app.js?v=` 查询参数（**破缓存**：手机端不硬刷也能拿到新版）
+  1. `app.js` 顶部 `APP_VERSION` 递增（次版本 +0.1；紧急修复 +0.0.1），同时更新 `index.html` 的 `app.js?v=` 查询参数（**破缓存**：手机端不硬刷也能拿到新版）；涉及的 feature 模块（如 `src/pet/`、`src/features/`）的 `?v=` 同步更新
   2. 更新 `CHANGELOG.md`（日期 + 根因/Fixed/Changed + 实测记录）
   3. 功能或限制变化时更新 `项目.md`；结构变化时更新本文件
-  4. commit → 回复末尾附 GitHub Desktop 的 Summary + Description 文案（用户自己在 GitHub Desktop 推送）
+  4. 代码全部改完后，**Agent 直接执行 git add + commit + push**（见下方交付流程），不再只给提交文案让用户手动操作
 - 版本号是部署成功的判据：用户在侧边栏页脚/设置页看到的版本 = 最新 commit 的版本号即部署成功。
 - 长脚本改 `app.js` 用 python 正则时，替换串必须用 **lambda**（避免 `\${` 转义坑，踩过两次）。
+
+### 标准迭代交付流程（所有项目通用）
+
+> 代码改完 → Agent 自动 git add/commit/push → Cloudflare Pages 自动部署 → 验证线上版本号
+
+1. **代码修改完成**：所有目标文件改动完毕，`node --check` 语法通过
+2. **四件套同步**：APP_VERSION / index.html?v / CHANGELOG.md / 项目文档 全部更新
+3. **Agent 自动提交推送**：Agent 直接执行 `git add .` → `git commit -m "feat: xxx"` → `git push`，全程无需用户手动操作 GitHub Desktop
+4. **部署验证**：推送后约 1~2 分钟，访问线上站点，侧边栏页脚/设置页看到新版本号即为成功
+
+**commit 规范**：`feat:`/`fix:`/`docs:`/`chore:` + 中文一句话（写明根因），例如：
+- `feat: 桌宠体验升级：高清渲染/自由拖动/右键菜单/自然待机`
+- `fix: 互动菜单 hidden 属性被作者样式覆盖导致不隐藏`
+- `docs: 更新 AGENTS.md 交付流程为 Agent 自动 git push`
 
 ## 省 token 约定
 - 全程中文、解释从简、不输出整文件、只给改动片段。

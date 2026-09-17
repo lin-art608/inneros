@@ -46,6 +46,68 @@
     applySize(1);
     window.addEventListener('resize', () => applySize(img.dataset.scale ? Number(img.dataset.scale) : 1));
 
+    // ---- 拖拽支持 ----
+    let dragState = null; // { startX, startY, origLeft, origTop, moved }
+    function onDragStart(e) {
+      if (e.button !== 0) return; // 只响应左键拖动
+      e.preventDefault();
+      const rect = wrap.getBoundingClientRect();
+      const parentRect = wrap.offsetParent ? wrap.offsetParent.getBoundingClientRect() : { left: 0, top: 0 };
+      dragState = {
+        startX: e.clientX,
+        startY: e.clientY,
+        origLeft: rect.left - parentRect.left,
+        origTop: rect.top - parentRect.top,
+        moved: false,
+      };
+      wrap.classList.add('pet-dragging');
+      document.addEventListener('mousemove', onDragMove);
+      document.addEventListener('mouseup', onDragEnd);
+    }
+    function onDragMove(e) {
+      if (!dragState) return;
+      const dx = e.clientX - dragState.startX;
+      const dy = e.clientY - dragState.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragState.moved = true;
+      const newLeft = dragState.origLeft + dx;
+      const newTop = dragState.origTop + dy;
+      wrap.style.left = newLeft + 'px';
+      wrap.style.top = newTop + 'px';
+    }
+    function onDragEnd(e) {
+      if (!dragState) return;
+      const moved = dragState.moved;
+      dragState = null;
+      wrap.classList.remove('pet-dragging');
+      document.removeEventListener('mousemove', onDragMove);
+      document.removeEventListener('mouseup', onDragEnd);
+      if (moved && typeof _dragEndCallback === 'function') {
+        const rect = wrap.getBoundingClientRect();
+        const parentRect = wrap.offsetParent ? wrap.offsetParent.getBoundingClientRect() : { left: 0, top: 0 };
+        _dragEndCallback({
+          left: rect.left - parentRect.left,
+          top: rect.top - parentRect.top,
+        });
+      }
+    }
+    let _dragEndCallback = null;
+
+    // ---- 待机微动作 ----
+    let microTimer = null;
+    function triggerMicroAction(name, duration) {
+      const cls = 'pet-micro-' + name;
+      wrap.classList.remove('pet-micro-blink', 'pet-micro-stretch', 'pet-micro-lookaround', 'pet-micro-adjust');
+      // 强制重排以重启动画
+      void wrap.offsetWidth;
+      wrap.classList.add(cls);
+      clearTimeout(microTimer);
+      microTimer = setTimeout(() => { wrap.classList.remove(cls); }, duration);
+    }
+    function stopMicroActions() {
+      clearTimeout(microTimer);
+      wrap.classList.remove('pet-micro-blink', 'pet-micro-stretch', 'pet-micro-lookaround', 'pet-micro-adjust');
+    }
+
     let bubbleTimer = null;
     return {
       element: wrap,
@@ -60,6 +122,9 @@
         VISUAL_CLASSES.forEach(c => wrap.classList.remove(c));
         if (name === 'thinking' || name === 'happy' || name === 'error') wrap.classList.add('pet-' + name);
       },
+      // 待机微动作
+      triggerMicroAction,
+      stopMicroActions,
       say(text) {
         const msg = String(text || '').slice(0, config.bubble.maxLength);
         if (!msg) return;
@@ -107,6 +172,35 @@
         img.dataset.scale = String(v);
         applySize(v);
       },
+      // ---- 拖拽 ----
+      enableDrag(onEnd) {
+        _dragEndCallback = onEnd || null;
+        wrap.classList.add('pet-draggable');
+        img.addEventListener('mousedown', onDragStart);
+      },
+      // 计算居中位置（用于首次加载无保存位置时）
+      getCenteredPosition() {
+        const parent = wrap.offsetParent;
+        if (!parent) return { left: 0, top: 0 };
+        const parentRect = parent.getBoundingClientRect();
+        const wrapRect = wrap.getBoundingClientRect();
+        return {
+          left: (parentRect.width - wrapRect.width) / 2,
+          top: 8,
+        };
+      },
+      disableDrag() {
+        wrap.classList.remove('pet-draggable');
+        img.removeEventListener('mousedown', onDragStart);
+        _dragEndCallback = null;
+        document.removeEventListener('mousemove', onDragMove);
+        document.removeEventListener('mouseup', onDragEnd);
+      },
+      setPosition(left, top) {
+        wrap.style.left = left + 'px';
+        wrap.style.top = top + 'px';
+      },
+      isDragging() { return !!dragState && dragState.moved; },
       setVisible(visible) {
         wrap.classList.toggle('pet-hidden', !visible);
         wake.hidden = !!visible;

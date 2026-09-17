@@ -1,8 +1,9 @@
-// 桌宠交互层（阶段 5）——把桌面版小程序的行为搬到网页：
-//   单击角色 = 打开互动菜单（对应桌面版右键菜单）/ 双击角色 = 喂食
-//   菜单项：喂食/挥手/跳一跳/跳个舞/说句话/查看属性（属性面板 = 桌面版"查看属性"）
+// 桌宠交互层（阶段 5+）——把桌面版小程序的行为搬到网页：
+//   左键点击 = 随机互动效果（挥手/跳一跳，有冷却）/ 右键 = 打开互动菜单 / 双击 = 喂食
+//   拖拽移动 = 左键按住拖动角色，位置记忆到 localStorage
+//   菜单项：喂食/挥手/跳一跳/跳个舞/说句话/查看属性
 //   自动说话：25~45 秒随机（饿了优先），对齐桌面版 _bg_tick
-//   数值结算：每分钟按时长流逝；待机且页面可见时回体力；每 10 秒落盘（对齐桌面版存盘节奏）
+//   数值结算：每分钟按时长流逝；待机且页面可见时回体力；每 10 秒落盘
 // 约束：不碰素材、不发请求；任何异常都只降级（宠物挂了不影响 InnerOS 主流程）。
 (function () {
   'use strict';
@@ -21,6 +22,7 @@
     let lastTickAt = Date.now();
     let dirty = false;
     let destroyed = false;
+    let lastClickEffectAt = 0;
 
     function markDirty() { dirty = true; }
 
@@ -50,6 +52,23 @@
       } catch (e) { console.warn('[pet] 喂食失败', e); }
     }
 
+    // 左键点击效果：随机从 wave / jump 中选一个播放（有冷却，避免狂点混乱）
+    const CLICK_EFFECTS = ['wave', 'jump'];
+    const CLICK_EFFECT_COOLDOWN = 1200;
+    function doClickEffect() {
+      try {
+        const now = Date.now();
+        if (now - lastClickEffectAt < CLICK_EFFECT_COOLDOWN) return;
+        lastClickEffectAt = now;
+        const action = CLICK_EFFECTS[Math.floor(Math.random() * CLICK_EFFECTS.length)];
+        if (!config.actions[action]) return;
+        view.hidePanels();
+        state.award(action);
+        markDirty();
+        safePlay(action);
+      } catch (e) { console.warn('[pet] 点击效果失败', e); }
+    }
+
     function pick(id) {
       try {
         if (id === 'feed') return doFeed();
@@ -72,9 +91,14 @@
     }
 
     function onSpriteClick() {
+      // 单击/双击区分：等 260ms 确认不是双击再触发点击效果
       clearTimeout(clickTimer);
-      // 单击/双击区分：等 260ms 确认不是双击再开菜单（移动端点按同样走这里）
-      clickTimer = setTimeout(() => { clickTimer = null; openMenu(); }, 260);
+      clickTimer = setTimeout(() => {
+        clickTimer = null;
+        // 刚拖动过不触发点击效果
+        if (view.isDragging && view.isDragging()) return;
+        doClickEffect();
+      }, 260);
     }
 
     function onSpriteDblClick(e) {
@@ -82,6 +106,13 @@
       clearTimeout(clickTimer);
       clickTimer = null;
       doFeed();
+    }
+
+    function onSpriteContextMenu(e) {
+      e.preventDefault();
+      clearTimeout(clickTimer);
+      clickTimer = null;
+      openMenu();
     }
 
     function onDocClick(e) {
@@ -137,9 +168,37 @@
       sprite.style.pointerEvents = 'auto';
       sprite.addEventListener('click', onSpriteClick);
       sprite.addEventListener('dblclick', onSpriteDblClick);
+      sprite.addEventListener('contextmenu', onSpriteContextMenu);
     }
     document.addEventListener('click', onDocClick);
     document.addEventListener('keydown', onKeyDown);
+
+    // ---- 拖拽支持（位置记忆到 localStorage）----
+    const dragCfg = config.drag || {};
+    if (dragCfg.enabled && view.enableDrag) {
+      const posKey = dragCfg.storageKey || 'inneros_pet_position';
+      let hasSavedPos = false;
+      // 先启用拖拽（让元素进入 absolute 定位）
+      view.enableDrag((pos) => {
+        try { localStorage.setItem(posKey, JSON.stringify(pos)); } catch (e) { /* 忽略 */ }
+      });
+      // 恢复上次位置
+      try {
+        const saved = localStorage.getItem(posKey);
+        if (saved) {
+          const pos = JSON.parse(saved);
+          if (pos && typeof pos.left === 'number' && typeof pos.top === 'number') {
+            view.setPosition(pos.left, pos.top);
+            hasSavedPos = true;
+          }
+        }
+      } catch (e) { /* 忽略 */ }
+      // 没有保存的位置则居中
+      if (!hasSavedPos && view.getCenteredPosition) {
+        const cp = view.getCenteredPosition();
+        view.setPosition(cp.left, cp.top);
+      }
+    }
     // 具名函数：重挂载时要能摘掉，否则旧实例会把过时数值写回存档
     function onBeforeUnload() { flush(true); }
     function onVisibilityChange() { if (document.hidden) flush(true); }
@@ -166,6 +225,10 @@
         if (sprite) {
           sprite.removeEventListener('click', onSpriteClick);
           sprite.removeEventListener('dblclick', onSpriteDblClick);
+          sprite.removeEventListener('contextmenu', onSpriteContextMenu);
+        }
+        if (dragCfg.enabled && view.disableDrag) {
+          try { view.disableDrag(); } catch (e) { /* 忽略 */ }
         }
         document.removeEventListener('click', onDocClick);
         document.removeEventListener('keydown', onKeyDown);
