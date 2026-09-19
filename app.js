@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.23.0';
+const APP_VERSION = 'v1.24.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -18,6 +18,12 @@ const TYPE_META = {
   quick:  { emoji:'💬', char:'速', label:'速记', color:'var(--c-music)' },
   diary:  { emoji:'📝', char:'记', label:'日记', color:'var(--c-event)' },
 };
+function typeIcon(type, className = 'type-icon-svg') {
+  return window.InnerOSMemoryDetail?.icon(type, className) || `<span class="type-icon-fallback">${(TYPE_META[type] || TYPE_META.event).char}</span>`;
+}
+function normalizeUserText(value) {
+  return String(value || '').normalize('NFC');
+}
 function localDate(value = new Date()) {
   const offset = value.getTimezoneOffset() * 60000;
   return new Date(value.getTime() - offset).toISOString().slice(0, 10);
@@ -376,6 +382,8 @@ let activeScale = 'month';
 let detailOpenId = null;        // 详情页层：非 null 表示当前停留在详情页
 let selectorOpenSport = null;   // 球队选择器层：非 null 表示选择器弹窗已入栈
 let captureOpen = false;        // 记录弹窗层
+let imageViewerOpen = false;    // 图片大图层
+let recordEditorOpen = false;   // 标题编辑层
 
 // === IndexedDB ===
 const DB_NAME = 'memory_os';
@@ -713,7 +721,7 @@ function renderPosterWall(entry) {
   const [c1, c2] = getPosterColors(entry);
   const meta = TYPE_META[entry.type] || TYPE_META.event;
   const extraInfo = entry.director || entry.author || '';
-  let inner = `<div class="poster-fallback"><span class="pp-icon">${meta.emoji}</span><span class="pp-title">${entry.title}</span>${extraInfo ? `<span class="pp-meta">${extraInfo}</span>`:''}</div>`;
+  let inner = `<div class="poster-fallback"><span class="pp-icon">${typeIcon(entry.type, 'poster-type-icon')}</span><span class="pp-title">${escapeHtml(entry.title)}</span>${extraInfo ? `<span class="pp-meta">${escapeHtml(extraInfo)}</span>`:''}</div>`;
   if (entry.poster) inner += `<img src="${proxyImage(entry.poster)}" alt="${entry.title}" loading="lazy" onerror="this.style.display='none'">`;
   return `<div class="poster-img" style="background:linear-gradient(135deg,${c1},${c2})">${inner}</div>`;
 }
@@ -723,7 +731,7 @@ function renderEntryPoster(entry) {
   const [c1, c2] = getPosterColors(entry);
   const meta = TYPE_META[entry.type] || TYPE_META.event;
   const url = proxyImage(entry.poster || entry.cover);
-  return `<div class="entry-poster-wrap" style="background:linear-gradient(135deg,${c1},${c2})"><div class="entry-poster-fallback">${meta.emoji}</div><img src="${url}" alt="${entry.title}" loading="lazy" onerror="this.style.display='none'"></div>`;
+  return `<div class="entry-poster-wrap" style="background:linear-gradient(135deg,${c1},${c2})"><div class="entry-poster-fallback">${typeIcon(entry.type, 'poster-type-icon')}</div><img src="${url}" alt="${escapeHtml(entry.title)}" loading="lazy" onerror="this.style.display='none'"></div>`;
 }
 
 function renderDetailPoster(entry) {
@@ -731,7 +739,7 @@ function renderDetailPoster(entry) {
   const [c1, c2] = getPosterColors(entry);
   const meta = TYPE_META[entry.type] || TYPE_META.event;
   const url = proxyImage(entry.poster || entry.cover);
-  return `<div class="detail-poster-wrap" style="background:linear-gradient(135deg,${c1},${c2})"><div class="detail-poster-fallback"><span class="dpf-icon">${meta.emoji}</span><span class="dpf-title">${entry.title}</span></div><img src="${url}" alt="${entry.title}" onerror="this.style.display='none'"></div>`;
+  return `<div class="detail-poster-wrap" style="background:linear-gradient(135deg,${c1},${c2})"><div class="detail-poster-fallback"><span class="dpf-icon">${typeIcon(entry.type, 'poster-type-icon large')}</span><span class="dpf-title">${escapeHtml(entry.title)}</span></div><img src="${url}" alt="${escapeHtml(entry.title)}" onerror="this.style.display='none'"></div>`;
 }
 
 // === Helpers ===
@@ -793,6 +801,8 @@ async function navigate(page, fromPop = false) {
   }
 
   const content = document.getElementById('content');
+  const menuToggle = document.querySelector('.menu-toggle');
+  if (menuToggle) menuToggle.classList.remove('detail-hidden');
   content.innerHTML = `<div class="loading-container"><div class="loading-spinner"></div><div class="loading-text">加载中...</div></div>`;
   content.classList.remove('fade-in');
   void content.offsetWidth;
@@ -996,11 +1006,12 @@ function renderEntryCard(e, showYear = false, opts = {}) {
   const time = getEntryTime(e) || localTimeOf(e.created_at);
   const yearLabel = showYear && date ? `<span>${date.slice(0,4)}</span>` : '';
   let poster = renderEntryPoster(e);
-  let preview = e.review || e.content || e.notes || e.note || '';
-  const tagsHtml = e.tags && e.tags.length ? `<span>${e.tags.slice(0,3).join(' · ')}</span>` : '';
+  const entryList = e.entries || [];
+  let preview = e.review || e.content || e.notes || e.note || (entryList.length ? entryList[entryList.length - 1].content : '') || '';
+  const tagsHtml = e.tags && e.tags.length ? `<span>${e.tags.slice(0,3).map(escapeHtml).join(' · ')}</span>` : '';
   // 时间线场景由 tl-when 行统一显示日期时间，卡片内不再重复（用户反馈：重复提及时间）
   const timeHtml = opts.hideTime ? '' : `<div class="entry-time">${time || ''}</div>`;
-  return `<div class="entry-card type-${e.type}">${timeHtml}<div class="entry-icon">${meta.emoji}</div><div class="entry-body"><div class="entry-title">${e.title}</div>${preview ? `<div class="entry-content-preview">${preview}</div>`:''}<div class="entry-meta">${yearLabel}${tagsHtml}</div></div>${poster}</div>`;
+  return `<div class="entry-card type-${e.type}">${timeHtml}<button class="entry-edit-trigger" onclick="event.stopPropagation();openRecordActions('${e.id}',this)" title="编辑记录" aria-label="编辑记录">${editIcon()}</button><div class="entry-icon">${typeIcon(e.type)}</div><div class="entry-body"><div class="entry-title">${escapeHtml(e.title)}</div>${preview ? `<div class="entry-content-preview">${escapeHtml(preview)}</div>`:''}<div class="entry-meta">${yearLabel}${tagsHtml}</div></div>${poster}</div>`;
 }
 
 // === Today ===
@@ -1107,7 +1118,7 @@ async function renderTimelineContent() {
       const d = getEntryDate(e);
       const when = d ? `${+d.slice(5,7)}月${+d.slice(8,10)}日` : '';
       const time = getEntryTime(e) || localTimeOf(e.created_at);
-      html += `<div class="timeline-item"><div class="timeline-item-dot" style="border-color:${meta.color}"></div><div class="tl-when" onclick="openDetail('${e.id}')"><span class="tl-when-date">${when}</span><span class="tl-when-time">${time}</span><span class="tl-when-type">${meta.emoji} ${meta.label}</span></div><div onclick="openDetail('${e.id}')">${renderEntryCard(e, false, { hideTime: true })}</div></div>`;
+      html += `<div class="timeline-item"><div class="timeline-item-dot" style="border-color:${meta.color}"></div><div class="tl-when" onclick="openDetail('${e.id}')"><span class="tl-when-date">${when}</span><span class="tl-when-time">${time}</span><span class="tl-when-type">${typeIcon(e.type, 'tl-type-icon')} ${meta.label}</span></div><div onclick="openDetail('${e.id}')">${renderEntryCard(e, false, { hideTime: true })}</div></div>`;
     });
     html += '</div></div>';
   });
@@ -1676,19 +1687,36 @@ function confirmClearData() {
 }
 
 // === Entry Detail ===
+function editIcon() {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L8 18l-4 1 1-4z"/></svg>';
+}
+function backIcon() {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
+}
+function shareIcon() {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.5l6.8-4M8.6 13.5l6.8 4"/></svg>';
+}
+function backFromDetail() {
+  if (history.state?.detail) history.back();
+  else navigate(currentPage, true);
+}
+
 async function openDetail(id, fromPop = false) {
   const e = await dbGet(id);
   if (!e) return;
   // 浏览器返回键集成：详情页入栈，返回时回到来源页面（fromPop=true 不重复入栈）
   if (!fromPop) history.pushState({ __inneros: true, page: currentPage, detail: id }, '');
   detailOpenId = id;
+  const menuToggle = document.querySelector('.menu-toggle');
+  if (menuToggle) menuToggle.classList.add('detail-hidden');
   const meta = TYPE_META[e.type] || TYPE_META.event;
   const date = getEntryDate(e);
   const time = getEntryTime(e);
-  // 顶部仅保留右上角 分享/删除 两个小按钮（用户要求：去掉返回键与原删除/追加行；返回走系统返回，追加走右下角＋）
-  let html = `<div class="detail-corner">
-      <button class="detail-corner-btn" onclick="shareCurrentPage()" title="分享">⤴</button>
-      <button class="detail-corner-btn" onclick="confirmDelete('${e.id}')" title="删除">🗑</button>
+  // 移动端保留显式返回兜底；编辑按钮统一承载改标题、删除等操作。
+  let html = `<button class="detail-back-floating" onclick="backFromDetail()" title="返回上一级" aria-label="返回上一级">${backIcon()}</button>
+    <div class="detail-corner">
+      <button class="detail-corner-btn" onclick="openRecordActions('${e.id}',this)" title="编辑记录" aria-label="编辑记录">${editIcon()}</button>
+      <button class="detail-corner-btn" onclick="shareCurrentPage()" title="分享" aria-label="分享">${shareIcon()}</button>
     </div>`;
 
   // V1.2 §7：事件 / 日记 / 地点 详情必须在顶部突出「地点 + 时间」。
@@ -1703,11 +1731,11 @@ async function openDetail(id, fromPop = false) {
 
   // Hero: poster + title + type badge
   if (e.poster || e.cover) {
-    html += `<div class="detail-hero fade-in">${renderDetailPoster(e)}<div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${meta.emoji} ${meta.label}</div><div class="detail-title">${e.title}</div>`;
+    html += `<div class="detail-hero fade-in">${renderDetailPoster(e)}<div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${typeIcon(e.type, 'detail-type-icon')} ${meta.label}</div><div class="detail-title">${escapeHtml(e.title)}</div>`;
     if (e.original_title) html += `<div class="detail-subtitle">${e.original_title}</div>`;
     html += heroMeta + '</div></div>';
   } else {
-    html += `<div class="detail-hero fade-in" style="gap:0"><div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${meta.emoji} ${meta.label}</div><div class="detail-title">${e.title}</div>`;
+    html += `<div class="detail-hero fade-in" style="gap:0"><div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${typeIcon(e.type, 'detail-type-icon')} ${meta.label}</div><div class="detail-title">${escapeHtml(e.title)}</div>`;
     if (e.location) html += `<div class="detail-subtitle">${e.location}</div>`;
     html += heroMeta + '</div></div>';
   }
@@ -1745,13 +1773,14 @@ async function openDetail(id, fromPop = false) {
   if (entries.length > 0) {
     // New model: show all entries chronologically
     const sorted = [...entries].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
-    html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">我的记忆 · Memories (${sorted.length})</div>`;
+    html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">篇章 · Chapters (${sorted.length})</div><div class="memory-chapters">`;
     sorted.forEach((en, i) => {
       const entryDate = en.created_at ? new Date(en.created_at) : null;
       const dateStr = entryDate ? `${entryDate.getFullYear()}-${String(entryDate.getMonth()+1).padStart(2,'0')}-${String(entryDate.getDate()).padStart(2,'0')}` : '';
       const timeStr = entryDate ? `${String(entryDate.getHours()).padStart(2,'0')}:${String(entryDate.getMinutes()).padStart(2,'0')}` : '';
-      html += `<div class="memory-entry">`;
-      html += `<div class="memory-entry-header"><span class="memory-entry-num">#${i+1}</span><span class="memory-entry-time">${dateStr} ${timeStr}</span><span class="memory-entry-actions"><button onclick="editMemoryEntry('${e.id}','${en.id}')" title="编辑">✎</button><button onclick="deleteMemoryEntry('${e.id}','${en.id}')" title="删除">✕</button></span></div>`;
+      const chapterLabel = window.InnerOSMemoryDetail?.chapterLabel(i) || (i === 0 ? '初记' : `续写 ${i}`);
+      html += `<article class="memory-entry">`;
+      html += `<div class="memory-entry-header"><span class="memory-entry-label">${chapterLabel}</span><button class="memory-entry-edit" onclick="openEntryActions('${e.id}','${en.id}',this)" title="编辑这一篇" aria-label="编辑这一篇">${editIcon()}</button></div>`;
       html += `<div class="memory-entry-content" id="entry-body-${en.id}">${en.content ? escapeHtml(en.content) : ''}</div>`;
       if (en.photos && en.photos.length > 0) {
         html += `<div class="memory-photo-gallery">`;
@@ -1760,9 +1789,9 @@ async function openDetail(id, fromPop = false) {
         });
         html += `</div>`;
       }
-      html += `</div>`;
+      html += `<footer class="memory-entry-time"><time>${dateStr}</time><span>${timeStr}</span></footer></article>`;
     });
-    html += `</div>`;
+    html += `</div></div>`;
   } else {
     // Backward compatibility: show old single content
     const tc = e.review || e.content || e.notes || e.note;
@@ -1772,7 +1801,7 @@ async function openDetail(id, fromPop = false) {
     html += `<div class="detail-section fade-in-delay-2"><div class="detail-section-title">⚠️ 冲突版本 · Conflicts（${e._conflicts.length}）</div>`;
     e._conflicts.forEach(c => {
       const d = c.data || {};
-      html += `<div class="memory-entry"><div class="memory-entry-header"><span class="memory-entry-time">${String(c.updated_at || '').replace('T', ' ').slice(0, 16)}</span></div><div class="memory-entry-content">${[d.title, d.author, d.director, (d.content || '').slice(0, 80)].filter(Boolean).join(' · ') || '（内容差异）'}</div></div>`;
+      html += `<div class="memory-entry"><div class="memory-entry-header"><span class="memory-conflict-time">${String(c.updated_at || '').replace('T', ' ').slice(0, 16)}</span></div><div class="memory-entry-content">${[d.title, d.author, d.director, (d.content || '').slice(0, 80)].filter(Boolean).join(' · ') || '（内容差异）'}</div></div>`;
     });
     html += `</div>`;
   }
@@ -1782,7 +1811,7 @@ async function openDetail(id, fromPop = false) {
   document.getElementById('content').classList.add('fade-in');
   const capBtn = document.querySelector('.capture-trigger');
   if (capBtn) capBtn.title = '追加记录到当前内容';
-  window.scrollTo({ top:0, behavior:'smooth' });
+  window.scrollTo({ top:0, behavior:'auto' });
 }
 
 // 分享当前详情页内容：优先系统分享（手机原生面板），降级复制到剪贴板
@@ -1799,6 +1828,104 @@ async function shareCurrentPage() {
   }
   try { await navigator.clipboard.writeText(text); showToast('内容已复制到剪贴板，可粘贴分享', 'success'); }
   catch (err) { showToast('复制失败', 'error'); }
+}
+
+function closeActionPopover() {
+  const pop = document.getElementById('record-actions');
+  if (pop) { pop.hidden = true; pop.innerHTML = ''; }
+}
+
+function showActionPopover(anchor, actions) {
+  const pop = document.getElementById('record-actions');
+  if (!pop || !anchor) return;
+  pop.innerHTML = '';
+  actions.forEach(action => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = action.danger ? 'danger' : '';
+    button.innerHTML = `<span>${action.icon}</span><span>${action.label}</span>`;
+    button.onclick = () => { closeActionPopover(); action.run(); };
+    pop.appendChild(button);
+  });
+  pop.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const width = 164;
+  pop.style.left = Math.max(10, Math.min(window.innerWidth - width - 10, rect.right - width)) + 'px';
+  pop.style.top = Math.min(window.innerHeight - pop.offsetHeight - 10, rect.bottom + 8) + 'px';
+  setTimeout(() => document.addEventListener('pointerdown', (ev) => {
+    if (!pop.contains(ev.target)) closeActionPopover();
+  }, { once: true }), 0);
+}
+
+function openRecordActions(id, anchor) {
+  showActionPopover(anchor, [
+    { icon: editIcon(), label: '修改标题', run: () => openTitleEditor(id) },
+    { icon: '<span aria-hidden="true">×</span>', label: '删除记录', danger: true, run: () => confirmDelete(id) },
+  ]);
+}
+
+function openEntryActions(memId, entryId, anchor) {
+  showActionPopover(anchor, [
+    { icon: editIcon(), label: '修改这一篇', run: () => editMemoryEntry(memId, entryId) },
+    { icon: '<span aria-hidden="true">×</span>', label: '删除这一篇', danger: true, run: () => deleteMemoryEntry(memId, entryId) },
+  ]);
+}
+
+async function openTitleEditor(id, fromPop = false) {
+  const record = await dbGet(id);
+  if (!record) return;
+  document.getElementById('record-title-id').value = id;
+  document.getElementById('record-title-input').value = record.title || '';
+  document.getElementById('record-edit-modal').classList.add('show');
+  recordEditorOpen = true;
+  if (!fromPop) history.pushState({ ...(history.state || {}), editor: true, editorId: id }, '');
+  setTimeout(() => document.getElementById('record-title-input')?.focus(), 80);
+}
+
+function closeTitleEditor(fromPop = false) {
+  document.getElementById('record-edit-modal').classList.remove('show');
+  const wasOpen = recordEditorOpen;
+  recordEditorOpen = false;
+  if (!fromPop && wasOpen && history.state?.editor) history.back();
+}
+
+async function saveRecordTitle() {
+  const id = document.getElementById('record-title-id').value;
+  const title = normalizeUserText(document.getElementById('record-title-input').value).trim();
+  if (!title) { showToast('请输入标题', 'error'); return; }
+  const record = await dbGet(id);
+  if (!record) { showToast('记录不存在，请刷新后重试', 'error'); return; }
+  record.title = title;
+  record.updated_at = new Date().toISOString();
+  await dbPut(record);
+  try { await enqueueMemoryUpsert(record); if (authState.loggedIn) syncNow(); } catch (e) { console.warn('标题同步入队失败', e); }
+  closeTitleEditor();
+  showToast('标题已更新', 'success');
+  if (detailOpenId === id) await openDetail(id, true);
+  else await navigate(currentPage, true);
+}
+
+function openViewer(src, fromPop = false) {
+  const viewer = document.getElementById('img-viewer');
+  const img = document.getElementById('img-viewer-image');
+  if (!viewer || !img || !src) return;
+  img.src = src;
+  viewer.classList.add('show');
+  viewer.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('viewer-open');
+  imageViewerOpen = true;
+  if (!fromPop) history.pushState({ ...(history.state || {}), viewer: true, viewerSrc: src }, '');
+}
+
+function closeViewer(fromPop = false) {
+  const viewer = document.getElementById('img-viewer');
+  if (!viewer) return;
+  viewer.classList.remove('show');
+  viewer.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('viewer-open');
+  const wasOpen = imageViewerOpen;
+  imageViewerOpen = false;
+  if (!fromPop && wasOpen && history.state?.viewer) history.back();
 }
 
 // 右下角＋：详情页时 = 给当前记录追加；否则新建记录
@@ -1902,10 +2029,12 @@ function selectType(type) {
   } else if (type === 'diary') {
     container.innerHTML = `
       <div class="capture-fields show" id="capture-fields">
+        <div class="field-row"><div class="field-label">标题</div><input type="text" class="field-input" id="capture-title" placeholder="给今天的日记起个标题" maxlength="80"></div>
         <div class="field-row"><div class="field-label">日记内容</div><textarea class="capture-textarea" id="capture-review" placeholder="今天发生了什么？写点什么..." style="min-height:200px;"></textarea></div>
         ${renderPhotoUpload()}
       </div>`;
-    setTimeout(() => document.getElementById('capture-review')?.focus(), 100);
+    addReviewEmojiBtn();
+    setTimeout(() => document.getElementById('capture-title')?.focus(), 100);
   } else if (type === 'event') {
     const eventCats = ['旅行','学习','工作','生活','社交','纪念','重要事件','其他'];
     container.innerHTML = `
@@ -2023,11 +2152,11 @@ async function saveCapture() {
   const titleEl = document.getElementById('capture-title');
   const reviewEl = document.getElementById('capture-review');
   const extraEl = document.getElementById('capture-extra');
-  const title = titleEl ? titleEl.value.trim() : '';
-  if (!title && !appendMode && selectedType !== 'diary') { showToast('请先搜索并选择作品', 'error'); return; } // 追加模式无需标题
+  const title = normalizeUserText(titleEl ? titleEl.value : '').trim();
+  if (!title && !appendMode && selectedType !== 'diary') { showToast('请先填写或选择标题', 'error'); return; } // 追加模式无需标题
   if (!selectedType) { showToast('请选择记录类型', 'error'); return; }
-  const review = reviewEl ? reviewEl.value.trim() : '';
-  const extra = extraEl ? extraEl.value.trim() : '';
+  const review = normalizeUserText(reviewEl ? reviewEl.value : '').trim();
+  const extra = normalizeUserText(extraEl ? extraEl.value : '').trim();
   const now = new Date();
   const eventAtEl = document.getElementById('capture-event-at');
   const eventAt = eventAtEl?.value ? new Date(eventAtEl.value) : now;
@@ -2107,7 +2236,8 @@ async function saveCapture() {
     } catch (e) { console.warn('同步入队失败', e); }
     const editId = editingId;
     closeCapture();
-    await openDetail(editId);
+    // 弹窗关闭会回到原详情历史项；只重绘内容，不再重复压入一个详情层。
+    await openDetail(editId, true);
   } else {
     // New record
     const entry = { type: selectedType, title, created_at: now.toISOString(), updated_at: now.toISOString(), entries: [newEntry] };
@@ -2134,9 +2264,8 @@ async function saveCapture() {
       }
     } else if (selectedType === 'diary') {
       entry.event_date = today; entry.event_time = time;
-      // 标题 = 正文前一部分（用户要求：去除标题/心情输入）
-      const plain = review.replace(/\s+/g, ' ').trim();
-      entry.title = plain ? (plain.length > 18 ? plain.slice(0, 18) + '…' : plain) : today.slice(5).replace('-', '月') + '日';
+      // 日记标题允许独立填写；留空时仅作为兼容兜底，按完整 Unicode 字素安全生成。
+      entry.title = title || window.InnerOSMemoryDetail?.diaryFallbackTitle(review, today) || '未命名日记';
     } else if (selectedType === 'event') {
       entry.event_date = today; entry.event_time = time;
       if (extra) entry.location = extra;
@@ -2216,9 +2345,10 @@ function closeSidebar() { document.getElementById('sidebar').classList.remove('o
 
 // === Keyboard ===
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { document.getElementById('img-viewer')?.classList.remove('show'); document.getElementById('emoji-panel')?.remove(); }
+  if (e.key === 'Escape') { if (imageViewerOpen) closeViewer(); document.getElementById('emoji-panel')?.remove(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openCapture(null); }
   if (e.key === 'Escape') {
+    if (recordEditorOpen) closeTitleEditor();
     if (captureOpen) closeCapture();
     if (selectorOpenSport) closeTeamSelector();
     closeConfirm();
@@ -2230,15 +2360,12 @@ document.addEventListener('keydown', (e) => {
 // popstate 在这里把 UI 收敛到历史状态对应的层：弹窗关闭、选择器关闭、详情回列表、跨页回退。
 window.addEventListener('popstate', async (e) => {
   const st = e.state || {};
+  if (imageViewerOpen && !st.viewer) { closeViewer(true); return; }
+  if (st.viewer && !imageViewerOpen) { openViewer(st.viewerSrc, true); return; }
+  if (recordEditorOpen && !st.editor) { closeTitleEditor(true); return; }
+  if (st.editor && !recordEditorOpen && st.editorId) { await openTitleEditor(st.editorId, true); return; }
   if (selectorOpenSport && st.selector !== selectorOpenSport) closeTeamSelector(true);
   if (captureOpen && !st.capture) closeCapture(true);
-  // 赛事详情层（CS 页：赛事列表 → 赛事详情）
-  if (tournamentOpenKey != null && (!st.tournament || decodeURIComponent(st.tournament) !== tournamentOpenKey)) {
-    tournamentOpenKey = null;
-    await navigate((st.__inneros && st.page) ? st.page : currentPage, true);
-    return;
-  }
-  if (st.tournament && decodeURIComponent(st.tournament) !== tournamentOpenKey) { openTournamentDetail(st.tournament, true); return; }
   // 详情层：当前状态不再带 detail → 回到来源页面
   if (detailOpenId != null && !st.detail) { await navigate((st.__inneros && st.page) ? st.page : currentPage, true); return; }
   if (st.detail && st.detail !== detailOpenId) { await openDetail(st.detail, true); return; }
@@ -2247,6 +2374,7 @@ window.addEventListener('popstate', async (e) => {
 });
 
 document.getElementById('capture-modal').addEventListener('click', function(e) { if (e.target === this) closeCapture(); });
+document.getElementById('record-edit-modal').addEventListener('click', function(e) { if (e.target === this) closeTitleEditor(); });
 document.getElementById('confirm-overlay').addEventListener('click', function(e) { if (e.target === this) closeConfirm(); });
 
 // === Image lazy load ===

@@ -261,17 +261,20 @@ body {
 .tier-tag { display:inline-block; margin-left:8px; padding:1px 8px; border-radius:4px; background:rgba(232,185,72,0.18); color:#B8860B; font-size:10px; font-weight:600; vertical-align:middle; }
 
 /* 图片查看器（居中流畅） */
-#img-viewer { position:fixed; inset:0; background:rgba(0,0,0,0.88); display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:opacity 0.25s ease; z-index:1200; cursor:zoom-out; }
+#img-viewer { position:fixed; inset:0; background:rgba(0,0,0,0.92); display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:opacity 0.25s ease; z-index:1800; cursor:zoom-out; touch-action:pinch-zoom; padding:18px; }
 #img-viewer.show { opacity:1; pointer-events:auto; }
-#img-viewer img { max-width:92vw; max-height:92vh; border-radius:8px; box-shadow:0 20px 60px rgba(0,0,0,0.5); transform:scale(0.94); transition:transform 0.25s cubic-bezier(0.22,0.61,0.36,1); }
+#img-viewer img { max-width:100%; max-height:100%; object-fit:contain; border-radius:8px; box-shadow:0 20px 60px rgba(0,0,0,0.5); transform:scale(0.94); transition:transform 0.25s cubic-bezier(0.22,0.61,0.36,1); }
 #img-viewer.show img { transform:scale(1); }
+.viewer-close { position:fixed; top:max(16px, env(safe-area-inset-top)); right:16px; width:40px; height:40px; border:1px solid rgba(255,255,255,.28); border-radius:50%; background:rgba(0,0,0,.42); color:#fff; font-size:24px; cursor:pointer; z-index:1; }
+body.viewer-open { overflow:hidden; }
 
-/* 记录条目操作（编辑/删除） */
-.memory-entry-actions { margin-left:auto; display:flex; gap:6px; opacity:0; transition:opacity 0.2s ease; }
-.memory-entry:hover .memory-entry-actions { opacity:1; }
-.memory-entry-actions button { border:none; background:var(--bg-subtle); color:var(--text-secondary); width:24px; height:24px; border-radius:6px; cursor:pointer; font-size:12px; }
-.memory-entry-actions button:hover { color:var(--danger); background:rgba(199,84,80,0.1); }
-@media (hover: none) { .memory-entry-actions { opacity:1; } }
+/* 记录操作菜单 */
+#record-actions[hidden] { display:none !important; }
+#record-actions { position:fixed; width:164px; padding:6px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow-lg); z-index:1700; }
+#record-actions button { width:100%; display:flex; align-items:center; gap:10px; padding:10px 12px; border:0; border-radius:8px; background:transparent; color:var(--text); font:inherit; font-size:13px; text-align:left; cursor:pointer; }
+#record-actions button:hover { background:var(--bg-subtle); }
+#record-actions button.danger { color:var(--danger); }
+#record-actions button svg { width:16px; height:16px; }
 
 /* 表情选择器 */
 .emoji-panel { position:absolute; width:264px; max-height:200px; overflow-y:auto; background:var(--bg-elevated); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow-lg); padding:8px; display:grid; grid-template-columns:repeat(8, 1fr); gap:2px; z-index:1500; }
@@ -492,10 +495,20 @@ body {
    Entry Card
    ============================================================ */
 .entry-card {
-  display:flex; align-items:flex-start; gap:16px; padding:20px 24px;
+  display:flex; align-items:flex-start; gap:16px; padding:20px 52px 20px 24px;
   background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius);
   cursor:pointer; transition:all 0.25s ease; position:relative; overflow:hidden;
 }
+.type-icon-svg { width:20px; height:20px; display:block; }
+.tl-type-icon { width:14px; height:14px; display:inline-block; vertical-align:-2px; margin-right:2px; }
+.detail-type-icon { width:14px; height:14px; }
+.poster-type-icon { width:30px; height:30px; }
+.poster-type-icon.large { width:48px; height:48px; }
+.entry-edit-trigger { position:absolute; top:10px; right:10px; width:30px; height:30px; display:flex; align-items:center; justify-content:center; border:0; border-radius:9px; background:var(--bg-elevated); color:var(--text-tertiary); cursor:pointer; opacity:1; transition:all .2s ease; z-index:3; }
+.entry-edit-trigger svg { width:16px; height:16px; }
+.entry-card:hover .entry-edit-trigger, .entry-edit-trigger:focus-visible { opacity:1; background:var(--bg-subtle); color:var(--accent); }
+@media (hover:none) { .entry-edit-trigger { opacity:1; background:var(--bg-elevated); } }
+.menu-toggle.detail-hidden { display:none !important; }
 .entry-card:hover { border-color:var(--border-strong); box-shadow:var(--shadow); transform:translateY(-1px); }
 .entry-time { font-size:13px; font-weight:600; color:var(--text-secondary); font-variant-numeric:tabular-nums; min-width:48px; padding-top:2px; }
 .entry-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; font-family:var(--font-cn-serif); font-weight:600; font-size:17px; letter-spacing:1px; }
@@ -708,8 +721,10 @@ body {
    ============================================================ */
 .detail-corner { position:fixed; top:16px; right:20px; display:flex; gap:8px; z-index:30; }
 .detail-corner-btn { width:36px; height:36px; border-radius:50%; border:1px solid var(--border); background:var(--bg-elevated); color:var(--text-secondary); font-size:15px; cursor:pointer; box-shadow:var(--shadow); transition:all 0.2s ease; }
+.detail-corner-btn svg, .detail-back-floating svg { width:17px; height:17px; margin:auto; display:block; }
 .detail-corner-btn:hover { color:var(--accent); border-color:var(--accent); transform:translateY(-1px); }
-@media (max-width:768px) { .detail-corner { top:12px; right:12px; } }
+.detail-back-floating { position:fixed; top:16px; left:280px; width:36px; height:36px; border-radius:50%; border:1px solid var(--border); background:var(--bg-elevated); color:var(--text-secondary); box-shadow:var(--shadow); cursor:pointer; z-index:30; }
+@media (max-width:768px) { .detail-corner { top:max(12px, env(safe-area-inset-top)); right:12px; } .detail-back-floating { top:max(12px, env(safe-area-inset-top)); left:12px; } }
 
 .detail-back { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--text-secondary); cursor:pointer; margin-bottom:24px; border:none; background:none; font-family:var(--font-sans); transition:color 0.2s ease; }
 .detail-back:hover { color:var(--text); }
@@ -1002,12 +1017,17 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 .photo-add-btn:hover { border-color:var(--accent); color:var(--accent); }
 
 /* Memory Entries (detail page) */
-.memory-entry { padding:16px 0; border-bottom:1px solid var(--border); }
-.memory-entry:last-child { border-bottom:none; }
-.memory-entry-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
-.memory-entry-num { font-size:12px; font-weight:700; color:var(--accent); }
-.memory-entry-time { font-size:12px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; }
-.memory-entry-content { font-size:15px; line-height:1.7; color:var(--text); white-space:pre-wrap; word-wrap:break-word; }
+.memory-chapters { display:grid; gap:14px; }
+.memory-entry { position:relative; padding:18px 18px 14px 20px; border:1px solid var(--border); border-radius:14px; background:var(--bg-elevated); overflow:hidden; }
+.memory-entry::before { content:''; position:absolute; inset:0 auto 0 0; width:3px; background:linear-gradient(180deg,var(--accent),var(--accent-soft)); }
+.memory-entry-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px; }
+.memory-entry-label { font-size:12px; font-weight:700; color:var(--accent); letter-spacing:.08em; }
+.memory-entry-edit { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border:0; border-radius:8px; background:var(--bg-subtle); color:var(--text-secondary); cursor:pointer; }
+.memory-entry-edit svg { width:15px; height:15px; }
+.memory-entry-edit:hover { color:var(--accent); }
+.memory-entry-time { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; font-size:11px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; }
+.memory-conflict-time { font-size:11px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; }
+.memory-entry-content { font-family:var(--font-sans); font-size:15px; line-height:1.78; color:var(--text); white-space:pre-wrap; overflow-wrap:anywhere; }
 .memory-photo-gallery { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
 .memory-photo { width:100px; height:100px; object-fit:cover; border-radius:var(--radius-sm); cursor:pointer; border:1px solid var(--border); transition:transform 0.2s ease; }
 .memory-photo:hover { transform:scale(1.03); }
@@ -1457,9 +1477,38 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <!-- Toast Container -->
 <div class="toast-container" id="toast-container"></div>
 
+<!-- 记录操作菜单 -->
+<div id="record-actions" hidden></div>
+
+<!-- 标题编辑 -->
+<div class="modal-overlay" id="record-edit-modal">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <div class="modal-title">修改标题</div>
+      <button class="modal-close" onclick="closeTitleEditor()">&times;</button>
+    </div>
+    <input type="hidden" id="record-title-id">
+    <div class="field-row">
+      <div class="field-label">标题</div>
+      <input type="text" class="field-input" id="record-title-input" maxlength="80" placeholder="输入标题" onkeydown="if(event.key==='Enter'){event.preventDefault();saveRecordTitle()}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeTitleEditor()">取消</button>
+      <button class="btn btn-primary" onclick="saveRecordTitle()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 图片大图查看器 -->
+<div id="img-viewer" aria-hidden="true" onclick="closeViewer()">
+  <button class="viewer-close" onclick="event.stopPropagation();closeViewer()" aria-label="关闭">&times;</button>
+  <img id="img-viewer-image" alt="图片大图" onclick="event.stopPropagation()">
+</div>
+
 <script src="src/services/api-client.js?v=1.20.1"></script>
 <script src="src/features/media.js?v=1.20.1"></script>
 <script src="src/features/sports.js?v=1.20.2"></script>
+<script src="src/features/memory-detail.js?v=1.24.0"></script>
 <link rel="stylesheet" href="src/pet/pet.css?v=1.23.0">
 <script src="src/pet/pet-config.js?v=1.23.0"></script>
 <script src="src/pet/pet-state.js?v=1.23.0"></script>
@@ -1469,6 +1518,6 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <script src="src/pet/pet-events.js?v=1.23.0"></script>
 <script src="src/pet/pet-interact.js?v=1.23.0"></script>
 <script src="src/pet/pet-mount.js?v=1.23.0"></script>
-<script src="app.js?v=1.23.0"></script>
+<script src="app.js?v=1.24.0"></script>
 </body>
 </html>
