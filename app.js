@@ -2,21 +2,21 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.24.0';
+const APP_VERSION = 'v1.25.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
 const TYPE_META = {
-  movie:  { emoji:'🎬', char:'影', label:'电影', color:'var(--c-movie)' },
-  book:   { emoji:'📖', char:'书', label:'书籍', color:'var(--c-book)' },
-  music:  { emoji:'🎵', char:'乐', label:'音乐', color:'var(--c-music)' },
-  game:   { emoji:'🎮', char:'游', label:'游戏', color:'var(--c-game)' },
-  custom: { emoji:'📝', char:'记', label:'自定义', color:'var(--c-event)' },
-  place:  { emoji:'📍', char:'地', label:'地点', color:'var(--c-place)' },
-  event:  { emoji:'✦', char:'事', label:'事件', color:'var(--c-event)' },
-  photo:  { emoji:'📷', char:'相', label:'照片', color:'var(--c-photo)' },
-  quick:  { emoji:'💬', char:'速', label:'速记', color:'var(--c-music)' },
-  diary:  { emoji:'📝', char:'记', label:'日记', color:'var(--c-event)' },
+  movie:  { char:'影', label:'电影', color:'var(--c-movie)' },
+  book:   { char:'书', label:'书籍', color:'var(--c-book)' },
+  music:  { char:'乐', label:'音乐', color:'var(--c-music)' },
+  game:   { char:'游', label:'游戏', color:'var(--c-game)' },
+  custom: { char:'记', label:'自定义', color:'var(--c-event)' },
+  place:  { char:'地', label:'地点', color:'var(--c-place)' },
+  event:  { char:'事', label:'事件', color:'var(--c-event)' },
+  photo:  { char:'相', label:'照片', color:'var(--c-photo)' },
+  quick:  { char:'速', label:'速记', color:'var(--c-music)' },
+  diary:  { char:'记', label:'日记', color:'var(--c-event)' },
 };
 function typeIcon(type, className = 'type-icon-svg') {
   return window.InnerOSMemoryDetail?.icon(type, className) || `<span class="type-icon-fallback">${(TYPE_META[type] || TYPE_META.event).char}</span>`;
@@ -224,7 +224,7 @@ function renderBookResults(results) {
   if (!results.length) { container.innerHTML = '<div class="douban-no-result">未找到相关书籍</div>'; return; }
   container.innerHTML = results.map((b, i) =>
     `<div class="douban-result-item" onclick="selectBookResult(${i})">
-      ${b.cover ? `<img class="douban-result-cover" src="${proxyImage(b.cover)}" loading="lazy" onerror="this.style.display='none'">` : '<div class="douban-result-cover placeholder">📖</div>'}
+      ${b.cover ? `<img class="douban-result-cover" src="${proxyImage(b.cover)}" loading="lazy" onerror="this.style.display='none'">` : `<div class="douban-result-cover placeholder">${typeIcon('book','result-type-icon')}</div>`}
       <div class="douban-result-info">
         <div class="douban-result-title">${b.title}</div>
         ${b.authors ? `<div class="douban-result-subtitle">${b.authors}</div>` : ''}
@@ -383,7 +383,9 @@ let detailOpenId = null;        // 详情页层：非 null 表示当前停留在
 let selectorOpenSport = null;   // 球队选择器层：非 null 表示选择器弹窗已入栈
 let captureOpen = false;        // 记录弹窗层
 let imageViewerOpen = false;    // 图片大图层
-let recordEditorOpen = false;   // 标题编辑层
+let viewerImages = [];
+let viewerIndex = 0;
+let viewerTouchStartX = null;
 
 // === IndexedDB ===
 const DB_NAME = 'memory_os';
@@ -1006,12 +1008,12 @@ function renderEntryCard(e, showYear = false, opts = {}) {
   const time = getEntryTime(e) || localTimeOf(e.created_at);
   const yearLabel = showYear && date ? `<span>${date.slice(0,4)}</span>` : '';
   let poster = renderEntryPoster(e);
-  const entryList = e.entries || [];
-  let preview = e.review || e.content || e.notes || e.note || (entryList.length ? entryList[entryList.length - 1].content : '') || '';
+  // 列表始终展示最初记录，续写只在详情页按篇章查看。
+  let preview = window.InnerOSMemoryDetail?.primaryContent(e) || '';
   const tagsHtml = e.tags && e.tags.length ? `<span>${e.tags.slice(0,3).map(escapeHtml).join(' · ')}</span>` : '';
   // 时间线场景由 tl-when 行统一显示日期时间，卡片内不再重复（用户反馈：重复提及时间）
   const timeHtml = opts.hideTime ? '' : `<div class="entry-time">${time || ''}</div>`;
-  return `<div class="entry-card type-${e.type}">${timeHtml}<button class="entry-edit-trigger" onclick="event.stopPropagation();openRecordActions('${e.id}',this)" title="编辑记录" aria-label="编辑记录">${editIcon()}</button><div class="entry-icon">${typeIcon(e.type)}</div><div class="entry-body"><div class="entry-title">${escapeHtml(e.title)}</div>${preview ? `<div class="entry-content-preview">${escapeHtml(preview)}</div>`:''}<div class="entry-meta">${yearLabel}${tagsHtml}</div></div>${poster}</div>`;
+  return `<div class="entry-card type-${e.type}">${timeHtml}<div class="entry-icon">${typeIcon(e.type)}</div><div class="entry-body"><div class="entry-title">${escapeHtml(e.title)}</div>${preview ? `<div class="entry-content-preview">${escapeHtml(preview)}</div>`:''}<div class="entry-meta">${yearLabel}${tagsHtml}</div></div>${poster}</div>`;
 }
 
 // === Today ===
@@ -1072,12 +1074,12 @@ async function renderTimeline() {
     </div>
     <div class="filter-bar">
       <button class="filter-chip active" onclick="setFilter('all',this)"><span>全部</span></button>
-      <button class="filter-chip" onclick="setFilter('movie',this)"><span class="dot" style="background:var(--c-movie)"></span>电影</button>
-      <button class="filter-chip" onclick="setFilter('book',this)"><span class="dot" style="background:var(--c-book)"></span>书籍</button>
-      <button class="filter-chip" onclick="setFilter('music',this)"><span class="dot" style="background:var(--c-music)"></span>音乐</button>
-      <button class="filter-chip" onclick="setFilter('game',this)"><span class="dot" style="background:var(--c-game)"></span>游戏</button>
-      <button class="filter-chip" onclick="setFilter('place',this)"><span class="dot" style="background:var(--c-place)"></span>地点</button>
-      <button class="filter-chip" onclick="setFilter('event',this)"><span class="dot" style="background:var(--c-event)"></span>事件</button>
+      <button class="filter-chip" onclick="setFilter('movie',this)">${typeIcon('movie','filter-type-icon')}电影</button>
+      <button class="filter-chip" onclick="setFilter('book',this)">${typeIcon('book','filter-type-icon')}书籍</button>
+      <button class="filter-chip" onclick="setFilter('music',this)">${typeIcon('music','filter-type-icon')}音乐</button>
+      <button class="filter-chip" onclick="setFilter('game',this)">${typeIcon('game','filter-type-icon')}游戏</button>
+      <button class="filter-chip" onclick="setFilter('place',this)">${typeIcon('place','filter-type-icon')}地点</button>
+      <button class="filter-chip" onclick="setFilter('event',this)">${typeIcon('event','filter-type-icon')}事件</button>
     </div>
     <div id="timeline-content"><div class="loading-container"><div class="loading-spinner"></div><div class="loading-text">加载中...</div></div></div>`;
   await renderTimelineContent();
@@ -1153,11 +1155,11 @@ async function renderLibrary(tab) {
   document.getElementById('content').innerHTML = `
     <div class="page-header"><div class="page-title">收藏 · Library</div></div>
     <div class="lib-tabs">
-      <button class="lib-tab ${tab==='movie'?'active':''}" onclick="renderLibraryTab('movie')">🎬 电影 <span class="count">${c.movie}</span></button>
-      <button class="lib-tab ${tab==='book'?'active':''}" onclick="renderLibraryTab('book')">📖 书籍 <span class="count">${c.book}</span></button>
-      <button class="lib-tab ${tab==='music'?'active':''}" onclick="renderLibraryTab('music')">🎵 音乐 <span class="count">${c.music}</span></button>
-      <button class="lib-tab ${tab==='game'?'active':''}" onclick="renderLibraryTab('game')">🎮 游戏 <span class="count">${c.game}</span></button>
-      <button class="lib-tab ${tab==='place'?'active':''}" onclick="renderLibraryTab('place')">📍 地点 <span class="count">${c.place}</span></button>
+      <button class="lib-tab ${tab==='movie'?'active':''}" onclick="renderLibraryTab('movie')">${typeIcon('movie','lib-tab-icon')}电影 <span class="count">${c.movie}</span></button>
+      <button class="lib-tab ${tab==='book'?'active':''}" onclick="renderLibraryTab('book')">${typeIcon('book','lib-tab-icon')}书籍 <span class="count">${c.book}</span></button>
+      <button class="lib-tab ${tab==='music'?'active':''}" onclick="renderLibraryTab('music')">${typeIcon('music','lib-tab-icon')}音乐 <span class="count">${c.music}</span></button>
+      <button class="lib-tab ${tab==='game'?'active':''}" onclick="renderLibraryTab('game')">${typeIcon('game','lib-tab-icon')}游戏 <span class="count">${c.game}</span></button>
+      <button class="lib-tab ${tab==='place'?'active':''}" onclick="renderLibraryTab('place')">${typeIcon('place','lib-tab-icon')}地点 <span class="count">${c.place}</span></button>
     </div>
     <div id="lib-content"></div>`;
   await renderLibraryTab(tab);
@@ -1224,24 +1226,24 @@ async function renderLibraryTab(tab) {
   } else if (tab === 'music') {
     let html = '<div class="books-grid">';
     items.forEach(m => {
-      html += `<div class="book-card" onclick="openDetail('${m.id}')"><div class="entry-icon" style="width:64px;height:64px;border-radius:8px;background:rgba(201,123,99,0.12);color:var(--c-music);font-size:28px;">🎵</div><div class="book-info"><div class="book-title">${m.title}</div><div class="book-author">${m.artist||''}</div><div class="book-date">${(m.date||'').replace(/-/g,'/')}</div></div></div>`;
+      html += `<div class="book-card" onclick="openDetail('${m.id}')"><div class="entry-icon library-cover-icon type-music">${typeIcon('music','library-type-icon')}</div><div class="book-info"><div class="book-title">${m.title}</div><div class="book-author">${m.artist||''}</div><div class="book-date">${(m.date||'').replace(/-/g,'/')}</div></div></div>`;
     });
-    content.innerHTML = html ? html + '</div>' : '<div class="empty-state"><div class="empty-state-icon">🎵</div><div class="empty-state-title">还没有音乐记录</div><div class="empty-state-desc">点击 + 按钮，记录你听过的音乐</div></div>';
+    content.innerHTML = items.length ? html + '</div>' : `<div class="empty-state"><div class="empty-state-icon">${typeIcon('music','empty-type-icon')}</div><div class="empty-state-title">还没有音乐记录</div><div class="empty-state-desc">点击 + 按钮，记录你听过的音乐</div></div>`;
   } else if (tab === 'game') {
     let html = '<div class="books-grid">';
     items.forEach(g => {
       const coverHtml = g.cover
         ? `<img class="book-cover" src="${proxyImage(g.cover)}" alt="${g.title}" loading="lazy" onerror="this.style.display='none'">`
-        : `<div class="book-cover" style="background:rgba(90,139,173,0.12);display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--c-game);">🎮</div>`;
+        : `<div class="book-cover library-cover-icon type-game">${typeIcon('game','library-type-icon')}</div>`;
       html += `<div class="book-card" onclick="openDetail('${g.id}')">${coverHtml}<div class="book-info"><div class="book-title">${g.title}</div><div class="book-author">${g.platform||''}</div><div class="book-date">${g.finish_date?'完成于 '+g.finish_date.replace(/-/g,'/'):'进行中'}</div></div></div>`;
     });
-    content.innerHTML = html + '</div>' || '<div class="search-empty">还没有游戏记录</div>';
+    content.innerHTML = items.length ? html + '</div>' : `<div class="empty-state"><div class="empty-state-icon">${typeIcon('game','empty-type-icon')}</div><div class="empty-state-title">还没有游戏记录</div><div class="empty-state-desc">点击 + 按钮，记录你玩过的游戏</div></div>`;
   } else if (tab === 'place') {
     let html = '<div class="books-grid">';
     items.forEach(p => {
-      html += `<div class="book-card type-place" onclick="openDetail('${p.id}')"><div class="entry-icon" style="width:64px;height:90px;border-radius:6px;background:rgba(201,169,97,0.15);color:var(--c-place);font-size:28px;display:flex;align-items:center;justify-content:center;">📍</div><div class="book-info"><div class="book-title">${p.title}</div><div class="book-author">${p.location||''}</div><div class="book-date">${(p.date||'').replace(/-/g,'/')}</div></div></div>`;
+      html += `<div class="book-card type-place" onclick="openDetail('${p.id}')"><div class="entry-icon library-cover-icon type-place">${typeIcon('place','library-type-icon')}</div><div class="book-info"><div class="book-title">${p.title}</div><div class="book-author">${p.location||''}</div><div class="book-date">${(p.date||'').replace(/-/g,'/')}</div></div></div>`;
     });
-    content.innerHTML = html ? html + '</div>' : '<div class="empty-state"><div class="empty-state-icon">📍</div><div class="empty-state-title">还没有地点记录</div><div class="empty-state-desc">点击 + 按钮，记录你去过的地方</div></div>';
+    content.innerHTML = items.length ? html + '</div>' : `<div class="empty-state"><div class="empty-state-icon">${typeIcon('place','empty-type-icon')}</div><div class="empty-state-title">还没有地点记录</div><div class="empty-state-desc">点击 + 按钮，记录你去过的地方</div></div>`;
   }
 }
 
@@ -1250,7 +1252,7 @@ function renderMovieWallContent(items) {
   const container = document.getElementById('movie-wall-content');
   if (!container) return;
   if (items.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎬</div><div class="empty-state-title">没有符合条件的电影</div><div class="empty-state-desc">试试调整搜索或筛选条件</div></div>';
+    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${typeIcon('movie','empty-type-icon')}</div><div class="empty-state-title">没有符合条件的电影</div><div class="empty-state-desc">试试调整搜索或筛选条件</div></div>`;
     return;
   }
   const byYear = {};
@@ -1310,7 +1312,7 @@ function renderBookWallContent(items, status) {
 
   if (filtered.length === 0) {
     const msgs = { all:'还没有书籍记录', want:'没有想读的书籍', reading:'没有在读的书籍', done:'没有已读的书籍' };
-    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📖</div><div class="empty-state-title">${msgs[status]||'没有书籍'}</div><div class="empty-state-desc">点击 + 按钮，搜索书籍并记录你的阅读体验</div></div>`;
+    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${typeIcon('book','empty-type-icon')}</div><div class="empty-state-title">${msgs[status]||'没有书籍'}</div><div class="empty-state-desc">点击 + 按钮，搜索书籍并记录你的阅读体验</div></div>`;
     return;
   }
 
@@ -1371,8 +1373,8 @@ function setBookGenre(genre, btn) {
 function renderBookCard(b, delay) {
   const [c1,c2] = getPosterColors(b);
   const coverHtml = b.cover
-    ? `<div class="book-cover" style="background:linear-gradient(135deg,${c1},${c2});position:relative;overflow:hidden;"><div class="poster-fallback"><span class="pp-icon" style="font-size:20px;">📖</span><span class="pp-title" style="font-size:9px;">${b.title}</span></div><img src="${proxyImage(b.cover)}" alt="${b.title}" loading="lazy" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;"></div>`
-    : `<div class="book-cover" style="background:linear-gradient(135deg,${c1},${c2});display:flex;align-items:center;justify-content:center;font-size:20px;">📖</div>`;
+    ? `<div class="book-cover" style="background:linear-gradient(135deg,${c1},${c2});position:relative;overflow:hidden;"><div class="poster-fallback"><span class="pp-icon">${typeIcon('book','poster-type-icon')}</span><span class="pp-title" style="font-size:9px;">${b.title}</span></div><img src="${proxyImage(b.cover)}" alt="${b.title}" loading="lazy" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;"></div>`
+    : `<div class="book-cover library-cover-icon" style="background:linear-gradient(135deg,${c1},${c2});">${typeIcon('book','library-type-icon')}</div>`;
   const statusBadge = b.finish_date
     ? '<span class="book-status-badge done">已读</span>'
     : b.start_date
@@ -1485,14 +1487,14 @@ async function renderYearReview(yearOverride) {
   // Stats grid
   html += `<div class="yr-stats-grid">`;
   const statItems = [
-    { label:'电影', num:movies.length, emoji:'🎬', color:'var(--c-movie)' },
-    { label:'书籍', num:books.length, emoji:'📖', color:'var(--c-book)' },
-    { label:'游戏', num:games.length, emoji:'🎮', color:'var(--c-game)' },
-    { label:'记录', num:events.length, emoji:'✦', color:'var(--c-event)' },
+    { type:'movie', label:'电影', num:movies.length, color:'var(--c-movie)' },
+    { type:'book', label:'书籍', num:books.length, color:'var(--c-book)' },
+    { type:'game', label:'游戏', num:games.length, color:'var(--c-game)' },
+    { type:'diary', label:'记录', num:events.length, color:'var(--c-event)' },
   ];
   statItems.forEach((s, i) => {
     html += `<div class="yr-stat-card card-enter" style="animation-delay:${i*0.06}s;border-top:3px solid ${s.color}">
-      <div class="yr-stat-emoji">${s.emoji}</div>
+      <div class="yr-stat-emoji">${typeIcon(s.type, 'year-type-icon')}</div>
       <div class="yr-stat-num">${s.num}</div>
       <div class="yr-stat-label">${s.label}</div>
     </div>`;
@@ -1514,9 +1516,9 @@ async function renderYearReview(yearOverride) {
     const total = typeEntries.reduce((s,[,n]) => s+n, 0);
     html += `<div class="yr-section card-enter"><div class="detail-section-title">类型分布 · Type Breakdown</div><div class="yr-breakdown">`;
     typeEntries.forEach(([type, count]) => {
-      const meta = TYPE_META[type] || {emoji:'•',label:type,color:'var(--text-tertiary)'};
+      const meta = TYPE_META[type] || {label:type,color:'var(--text-tertiary)'};
       const pct = Math.round((count/total)*100);
-      html += `<div class="yr-breakdown-row"><div class="yr-breakdown-label">${meta.emoji} ${meta.label}</div><div class="yr-breakdown-bar"><div class="yr-breakdown-fill" style="width:${pct}%;background:${meta.color}"></div></div><div class="yr-breakdown-num">${count}</div></div>`;
+      html += `<div class="yr-breakdown-row"><div class="yr-breakdown-label">${typeIcon(type, 'breakdown-type-icon')} ${meta.label}</div><div class="yr-breakdown-bar"><div class="yr-breakdown-fill" style="width:${pct}%;background:${meta.color}"></div></div><div class="yr-breakdown-num">${count}</div></div>`;
     });
     html += `</div></div>`;
   }
@@ -1532,6 +1534,16 @@ function changeReviewYear(yr) {
 }
 
 // === Settings ===
+const SKINS = [
+  { id:'smoke', name:'烟熏琥珀', desc:'深炭灰、旧纸与燃烧琥珀', colors:['#171512','#2A2520','#D49A5B'] },
+  { id:'paper', name:'纸页原色', desc:'当前的温暖米白编辑风', colors:['#F7F5F0','#FFFFFF','#8B7355'] },
+  { id:'ink', name:'墨色杂志', desc:'黑白高对比与克制朱红', colors:['#F2F0EA','#FCFBF7','#9B3A34'] },
+  { id:'sage', name:'苔藓书房', desc:'雾绿、亚麻与安静木色', colors:['#EEF1EA','#FAFCF7','#617563'] },
+];
+function renderSkinCards() {
+  const current = document.body.dataset.skin || 'smoke';
+  return `<div class="skin-grid">${SKINS.map(s => `<button class="skin-card${current === s.id ? ' active' : ''}" onclick="applySkin('${s.id}')" data-skin-choice="${s.id}"><span class="skin-swatches">${s.colors.map(c => `<i style="background:${c}"></i>`).join('')}</span><strong>${s.name}</strong><small>${s.desc}</small><span class="skin-check">${current === s.id ? '已使用' : '切换'}</span></button>`).join('')}</div>`;
+}
 async function renderSettings() {
   const all = await dbGetAll();
   const counts = {};
@@ -1539,6 +1551,10 @@ async function renderSettings() {
   const lastCloud = await dbGetMeta('last_cloud_sync');
   let html = `
     <div class="page-header"><div class="page-title">设置 · Settings</div></div>
+    <div class="settings-section">
+      <div class="section-label">外观皮肤 · Appearance</div>
+      ${renderSkinCards()}
+    </div>
     <div class="settings-section">
       <div class="section-label">账户 · Account</div>
       <div class="settings-card">
@@ -1564,7 +1580,7 @@ async function renderSettings() {
       <div class="section-label">数据统计</div>
       <div class="settings-card">
         <div class="settings-row"><div class="settings-row-label">总记录数</div><div class="settings-row-value">${all.length} 条</div></div>
-        ${Object.entries(counts).map(([t,n]) => { const m = TYPE_META[t]||{emoji:'',label:t}; return `<div class="settings-row" style="cursor:pointer;" onclick="jumpLibrary('${t}')" title="查看全部${m.label}"><div class="settings-row-label">${m.emoji} ${m.label}</div><div class="settings-row-value">${n} 条 →</div></div>`; }).join('')}
+        ${Object.entries(counts).map(([t,n]) => { const m = TYPE_META[t]||{label:t}; return `<div class="settings-row" style="cursor:pointer;" onclick="jumpLibrary('${t}')" title="查看全部${m.label}"><div class="settings-row-label settings-type-label">${typeIcon(t,'settings-type-icon')} ${m.label}</div><div class="settings-row-value">${n} 条 →</div></div>`; }).join('')}
       </div>
     </div>
     <div class="settings-section">
@@ -1696,9 +1712,53 @@ function backIcon() {
 function shareIcon() {
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.5l6.8-4M8.6 13.5l6.8 4"/></svg>';
 }
+function moreIcon() {
+  return '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';
+}
+function trashIcon() {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/></svg>';
+}
 function backFromDetail() {
   if (history.state?.detail) history.back();
   else navigate(currentPage, true);
+}
+function renderDetailTitle(record) {
+  const editable = window.InnerOSMemoryDetail?.titleEditable(record.type) === true;
+  return `<div class="detail-title${editable ? ' title-editable' : ''}" id="detail-title-${record.id}"${editable ? ` onclick="beginInlineTitleEdit('${record.id}')" tabindex="0" role="button" aria-label="${escapeHtml(record.title)}，点击修改日记标题" onkeydown="if(event.key==='Enter'){event.preventDefault();beginInlineTitleEdit('${record.id}')}"` : ''}>${escapeHtml(record.title)}</div>`;
+}
+async function beginInlineTitleEdit(id) {
+  const record = await dbGet(id);
+  if (!record || record.type !== 'diary') return;
+  const titleNode = document.getElementById('detail-title-' + id);
+  if (!titleNode || titleNode.querySelector('input')) return;
+  const input = document.createElement('input');
+  input.className = 'detail-title-input';
+  input.value = record.title || '';
+  input.maxLength = 80;
+  input.setAttribute('aria-label', '日记标题');
+  titleNode.replaceWith(input);
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  let finished = false;
+  const save = async () => {
+    if (finished) return;
+    finished = true;
+    const title = normalizeUserText(input.value).trim();
+    if (!title) { showToast('标题不能为空', 'error'); await openDetail(id, true); return; }
+    if (title !== record.title) {
+      record.title = title;
+      record.updated_at = new Date().toISOString();
+      await dbPut(record);
+      try { await enqueueMemoryUpsert(record); if (authState.loggedIn) syncNow(); } catch (e) { console.warn('标题同步入队失败', e); }
+      showToast('标题已更新', 'success');
+    }
+    await openDetail(id, true);
+  };
+  input.addEventListener('blur', save, { once:true });
+  input.addEventListener('keydown', async (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+    if (ev.key === 'Escape') { ev.preventDefault(); finished = true; await openDetail(id, true); }
+  });
 }
 
 async function openDetail(id, fromPop = false) {
@@ -1715,7 +1775,7 @@ async function openDetail(id, fromPop = false) {
   // 移动端保留显式返回兜底；编辑按钮统一承载改标题、删除等操作。
   let html = `<button class="detail-back-floating" onclick="backFromDetail()" title="返回上一级" aria-label="返回上一级">${backIcon()}</button>
     <div class="detail-corner">
-      <button class="detail-corner-btn" onclick="openRecordActions('${e.id}',this)" title="编辑记录" aria-label="编辑记录">${editIcon()}</button>
+      <button class="detail-corner-btn" onclick="openRecordActions('${e.id}',this)" title="更多操作" aria-label="更多操作">${moreIcon()}</button>
       <button class="detail-corner-btn" onclick="shareCurrentPage()" title="分享" aria-label="分享">${shareIcon()}</button>
     </div>`;
 
@@ -1723,7 +1783,7 @@ async function openDetail(id, fromPop = false) {
   let heroMeta = '';
   if (e.type === 'event' || e.type === 'diary' || e.type === 'place') {
     const parts = [];
-    if (e.location) parts.push(`📍 ${e.location}`);
+    if (e.location) parts.push(`地点 · ${e.location}`);
     const hd = getEntryDate(e), ht = getEntryTime(e);
     if (hd) parts.push(`🕒 ${hd.replace(/-/g, '/')}${ht ? ' ' + ht : ''}`);
     if (parts.length) heroMeta = `<div class="detail-hero-meta" style="margin-top:8px;font-size:13px;color:var(--text-secondary);display:flex;gap:14px;flex-wrap:wrap;">${parts.join('<span style="opacity:.4">·</span>')}</div>`;
@@ -1731,11 +1791,11 @@ async function openDetail(id, fromPop = false) {
 
   // Hero: poster + title + type badge
   if (e.poster || e.cover) {
-    html += `<div class="detail-hero fade-in">${renderDetailPoster(e)}<div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${typeIcon(e.type, 'detail-type-icon')} ${meta.label}</div><div class="detail-title">${escapeHtml(e.title)}</div>`;
+    html += `<div class="detail-hero fade-in">${renderDetailPoster(e)}<div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${typeIcon(e.type, 'detail-type-icon')} ${meta.label}</div>${renderDetailTitle(e)}`;
     if (e.original_title) html += `<div class="detail-subtitle">${e.original_title}</div>`;
     html += heroMeta + '</div></div>';
   } else {
-    html += `<div class="detail-hero fade-in" style="gap:0"><div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${typeIcon(e.type, 'detail-type-icon')} ${meta.label}</div><div class="detail-title">${escapeHtml(e.title)}</div>`;
+    html += `<div class="detail-hero fade-in" style="gap:0"><div class="detail-info"><div class="detail-type-badge" style="background:${meta.color}22;color:${meta.color}">${typeIcon(e.type, 'detail-type-icon')} ${meta.label}</div>${renderDetailTitle(e)}`;
     if (e.location) html += `<div class="detail-subtitle">${e.location}</div>`;
     html += heroMeta + '</div></div>';
   }
@@ -1785,7 +1845,7 @@ async function openDetail(id, fromPop = false) {
       if (en.photos && en.photos.length > 0) {
         html += `<div class="memory-photo-gallery">`;
         en.photos.forEach((src, pi) => {
-          html += `<img class="memory-photo" src="${src}" loading="lazy" onclick="openViewer(this.src)" onerror="this.style.display='none'">`;
+          html += `<img class="memory-photo" src="${src}" loading="lazy" onclick="openViewerFromElement(this)" alt="记录图片 ${pi + 1}" onerror="this.style.display='none'">`;
         });
         html += `</div>`;
       }
@@ -1859,62 +1919,57 @@ function showActionPopover(anchor, actions) {
 
 function openRecordActions(id, anchor) {
   showActionPopover(anchor, [
-    { icon: editIcon(), label: '修改标题', run: () => openTitleEditor(id) },
-    { icon: '<span aria-hidden="true">×</span>', label: '删除记录', danger: true, run: () => confirmDelete(id) },
+    { icon: trashIcon(), label: '删除记录', danger: true, run: () => confirmDelete(id) },
   ]);
 }
 
 function openEntryActions(memId, entryId, anchor) {
   showActionPopover(anchor, [
     { icon: editIcon(), label: '修改这一篇', run: () => editMemoryEntry(memId, entryId) },
-    { icon: '<span aria-hidden="true">×</span>', label: '删除这一篇', danger: true, run: () => deleteMemoryEntry(memId, entryId) },
+    { icon: trashIcon(), label: '删除这一篇', danger: true, run: () => deleteMemoryEntry(memId, entryId) },
   ]);
 }
 
-async function openTitleEditor(id, fromPop = false) {
-  const record = await dbGet(id);
-  if (!record) return;
-  document.getElementById('record-title-id').value = id;
-  document.getElementById('record-title-input').value = record.title || '';
-  document.getElementById('record-edit-modal').classList.add('show');
-  recordEditorOpen = true;
-  if (!fromPop) history.pushState({ ...(history.state || {}), editor: true, editorId: id }, '');
-  setTimeout(() => document.getElementById('record-title-input')?.focus(), 80);
-}
-
-function closeTitleEditor(fromPop = false) {
-  document.getElementById('record-edit-modal').classList.remove('show');
-  const wasOpen = recordEditorOpen;
-  recordEditorOpen = false;
-  if (!fromPop && wasOpen && history.state?.editor) history.back();
-}
-
-async function saveRecordTitle() {
-  const id = document.getElementById('record-title-id').value;
-  const title = normalizeUserText(document.getElementById('record-title-input').value).trim();
-  if (!title) { showToast('请输入标题', 'error'); return; }
-  const record = await dbGet(id);
-  if (!record) { showToast('记录不存在，请刷新后重试', 'error'); return; }
-  record.title = title;
-  record.updated_at = new Date().toISOString();
-  await dbPut(record);
-  try { await enqueueMemoryUpsert(record); if (authState.loggedIn) syncNow(); } catch (e) { console.warn('标题同步入队失败', e); }
-  closeTitleEditor();
-  showToast('标题已更新', 'success');
-  if (detailOpenId === id) await openDetail(id, true);
-  else await navigate(currentPage, true);
-}
-
-function openViewer(src, fromPop = false) {
-  const viewer = document.getElementById('img-viewer');
+function showViewerImage(index) {
+  if (!viewerImages.length) return;
+  viewerIndex = window.InnerOSMemoryDetail?.galleryIndex(index, viewerImages.length) ?? 0;
   const img = document.getElementById('img-viewer-image');
-  if (!viewer || !img || !src) return;
-  img.src = src;
+  const counter = document.getElementById('viewer-counter');
+  const prev = document.getElementById('viewer-prev');
+  const next = document.getElementById('viewer-next');
+  if (img) img.src = viewerImages[viewerIndex];
+  if (counter) counter.textContent = viewerImages.length > 1 ? `${viewerIndex + 1} / ${viewerImages.length}` : '';
+  const multi = viewerImages.length > 1;
+  if (prev) prev.hidden = !multi;
+  if (next) next.hidden = !multi;
+}
+
+function stepViewer(delta) {
+  if (viewerImages.length > 1) showViewerImage(viewerIndex + delta);
+}
+
+function openViewerGallery(images, index = 0, fromPop = false) {
+  const viewer = document.getElementById('img-viewer');
+  viewerImages = (images || []).filter(Boolean);
+  if (!viewer || !viewerImages.length) return;
+  showViewerImage(index);
   viewer.classList.add('show');
   viewer.setAttribute('aria-hidden', 'false');
   document.body.classList.add('viewer-open');
   imageViewerOpen = true;
-  if (!fromPop) history.pushState({ ...(history.state || {}), viewer: true, viewerSrc: src }, '');
+  if (!fromPop) history.pushState({ ...(history.state || {}), viewer: true, viewerSrc: viewerImages[viewerIndex] }, '');
+}
+
+function openViewer(src, fromPop = false) {
+  openViewerGallery([src], 0, fromPop);
+}
+
+function openViewerFromElement(img) {
+  const gallery = img.closest('.memory-photo-gallery, .chat-thread');
+  const nodes = gallery ? [...gallery.querySelectorAll('.memory-photo, .chat-photo')] : [img];
+  const images = nodes.map(node => node.currentSrc || node.src).filter(Boolean);
+  const index = Math.max(0, nodes.indexOf(img));
+  openViewerGallery(images, index);
 }
 
 function closeViewer(fromPop = false) {
@@ -1925,6 +1980,7 @@ function closeViewer(fromPop = false) {
   document.body.classList.remove('viewer-open');
   const wasOpen = imageViewerOpen;
   imageViewerOpen = false;
+  viewerImages = [];
   if (!fromPop && wasOpen && history.state?.viewer) history.back();
 }
 
@@ -2329,14 +2385,49 @@ function showToast(msg, type = '') {
 }
 
 // === Theme ===
+function applySkin(id, persist = true) {
+  const skin = SKINS.some(item => item.id === id) ? id : 'smoke';
+  document.body.dataset.skin = skin;
+  document.body.dataset.theme = 'light';
+  if (persist) localStorage.setItem('inneros_skin', skin);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = ({ smoke:'#171512', paper:'#F7F5F0', ink:'#F2F0EA', sage:'#EEF1EA' })[skin];
+  document.querySelectorAll('.skin-card').forEach(card => {
+    const active = card.dataset.skinChoice === skin;
+    card.classList.toggle('active', active);
+    const check = card.querySelector('.skin-check');
+    if (check) check.textContent = active ? '已使用' : '切换';
+  });
+  const label = document.getElementById('theme-label');
+  if (label) label.textContent = skin === 'smoke' ? '切换纸页皮肤' : '切换烟熏皮肤';
+  const icon = document.getElementById('theme-icon');
+  if (icon) icon.innerHTML = skin === 'smoke'
+    ? '<path d="M7 18h10M9 14h6M10 10h4M12 2c3 3-2 5 1 8"/>'
+    : '<path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>';
+}
 function toggleTheme() {
-  const body = document.body;
-  const isDark = body.getAttribute('data-theme') === 'dark';
-  body.setAttribute('data-theme', isDark ? 'light' : 'dark');
-  document.getElementById('theme-label').textContent = isDark ? '深色模式' : '浅色模式';
-  document.getElementById('theme-icon').innerHTML = isDark
-    ? '<path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>'
-    : '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+  applySkin(document.body.dataset.skin === 'smoke' ? 'paper' : 'smoke');
+}
+function hydrateTypeIcons() {
+  document.querySelectorAll('.type-card[data-type] .emoji').forEach(node => {
+    node.innerHTML = typeIcon(node.closest('.type-card').dataset.type, 'type-picker-icon');
+  });
+}
+function bindViewerGestures() {
+  const viewer = document.getElementById('img-viewer');
+  if (!viewer || viewer.dataset.gesturesBound) return;
+  viewer.dataset.gesturesBound = '1';
+  viewer.addEventListener('touchstart', ev => { viewerTouchStartX = ev.touches[0]?.clientX ?? null; }, { passive:true });
+  viewer.addEventListener('touchend', ev => {
+    if (viewerTouchStartX == null) return;
+    const endX = ev.changedTouches[0]?.clientX ?? viewerTouchStartX;
+    const direction = window.InnerOSMemoryDetail?.swipeDirection(viewerTouchStartX, endX) || 0;
+    viewerTouchStartX = null;
+    if (direction) {
+      ev.preventDefault();
+      stepViewer(direction);
+    }
+  }, { passive:false });
 }
 
 // === Sidebar ===
@@ -2346,9 +2437,10 @@ function closeSidebar() { document.getElementById('sidebar').classList.remove('o
 // === Keyboard ===
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (imageViewerOpen) closeViewer(); document.getElementById('emoji-panel')?.remove(); }
+  if (imageViewerOpen && e.key === 'ArrowLeft') { e.preventDefault(); stepViewer(-1); }
+  if (imageViewerOpen && e.key === 'ArrowRight') { e.preventDefault(); stepViewer(1); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openCapture(null); }
   if (e.key === 'Escape') {
-    if (recordEditorOpen) closeTitleEditor();
     if (captureOpen) closeCapture();
     if (selectorOpenSport) closeTeamSelector();
     closeConfirm();
@@ -2362,8 +2454,6 @@ window.addEventListener('popstate', async (e) => {
   const st = e.state || {};
   if (imageViewerOpen && !st.viewer) { closeViewer(true); return; }
   if (st.viewer && !imageViewerOpen) { openViewer(st.viewerSrc, true); return; }
-  if (recordEditorOpen && !st.editor) { closeTitleEditor(true); return; }
-  if (st.editor && !recordEditorOpen && st.editorId) { await openTitleEditor(st.editorId, true); return; }
   if (selectorOpenSport && st.selector !== selectorOpenSport) closeTeamSelector(true);
   if (captureOpen && !st.capture) closeCapture(true);
   // 详情层：当前状态不再带 detail → 回到来源页面
@@ -2374,7 +2464,6 @@ window.addEventListener('popstate', async (e) => {
 });
 
 document.getElementById('capture-modal').addEventListener('click', function(e) { if (e.target === this) closeCapture(); });
-document.getElementById('record-edit-modal').addEventListener('click', function(e) { if (e.target === this) closeTitleEditor(); });
 document.getElementById('confirm-overlay').addEventListener('click', function(e) { if (e.target === this) closeConfirm(); });
 
 // === Image lazy load ===
@@ -2409,6 +2498,7 @@ document.addEventListener('touchend', function(e) {
   handleSwipeGesture();
 }, { passive: true });
 function handleSwipeGesture() {
+  if (imageViewerOpen) return;
   const deltaX = touchEndX - touchStartX;
   const deltaY = touchEndY - touchStartY;
   if (Math.abs(deltaX) < 60 || Math.abs(deltaY) > 80) return;
@@ -2808,7 +2898,7 @@ async function renderQuickChat() {
     const sorted = [...(mem.entries || [])].sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
     for (const en of sorted) {
       const ts = localTimeOf(en.created_at);
-      const imgs = (en.photos || []).map(p => `<img class="chat-photo" src="${p}" onclick="openViewer(this.src)">`).join('');
+      const imgs = (en.photos || []).map((p, i) => `<img class="chat-photo" src="${p}" onclick="openViewerFromElement(this)" alt="速信图片 ${i + 1}">`).join('');
       html += `<div class="chat-msg"><div class="chat-bubble">${en.content ? `<div class="chat-text">${escapeHtml(en.content)}</div>` : ''}${imgs}</div><div class="chat-time">${ts}</div></div>`;
     }
   }
@@ -3003,6 +3093,9 @@ async function dedupSeeds() {
 
 // === Init ===
 (async function init() {
+  applySkin(localStorage.getItem('inneros_skin') || 'smoke', false);
+  hydrateTypeIcons();
+  bindViewerGestures();
   try { await initDB(); } catch(e) { console.error('IndexedDB init failed:', e); }
   await removeLegacySeeds();
   await checkAuth();

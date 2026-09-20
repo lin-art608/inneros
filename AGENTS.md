@@ -19,7 +19,7 @@
 | `app.js` | 前端主逻辑（渐进式拆分中，新功能优先放 `src/features/`）。分节：TYPE_META / 图片代理 / ContentProvider / IndexedDB v4 / 账户与同步引擎 / 速记对话 / 各页渲染 / History 返回栈（Sports 渲染已全部迁出，仅剩 2 个薄委托） |
 | `src/features/media.js` | 前端媒体数据层（电影/书籍/音乐搜索+详情+字段映射，IIFE + `window.InnerOSMedia`） |
 | `src/features/sports.js` | V1.20.0 Sports Center V2 统一赛程中心（足球+CS2，IIFE + `window.InnerOSSports`）。统一 Match 模型 + SportsScheduleQuery + Provider 层（短 TTL 缓存/失败降级 stale）+ 本地时区日期分组。**主队查询（scope=team）足球走单队接口、CS2 走 tier=all，均不受热门联赛/A 级白名单过滤**；纯逻辑经 `Core` 导出供 node vm 单测 |
-| `src/features/memory-detail.js` | V1.24.0 记忆详情 UI 纯逻辑：统一线性 SVG 类型图标、Unicode 字素安全截断、日记兜底标题、初记/续写篇章标签（IIFE + `window.InnerOSMemoryDetail`） |
+| `src/features/memory-detail.js` | V1.25.0 记忆详情 UI 纯逻辑：统一线性 SVG 类型图标、Unicode 字素安全截断、日记兜底标题、初记/续写篇章标签、相册循环索引（IIFE + `window.InnerOSMemoryDetail`） |
 | `src/services/api-client.js` | 前端统一 API Client（`window.InnerOSApi`，兼容新旧信封） |
 | `server.py` | 本地服务 :8765。代理：`/img`（豆瓣图）、`/api/douban`、`/api/sports`、`/api/auth`+`/api/sync`（**反代到 pages.dev**）、`/api/search` |
 | `functions/_lib.js` | D1 schema 自建（IF NOT EXISTS）/ PBKDF2 / Cookie 会话 |
@@ -45,7 +45,7 @@
 | `app.js` 音乐链路 | ARCH-011：搜索/详情走 v1（`/api/v1/media/search\|detail?type=music` → iTunes），`mediaToWorkFields(m,'music')` 映射 artist/album/preview_url/track_price；v1 失败回退旧直连 iTunes；保存带标准 `media` 块 |
 | `src/services/api-client.js` | 前端统一 API Client（InnerOSApi，经典脚本命名空间；新调用必经） |
 | `src/features/media.js` | ARCH-012/1.16.1 前端媒体数据层：`mediaToWorkFields`/`searchMovie`/`searchBook`/`searchMusic`/`enrichWorkDetail` 从 app.js 迁出（IIFE + `window.InnerOSMedia`）。**唯一前端媒体数据入口**；app.js 的 `ContentProvider`/`enrichWorkDetail` 现为薄委托。**第三方 URL（/api/douban、itunes）只存在于本文件的「兼容 fallback 层」（legacy* 函数），feature 主链始终走 v1** |
-| `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/itunes-adapter/media-domain/media-feature/memory-detail-feature/memory-service/media-service/sync-service/sports-feature/sports-backend/pet-state（node 直接运行；memory-detail 覆盖图标、篇章标签、Emoji 安全截断；sports 系覆盖统一 Match/主队不过滤/缓存降级/tier 白名单） |
+| `tests/unit/` | 零依赖单测：errors/domain-memory/douban-adapter/itunes-adapter/media-domain/media-feature/memory-detail-feature/memory-service/media-service/sync-service/sports-feature/sports-backend/pet-state（node 直接运行；memory-detail 覆盖图标、篇章标签、Emoji 安全截断、相册循环索引；sports 系覆盖统一 Match/主队不过滤/缓存降级/tier 白名单） |
 | `tests/integration/sync-route.test.mjs` | ARCH-008.2 集成测试：真实 `onRequestPost/Get` + Cookie 会话 + 内存 D1 仿真（按 SQL 模式处理，未知 SQL 抛错防漂移）。**改同步相关代码后必跑** |
 | `tests/e2e/media-sync-e2e.py` | ARCH-013 真实 D1 端到端：电影/书籍/音乐 搜索→详情→保存→刷新→pull→删除→pull + 跨设备同步 + 幂等 + 墓碑 + user isolation + 稳定错误码。**需先起 wrangler**（零第三方依赖，Python 直接跑） |
 | `tests/run-all.sh` | 零依赖快速测试入口：一条命令跑全部单测 + 集成（**不含** E2E） |
@@ -80,7 +80,7 @@ curl -X POST https://inneros.pages.dev/api/...     # 线上接口探测（部署
 5. **Liquipedia**：必须 gzip + 描述性 UA + 缓存≥5min（≤2 req/s）。**坚果云**：风控拦数据中心 IP，已弃用，勿再排查。
 6. **D1 限制**：绑定参数 ≤1MB —— 附件 base64 压缩到 ≤1280px/JPEG0.8 后仍超 900KB 则跳过云端（原图只留本地）。
 7. IndexedDB 结构变更必须递增 `DB_VERSION` 并写迁移（v4 做过数字 id→UUID 迁移，勿回退）。
-8. **UI 约定**：右下角＋按钮只在记忆页显示（非记忆页 navigate 里隐藏）；详情页打开时＋=追加到当前记录（captureTriggerClick）；手机详情页左上角保留返回兜底，右上角为编辑菜单+分享，删除收进编辑菜单；首页赛程=收藏制（★ localStorage `inneros_fav_matches`）；速记(type `quick`)不计入统计；日记使用独立可编辑标题（留空才按 Unicode 字素安全生成兜底标题）；时间线每条直显日期时间类型；侧边栏 overflow-y:auto。
+8. **UI 约定**：右下角＋按钮只在记忆页显示（非记忆页 navigate 里隐藏）；详情页打开时＋=追加到当前记录（captureTriggerClick）；手机详情页左上角保留返回兜底，右上角为更多菜单+分享，删除收进更多菜单；首页/时间线不放编辑图标，篇章编辑只在详情出现；只有日记标题可在详情原位编辑，电影/书籍等标题只读；首页摘要固定展示初记；首页赛程=收藏制（★ localStorage `inneros_fav_matches`）；速记(type `quick`)不计入统计；日记留空标题才按 Unicode 字素安全生成兜底标题；时间线每条直显日期时间类型；侧边栏 overflow-y:auto；皮肤偏好保存在 localStorage `inneros_skin`。
 9. D1 里有测试账号残留（e2e@/curltest@/notarget@inneros.dev），勿当用户数据。
 10. **D1 原子性**：无交互式事务（不能 BEGIN…COMMIT 跨 await）。要原子就用 `db.batch([stmt...])`（batch 即事务）。需先读后写的逻辑（如 upsertNewer 冲突判定）无法进 batch，改靠"写入语义幂等 + op_id 未记录即可安全重试"保证一致性。
 11. **`operations.seq` 是全局 AUTOINCREMENT**，不是每账号从 1 开始。写同步相关断言/客户端逻辑时禁止用"条数"推算 seq，必须取实际返回值（踩过两次）。

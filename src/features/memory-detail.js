@@ -43,5 +43,26 @@
     return index === 0 ? '初记' : `续写 ${index}`;
   }
 
-  global.InnerOSMemoryDetail = Object.freeze({ icon, truncate, diaryFallbackTitle, chapterLabel });
+  function titleEditable(type) {
+    return type === 'diary';
+  }
+
+  function primaryContent(record) {
+    const item = record || {};
+    const entries = Array.isArray(item.entries) ? item.entries : [];
+    return item.review || item.content || item.notes || item.note || entries[0]?.content || '';
+  }
+
+  function galleryIndex(index, total) {
+    const count = Math.max(1, Number(total) || 1);
+    return ((Number(index) || 0) % count + count) % count;
+  }
+
+  function swipeDirection(startX, endX, threshold = 45) {
+    const delta = Number(endX) - Number(startX);
+    if (!Number.isFinite(delta) || Math.abs(delta) <= threshold) return 0;
+    return delta < 0 ? 1 : -1;
+  }
+
+  global.InnerOSMemoryDetail = Object.freeze({ icon, truncate, diaryFallbackTitle, chapterLabel, titleEditable, primaryContent, galleryIndex, swipeDirection });
 })(typeof window !== 'undefined' ? window : globalThis);

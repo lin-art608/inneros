@@ -62,8 +62,29 @@
   --danger: #E07070;
   --success: #7AB07A;
 }
+body[data-skin="smoke"] {
+  --bg:#171512; --bg-elevated:#211E1A; --bg-subtle:#2B2621;
+  --text:#F2E9DD; --text-secondary:#B8AA9A; --text-tertiary:#786C60;
+  --border:#393129; --border-strong:#554739; --accent:#D49A5B; --accent-soft:#8F5E36;
+  --shadow:0 1px 3px rgba(0,0,0,.32),0 8px 24px rgba(0,0,0,.2); --shadow-lg:0 18px 48px rgba(0,0,0,.38);
+  --c-movie:#B69ADB; --c-book:#8DB7A3; --c-music:#E28E72; --c-game:#7FAED0; --c-place:#D3B267; --c-event:#D08A63;
+  --danger:#E77B72; --success:#83B783;
+  background:radial-gradient(circle at 82% 8%,rgba(212,154,91,.09),transparent 30%),radial-gradient(circle at 14% 78%,rgba(143,94,54,.08),transparent 28%),var(--bg);
+}
+body[data-skin="ink"] {
+  --bg:#F2F0EA; --bg-elevated:#FCFBF7; --bg-subtle:#E8E5DD;
+  --text:#171717; --text-secondary:#64615B; --text-tertiary:#9A958B;
+  --border:#D8D3C9; --border-strong:#BEB7AA; --accent:#9B3A34; --accent-soft:#D07B6F;
+  --shadow:0 1px 2px rgba(0,0,0,.05),0 10px 28px rgba(40,32,25,.06); --shadow-lg:0 18px 46px rgba(40,32,25,.13);
+}
+body[data-skin="sage"] {
+  --bg:#EEF1EA; --bg-elevated:#FAFCF7; --bg-subtle:#E2E8DD;
+  --text:#253027; --text-secondary:#697268; --text-tertiary:#98A095;
+  --border:#D3DACF; --border-strong:#B7C2B4; --accent:#617563; --accent-soft:#9CAC91;
+  --shadow:0 1px 3px rgba(34,52,38,.06),0 8px 24px rgba(34,52,38,.06); --shadow-lg:0 18px 44px rgba(34,52,38,.13);
+}
 * { margin:0; padding:0; box-sizing:border-box; }
-html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+html { scroll-behavior:smooth; -webkit-text-size-adjust:100%; scrollbar-gutter:stable; overflow-y:scroll; }
 body {
   font-family: var(--font-sans);
   background: var(--bg);
@@ -74,6 +95,7 @@ body {
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  width:100%;
 }
 ::-webkit-scrollbar { width:6px; height:6px; }
 ::-webkit-scrollbar-track { background:transparent; }
@@ -261,11 +283,16 @@ body {
 .tier-tag { display:inline-block; margin-left:8px; padding:1px 8px; border-radius:4px; background:rgba(232,185,72,0.18); color:#B8860B; font-size:10px; font-weight:600; vertical-align:middle; }
 
 /* 图片查看器（居中流畅） */
-#img-viewer { position:fixed; inset:0; background:rgba(0,0,0,0.92); display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:opacity 0.25s ease; z-index:1800; cursor:zoom-out; touch-action:pinch-zoom; padding:18px; }
+#img-viewer { position:fixed; inset:0; background:rgba(0,0,0,0.92); display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:opacity 0.25s ease; z-index:1800; cursor:zoom-out; touch-action:none; padding:18px; }
 #img-viewer.show { opacity:1; pointer-events:auto; }
 #img-viewer img { max-width:100%; max-height:100%; object-fit:contain; border-radius:8px; box-shadow:0 20px 60px rgba(0,0,0,0.5); transform:scale(0.94); transition:transform 0.25s cubic-bezier(0.22,0.61,0.36,1); }
 #img-viewer.show img { transform:scale(1); }
 .viewer-close { position:fixed; top:max(16px, env(safe-area-inset-top)); right:16px; width:40px; height:40px; border:1px solid rgba(255,255,255,.28); border-radius:50%; background:rgba(0,0,0,.42); color:#fff; font-size:24px; cursor:pointer; z-index:1; }
+.viewer-nav { position:fixed; top:50%; transform:translateY(-50%); width:44px; height:60px; border:1px solid rgba(255,255,255,.24); border-radius:12px; background:rgba(0,0,0,.38); color:#fff; font-size:28px; cursor:pointer; z-index:1; }
+.viewer-nav[hidden] { display:none !important; }
+.viewer-prev { left:max(12px, env(safe-area-inset-left)); }
+.viewer-next { right:max(12px, env(safe-area-inset-right)); }
+.viewer-counter { position:fixed; left:50%; bottom:max(18px, env(safe-area-inset-bottom)); transform:translateX(-50%); min-width:54px; text-align:center; padding:5px 12px; border-radius:18px; background:rgba(0,0,0,.48); color:#fff; font-size:12px; letter-spacing:.08em; }
 body.viewer-open { overflow:hidden; }
 
 /* 记录操作菜单 */
@@ -406,8 +433,8 @@ body.viewer-open { overflow:hidden; }
   transition:all 0.2s ease;
 }
 .theme-toggle:hover { background:var(--bg-subtle); color:var(--text); }
-.main { flex:1; margin-left:240px; min-height:100vh; display:flex; flex-direction:column; }
-.content { flex:1; padding:48px 56px; max-width:1200px; width:100%; }
+.main { flex:1; margin-left:240px; min-height:100vh; min-width:0; width:calc(100% - 240px); display:flex; flex-direction:column; }
+.content { flex:1; padding:48px 56px; max-width:1200px; width:100%; min-width:0; margin:0 auto; }
 
 /* Mobile */
 .menu-toggle {
@@ -460,7 +487,8 @@ body.viewer-open { overflow:hidden; }
    Empty & Error States
    ============================================================ */
 .empty-state { text-align:center; padding:80px 20px; color:var(--text-secondary); }
-.empty-state-icon { font-size:56px; margin-bottom:20px; opacity:0.25; }
+.empty-state-icon { font-size:56px; margin-bottom:20px; opacity:0.32; display:flex; justify-content:center; }
+.empty-type-icon { width:52px; height:52px; }
 .empty-state-title { font-size:18px; font-weight:600; color:var(--text); margin-bottom:8px; }
 .empty-state-desc { font-size:14px; line-height:1.6; max-width:320px; margin:0 auto; }
 .empty-state-action { margin-top:24px; }
@@ -495,19 +523,27 @@ body.viewer-open { overflow:hidden; }
    Entry Card
    ============================================================ */
 .entry-card {
-  display:flex; align-items:flex-start; gap:16px; padding:20px 52px 20px 24px;
+  display:flex; align-items:flex-start; gap:16px; padding:20px 24px;
   background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius);
   cursor:pointer; transition:all 0.25s ease; position:relative; overflow:hidden;
 }
 .type-icon-svg { width:20px; height:20px; display:block; }
 .tl-type-icon { width:14px; height:14px; display:inline-block; vertical-align:-2px; margin-right:2px; }
+.filter-type-icon { width:14px; height:14px; }
 .detail-type-icon { width:14px; height:14px; }
 .poster-type-icon { width:30px; height:30px; }
 .poster-type-icon.large { width:48px; height:48px; }
-.entry-edit-trigger { position:absolute; top:10px; right:10px; width:30px; height:30px; display:flex; align-items:center; justify-content:center; border:0; border-radius:9px; background:var(--bg-elevated); color:var(--text-tertiary); cursor:pointer; opacity:1; transition:all .2s ease; z-index:3; }
-.entry-edit-trigger svg { width:16px; height:16px; }
-.entry-card:hover .entry-edit-trigger, .entry-edit-trigger:focus-visible { opacity:1; background:var(--bg-subtle); color:var(--accent); }
-@media (hover:none) { .entry-edit-trigger { opacity:1; background:var(--bg-elevated); } }
+.type-picker-icon { width:30px; height:30px; }
+.year-type-icon { width:28px; height:28px; margin:auto; }
+.breakdown-type-icon,.settings-type-icon { width:16px; height:16px; display:inline-block; vertical-align:-3px; }
+.lib-tab-icon { width:16px; height:16px; flex-shrink:0; }
+.library-type-icon { width:30px; height:30px; }
+.result-type-icon { width:24px; height:24px; }
+.library-cover-icon { width:64px; height:90px; border-radius:6px; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:currentColor; }
+.library-cover-icon.type-music { height:64px; border-radius:8px; background:rgba(201,123,99,0.12); color:var(--c-music); }
+.library-cover-icon.type-game { background:rgba(90,139,173,0.12); color:var(--c-game); }
+.library-cover-icon.type-place { background:rgba(201,169,97,0.15); color:var(--c-place); }
+.settings-type-label { display:flex; align-items:center; gap:8px; }
 .menu-toggle.detail-hidden { display:none !important; }
 .entry-card:hover { border-color:var(--border-strong); box-shadow:var(--shadow); transform:translateY(-1px); }
 .entry-time { font-size:13px; font-weight:600; color:var(--text-secondary); font-variant-numeric:tabular-nums; min-width:48px; padding-top:2px; }
@@ -737,6 +773,9 @@ body.viewer-open { overflow:hidden; }
 .detail-info { flex:1; }
 .detail-type-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; }
 .detail-title { font-family:var(--font-serif); font-size:36px; font-weight:500; line-height:1.15; margin-bottom:8px; }
+.detail-title.title-editable { cursor:text; border-radius:8px; margin-left:-8px; padding:3px 8px 5px; transition:background .2s ease,box-shadow .2s ease; }
+.detail-title.title-editable:hover,.detail-title.title-editable:focus-visible { background:var(--bg-subtle); box-shadow:inset 0 -1px 0 var(--accent); outline:none; }
+.detail-title-input { width:100%; max-width:720px; margin:0 0 8px; padding:2px 8px 5px; border:0; border-bottom:2px solid var(--accent); border-radius:8px 8px 0 0; outline:none; background:var(--bg-subtle); color:var(--text); font-family:var(--font-serif); font-size:36px; font-weight:500; line-height:1.15; }
 .detail-subtitle { font-size:15px; color:var(--text-secondary); margin-bottom:20px; }
 .detail-meta { display:flex; flex-wrap:wrap; gap:24px; font-size:13px; color:var(--text-secondary); }
 .detail-meta-item { display:flex; flex-direction:column; gap:2px; }
@@ -753,6 +792,15 @@ body.viewer-open { overflow:hidden; }
    ============================================================ */
 .settings-section { margin-bottom:40px; }
 .settings-card { background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius); padding:24px; }
+.skin-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.skin-card { position:relative; display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:4px 12px; width:100%; padding:16px; border:1px solid var(--border); border-radius:14px; background:var(--bg-elevated); color:var(--text); text-align:left; cursor:pointer; font-family:var(--font-sans); transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease; }
+.skin-card:hover { transform:translateY(-2px); border-color:var(--border-strong); box-shadow:var(--shadow); }
+.skin-card.active { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+.skin-swatches { grid-row:1/3; display:flex; width:52px; height:38px; overflow:hidden; border-radius:9px; border:1px solid var(--border); }
+.skin-swatches i { flex:1; }
+.skin-card strong { font-size:14px; }
+.skin-card small { color:var(--text-secondary); font-size:11px; line-height:1.45; }
+.skin-check { grid-column:3; grid-row:1/3; font-size:11px; color:var(--accent); }
 .settings-row { display:flex; align-items:center; justify-content:space-between; padding:16px 0; border-bottom:1px solid var(--border); }
 .settings-row:last-child { border-bottom:none; }
 .settings-row-label { font-size:14px; font-weight:500; }
@@ -1049,7 +1097,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 @media (max-width: 768px) {
   .sidebar { transform:translateX(-100%); width:280px; }
   .sidebar.open { transform:translateX(0); }
-  .main { margin-left:0; }
+  .main { margin-left:0; width:100%; min-width:0; overflow-x:clip; }
   .menu-toggle { display:flex; }
   .content { padding:64px 16px 100px; }
   .today-header { flex-direction:column; }
@@ -1064,7 +1112,8 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
   .books-grid { grid-template-columns:1fr; }
   .timeline-line::before { left:15px; }
   .timeline-item-dot { left:8px; }
-  .timeline-item .entry-card { margin-left:36px; padding:16px; }
+  .timeline,.timeline-group,.timeline-line,.timeline-item { width:100%; min-width:0; max-width:100%; }
+  .timeline-item .entry-card { margin-left:36px; width:calc(100% - 36px); padding:16px; }
   .auth-card { padding:32px 24px; }
   .featured-match { padding:20px; }
   .featured-match-title { font-size:18px; }
@@ -1081,11 +1130,14 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
   .lib-stats-bar { gap:16px; padding:12px 16px; }
   .lib-stat-num { font-size:22px; }
   .detail-meta-grid { grid-template-columns:repeat(2, 1fr); gap:12px; }
+  .detail-title-input { font-size:30px; }
+  .skin-grid { grid-template-columns:1fr; }
+  .viewer-nav { width:38px; height:52px; font-size:24px; }
   .book-status-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .book-status-tab { white-space:nowrap; padding:8px 12px; }
 }
 @media (max-width: 480px) {
-  .content { padding:56px 12px 80px; }
+  .content { padding:56px 12px 80px; width:100%; max-width:100%; overflow-x:clip; }
   .poster-wall { grid-template-columns:repeat(auto-fill, minmax(90px, 1fr)); gap:10px; }
   .league-grid { grid-template-columns:1fr; }
   .featured-match-teams { gap:16px; }
@@ -1247,7 +1299,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 
 </style>
 </head>
-<body data-theme="light">
+<body data-theme="light" data-skin="smoke">
 
 <!-- Auth Screen -->
 <div class="auth-screen" id="auth-screen" style="display:none;">
@@ -1435,13 +1487,13 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
         <button class="modal-close" onclick="closeCapture()">&times;</button>
       </div>
       <div class="type-grid" id="type-grid">
-        <div class="type-card" data-type="movie" onclick="selectType('movie')"><span class="emoji">🎬</span><span class="type-card-label">电影</span><span class="type-card-hint">搜索导入</span></div>
-        <div class="type-card" data-type="book" onclick="selectType('book')"><span class="emoji">📖</span><span class="type-card-label">书籍</span><span class="type-card-hint">搜索导入</span></div>
-        <div class="type-card" data-type="diary" onclick="selectType('diary')"><span class="emoji">📝</span><span class="type-card-label">日记</span><span class="type-card-hint">直接写</span></div>
-        <div class="type-card" data-type="event" onclick="selectType('event')"><span class="emoji">✦</span><span class="type-card-label">事件</span><span class="type-card-hint">记一笔</span></div>
-        <div class="type-card" data-type="music" onclick="selectType('music')"><span class="emoji">🎵</span><span class="type-card-label">音乐</span></div>
-        <div class="type-card" data-type="game" onclick="selectType('game')"><span class="emoji">🎮</span><span class="type-card-label">游戏</span></div>
-        <div class="type-card" data-type="custom" onclick="selectType('custom')"><span class="emoji">📝</span><span class="type-card-label">自定义</span><span class="type-card-hint">自由记录</span></div>
+        <div class="type-card" data-type="movie" onclick="selectType('movie')"><span class="emoji"></span><span class="type-card-label">电影</span><span class="type-card-hint">搜索导入</span></div>
+        <div class="type-card" data-type="book" onclick="selectType('book')"><span class="emoji"></span><span class="type-card-label">书籍</span><span class="type-card-hint">搜索导入</span></div>
+        <div class="type-card" data-type="diary" onclick="selectType('diary')"><span class="emoji"></span><span class="type-card-label">日记</span><span class="type-card-hint">直接写</span></div>
+        <div class="type-card" data-type="event" onclick="selectType('event')"><span class="emoji"></span><span class="type-card-label">事件</span><span class="type-card-hint">记一笔</span></div>
+        <div class="type-card" data-type="music" onclick="selectType('music')"><span class="emoji"></span><span class="type-card-label">音乐</span></div>
+        <div class="type-card" data-type="game" onclick="selectType('game')"><span class="emoji"></span><span class="type-card-label">游戏</span></div>
+        <div class="type-card" data-type="custom" onclick="selectType('custom')"><span class="emoji"></span><span class="type-card-label">自定义</span><span class="type-card-hint">自由记录</span></div>
       </div>
     </div>
 
@@ -1480,35 +1532,19 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <!-- 记录操作菜单 -->
 <div id="record-actions" hidden></div>
 
-<!-- 标题编辑 -->
-<div class="modal-overlay" id="record-edit-modal">
-  <div class="modal" style="max-width:480px;">
-    <div class="modal-header">
-      <div class="modal-title">修改标题</div>
-      <button class="modal-close" onclick="closeTitleEditor()">&times;</button>
-    </div>
-    <input type="hidden" id="record-title-id">
-    <div class="field-row">
-      <div class="field-label">标题</div>
-      <input type="text" class="field-input" id="record-title-input" maxlength="80" placeholder="输入标题" onkeydown="if(event.key==='Enter'){event.preventDefault();saveRecordTitle()}">
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeTitleEditor()">取消</button>
-      <button class="btn btn-primary" onclick="saveRecordTitle()">保存</button>
-    </div>
-  </div>
-</div>
-
 <!-- 图片大图查看器 -->
 <div id="img-viewer" aria-hidden="true" onclick="closeViewer()">
   <button class="viewer-close" onclick="event.stopPropagation();closeViewer()" aria-label="关闭">&times;</button>
+  <button class="viewer-nav viewer-prev" id="viewer-prev" onclick="event.stopPropagation();stepViewer(-1)" aria-label="上一张" hidden>‹</button>
   <img id="img-viewer-image" alt="图片大图" onclick="event.stopPropagation()">
+  <button class="viewer-nav viewer-next" id="viewer-next" onclick="event.stopPropagation();stepViewer(1)" aria-label="下一张" hidden>›</button>
+  <div class="viewer-counter" id="viewer-counter"></div>
 </div>
 
 <script src="src/services/api-client.js?v=1.20.1"></script>
 <script src="src/features/media.js?v=1.20.1"></script>
 <script src="src/features/sports.js?v=1.20.2"></script>
-<script src="src/features/memory-detail.js?v=1.24.0"></script>
+<script src="src/features/memory-detail.js?v=1.25.0"></script>
 <link rel="stylesheet" href="src/pet/pet.css?v=1.23.0">
 <script src="src/pet/pet-config.js?v=1.23.0"></script>
 <script src="src/pet/pet-state.js?v=1.23.0"></script>
@@ -1518,6 +1554,6 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <script src="src/pet/pet-events.js?v=1.23.0"></script>
 <script src="src/pet/pet-interact.js?v=1.23.0"></script>
 <script src="src/pet/pet-mount.js?v=1.23.0"></script>
-<script src="app.js?v=1.24.0"></script>
+<script src="app.js?v=1.25.0"></script>
 </body>
 </html>
