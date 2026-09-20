@@ -7,6 +7,23 @@
 
 ## [Unreleased]
 
+### V1.28.1 PandaScore Secret 与代理链路收口（2026-09-20）
+
+> 根因：V1.28.0 预留的环境变量名为 `PANDASCORE_API_TOKEN`，与 Cloudflare Pages 已配置的 `PANDASCORE_TOKEN` 不一致；前端还保留了 v1 请求失败后访问旧 `/api/sports` CS2 路由的兼容分支，使 Provider 降级存在两套入口。
+
+**Fixed**
+
+- Cloudflare Pages Function 改为只从 `context.env.PANDASCORE_TOKEN` 读取 Secret，再以服务端 Bearer Header 请求 PandaScore `/csgo/matches`
+- 删除前端旧 CS2 接口回退；前端只访问 `/api/v1/sports/cs2/matches`，PandaScore/Liquipedia 选择、CORS、缓存和错误处理全部收口到 Function
+- 本地服务同步读取 `PANDASCORE_TOKEN`，但不新增或提交任何 `.env` 文件
+- 新增安全回归断言：前端源码不得包含 PandaScore 域名或 Secret 名；路由测试验证 Secret 只从 `context.env` 进入服务端 Authorization
+
+#### 实测
+
+- `node --check`：app、sports、PandaScore Adapter 与 CS2 v1 Function 全部通过；`python -m py_compile server.py` 通过
+- `bash tests/run-all.sh`：16 套单元/集成测试全部通过
+- 安全扫描断言通过：前端 `src/features/sports.js` 不含 `api.pandascore.co` 或 `PANDASCORE_TOKEN`；Function mock 验证 Secret 仅从 `context.env` 注入服务端 Bearer Header
+
 ### V1.28.0 跟手侧栏与紧凑赛程重构（2026-09-20）
 
 > 根因复盘：V1.27 的右滑在达到固定阈值后才整段播放侧栏动画，菜单没有跟随手指位移；赛事首页先展示主队与赛事目录，今日赛程被挤到下方，比赛又用大卡片平铺。CS2 的 Liquipedia ticker 只是有限窗口，却被界面表达成完整数据；同时每场临时队徽都写入 IndexedDB，长期使用会让本地缓存持续膨胀。
@@ -14,7 +31,7 @@
 **Added**
 
 - 移动端侧栏增加逐帧拖动进度、甩动速度判定和过半回弹，遮罩透明度同步跟随手指
-- 新增 PandaScore CS2 Adapter：配置 `PANDASCORE_API_TOKEN` 后优先拉取最多 200 场赛程、队徽、状态、赛制与结果；失败自动回退 Liquipedia
+- 新增 PandaScore CS2 Adapter：配置 `PANDASCORE_TOKEN` 后优先拉取最多 200 场赛程、队徽、状态、赛制与结果；失败自动回退 Liquipedia
 - 足球常见联赛/杯赛按 API ID 映射中文；CS2 补充 5E 常见赛事系列、地区、赛季和阶段翻译规则
 
 **Changed**
@@ -30,7 +47,7 @@
 - `node --check`：app、navigation、sports、PandaScore Adapter、Sports Service、CS2 v1 route 全部通过；`python -m py_compile server.py` 通过
 - `bash tests/run-all.sh`：16 套单元/集成测试全部通过
 - 390×844 手机视口：页面中心右滑打开、左滑关闭均通过；侧栏跟手位移与遮罩同步；CS2 页首屏仅保留四个 tab、紧凑单列和矢量图标，无横向溢出
-- 未配置 PandaScore 的本地环境中，Liquipedia 实际返回 502，界面如实进入简洁错误态；完整 CS2 覆盖需配置 `PANDASCORE_API_TOKEN`，未把失败数据伪装成赛程
+- 未配置 PandaScore 的本地环境中，Liquipedia 实际返回 502，界面如实进入简洁错误态；完整 CS2 覆盖需配置 `PANDASCORE_TOKEN`，未把失败数据伪装成赛程
 
 ### V1.27.0 赛事汇总补全与中心右滑修复（2026-09-20）
 

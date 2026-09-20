@@ -8,7 +8,7 @@ import { createSportsService } from '../../../../_services/sports-service.js';
 export async function onRequestGet(context) {
   const scope = new URL(context.request.url).searchParams.get('scope') || 'all';
   const service = createSportsService({
-    pandascore: createPandaScoreProvider(context.env?.PANDASCORE_API_TOKEN),
+    pandascore: createPandaScoreProvider(context.env?.PANDASCORE_TOKEN),
     liquipedia: liquipediaProvider,
   });
   try {

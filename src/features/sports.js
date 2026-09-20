@@ -244,17 +244,10 @@
   }
   const LEGACY_FOOTBALL_URL = '/api/sports?type=matches&leagues=4328,4335,4331,4332,4334,4480';
 
-  // CS2 Provider：Liquipedia 官方 MediaWiki API 经 v1 后端 Adapter/Service 归一化。
-  // 所有 scope 共用最多 200 场窗口，不再用 A 级白名单截断；旧接口仅在 v1 故障时兼容降级。
+  // CS2 Provider：前端只访问自有 v1 Function；Function 内部 PandaScore 优先、Liquipedia 降级。
+  // Token、第三方 URL、CORS 与缓存全部留在 Cloudflare 后端，禁止前端直连 PandaScore。
   function buildCS2Url() { return '/api/v1/sports/cs2/matches?scope=all'; }
-  const LEGACY_CS2_URL = '/api/sports?type=cs2matches&tier=all';
-  async function fetchCS2Raw() {
-    try {
-      return await fetchRaw(buildCS2Url());
-    } catch (error) {
-      return fetchRaw(LEGACY_CS2_URL);
-    }
-  }
+  function fetchCS2Raw() { return fetchRaw(buildCS2Url()); }
   function normKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9一-鿿]/g, ''); }
   // 标准化 team identity：兼容 Liquipedia 页面标题(lp: 前缀)/全称/短名/中文名
   function teamIdentityKeys(team) {

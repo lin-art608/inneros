@@ -41,7 +41,7 @@
 | `functions/_adapters/douban-adapter.js` | 豆瓣适配器：searchMedia/getMediaDetail 标准结构 + 旧形状兼容输出（movie/book） |
 | `functions/_adapters/itunes-adapter.js` | ARCH-011 iTunes 适配器（music）：searchMedia/getMediaDetail 标准结构；免 Key、country=CN；iTunes 无评分/简介 → score=null、description='' |
 | `functions/_adapters/liquipedia-adapter.js` | ARCH-017 Liquipedia 适配器：官方 MediaWiki action=parse、最多 200 场 ticker、标准比赛字段；描述性 UA + gzip + 15 分钟边缘缓存 |
-| `functions/_adapters/pandascore-adapter.js` | V1.28.0 PandaScore CS2 赛程适配器：免费 Fixtures API，最多两页/200 场，5 分钟边缘缓存；密钥只读 `PANDASCORE_API_TOKEN` |
+| `functions/_adapters/pandascore-adapter.js` | V1.28.1 PandaScore CS2 赛程适配器：Cloudflare Function 通过 `context.env.PANDASCORE_TOKEN` 注入 Secret，使用 `/csgo/` 前缀，最多两页/200 场并做 5 分钟边缘缓存；前端禁止出现第三方 URL 或 Secret |
 | `functions/_infra/errors.js` | 统一错误模型（ARCH-002）：ok/fail/errors.*/ServiceError + requestId |
 | `functions/api/v1/` | 新版 API（统一信封）：me / memories / media/search / media/detail / sports/cs2/matches |
 | `app.js` 电影链路 | ARCH-009：搜索与详情走 `InnerOSApi` → `/api/v1/media/search\|detail`，`mediaToWorkFields()` 做标准结构→本地字段映射；v1 失败回退 `/api/douban` |
@@ -82,7 +82,7 @@ curl -X POST https://inneros.pages.dev/api/...     # 线上接口探测（部署
 3. **合规红线**：不引入付费服务（R2 免费档也要绑卡，禁用）；密钥只进 CF 环境变量（现 `EMAIL_API_KEY`）；禁止 mock 冒充真实数据；不接 Supabase；不改 DNS。
 4. **Resend 测试模式**：未验证域名只能发给 Resend 账号本人邮箱（403 已转中文提示）。验证码逻辑：配置了 `EMAIL_API_KEY` 才强制验证码。
 5. **Liquipedia**：只能走官方 MediaWiki API，禁止抓网页 HTML；必须 gzip + 描述性 UA。通用 API ≤1 次/2 秒，`action=parse` ≤1 次/30 秒；赛事 parse 缓存≥15min；UI 必须展示 Liquipedia + CC BY-SA 署名。**坚果云**：风控拦数据中心 IP，已弃用，勿再排查。
-   **PandaScore**：CS2 完整赛程优先源，token 仅放 Cloudflare `PANDASCORE_API_TOKEN`；不得写入前端或仓库。没有 token 时如实显示 Liquipedia 有限回退，不抓取 5E/HLTV 页面补数据。
+   **PandaScore**：CS2 完整赛程优先源，Secret 名固定为 Cloudflare `PANDASCORE_TOKEN`；只能由 Function 的 `context.env` 读取，不得写入前端、仓库或提交 `.env`。PandaScore CS2 路径必须用 `/csgo/`；前端只请求 `/api/v1/sports/cs2/matches`。没有 Secret 时如实显示 Liquipedia 有限回退，不抓取 5E/HLTV 页面补数据。
 6. **D1 限制**：绑定参数 ≤1MB —— 附件 base64 压缩到 ≤1280px/JPEG0.8 后仍超 900KB 则跳过云端（原图只留本地）。
 7. IndexedDB 结构变更必须递增 `DB_VERSION` 并写迁移（v4 做过数字 id→UUID 迁移，勿回退）。
 8. **UI 约定**：右下角＋按钮只在记忆页显示（非记忆页 navigate 里隐藏）；详情页打开时＋=追加到当前记录（captureTriggerClick）；手机详情页左上角保留返回兜底，右上角为更多菜单+分享，删除收进更多菜单；首页/时间线不放编辑图标，篇章编辑只在详情出现；只有日记标题可在详情原位编辑，电影/书籍等标题只读；首页摘要固定展示初记；首页赛程=收藏制（★ localStorage `inneros_fav_matches`）；速记(type `quick`)不计入统计；日记留空标题才按 Unicode 字素安全生成兜底标题；时间线每条直显日期时间类型；侧边栏 overflow-y:auto；皮肤偏好保存在 localStorage `inneros_skin`。

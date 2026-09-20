@@ -11,6 +11,8 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(__dirname, '../../src/features/sports.js'), 'utf-8');
+assert.equal(src.includes('api.pandascore.co'), false, '前端代码不得直连 PandaScore');
+assert.equal(src.includes('PANDASCORE_TOKEN'), false, '前端代码不得读取或包含 PandaScore Secret');
 
 // 构造可运行 sports.js 的沙箱：v1 接口走 InnerOSApi.get，旧接口走 fetch
 function load({ getImpl, fetchImpl }) {

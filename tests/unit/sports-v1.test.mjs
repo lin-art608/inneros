@@ -91,6 +91,36 @@ const html = `<div class="match-info">
 {
   const realFetch = globalThis.fetch;
   let requested = '';
+  let authorization = '';
+  globalThis.fetch = async (url, init) => {
+    requested = String(url);
+    authorization = init.headers.Authorization;
+    assert.equal(init.cf.cacheTtl, 300);
+    return { ok:true, json:async () => [{
+      id:99, begin_at:'2026-09-20T12:00:00Z', status:'not_started', number_of_games:3,
+      opponents:[{ opponent:{ id:1, acronym:'NAVI' } }, { opponent:{ id:2, acronym:'RA' } }],
+      league:{ name:'ESL Pro League' }, serie:{ full_name:'Season 22' }, tournament:{ name:'Group A' }, results:[],
+    }] };
+  };
+  try {
+    const response = await onRequestGet({
+      request:new Request('http://localhost/api/v1/sports/cs2/matches?scope=all'),
+      env:{ PANDASCORE_TOKEN:'unit-test-only' },
+    });
+    const body = await response.json();
+    assert.equal(body.success, true);
+    assert.equal(body.data.provider, 'pandascore');
+    assert.equal(body.data.matches[0].id, 'ps-99');
+    assert.match(requested, /api\.pandascore\.co\/csgo\/matches/);
+    assert.equal(authorization, 'Bearer unit-test-only', 'Function 必须从 context.env 读取 Secret 后放入服务端 Authorization');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+{
+  const realFetch = globalThis.fetch;
+  let requested = '';
   globalThis.fetch = async (url, init) => {
     requested = String(url);
     assert.equal(init.cf.cacheTtl, 900);

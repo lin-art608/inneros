@@ -509,7 +509,7 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
     def handle_cs2_v1(self):
         """本地开发版 /api/v1/sports/cs2/matches，与 Cloudflare 统一信封保持一致。"""
         try:
-            token = os.environ.get('PANDASCORE_API_TOKEN', '').strip()
+            token = os.environ.get('PANDASCORE_TOKEN', '').strip()
             provider = 'pandascore' if token else 'liquipedia'
             degraded = None
             if token:
