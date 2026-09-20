@@ -1,6 +1,7 @@
 // GET /api/v1/football/fixtures —— 足球赛程（API-Football 代理）
 // 参数：
 //   date=YYYY-MM-DD  指定日期（默认今天，UTC+8）
+//   from/to=YYYY-MM-DD 日期范围（最近 7 天合并为一次请求，节省免费额度）
 //   league=id         过滤联赛（与 date 或 next 组合）
 //   team=id           过滤球队（单队最近 5 场 + 未来 10 场）
 //   live=all          仅实时比赛
@@ -25,6 +26,8 @@ export async function onRequestGet(context) {
   const next = url.searchParams.get('next');
   const leagueParam = url.searchParams.get('league');
   const dateParam = url.searchParams.get('date');
+  const fromParam = url.searchParams.get('from');
+  const toParam = url.searchParams.get('to');
 
   try {
     let path = '';
@@ -46,6 +49,11 @@ export async function onRequestGet(context) {
     } else if (leagueParam && next) {
       // 指定联赛未来 N 场（赛事页完整赛程；主队查询不受热门联赛过滤）
       path = `/fixtures?league=${encodeURIComponent(leagueParam)}&next=${encodeURIComponent(next)}&timezone=Asia%2FShanghai`;
+    } else if (fromParam && toParam) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fromParam) || !/^\d{4}-\d{2}-\d{2}$/.test(toParam) || fromParam > toParam) {
+        return fail('VALIDATION_ERROR', '日期范围格式不正确', { status:400 });
+      }
+      path = `/fixtures?from=${encodeURIComponent(fromParam)}&to=${encodeURIComponent(toParam)}&timezone=Asia%2FShanghai`;
     } else {
       // 按日期赛程（默认今天，北京时间）
       const date = dateParam || getBeijingDate();

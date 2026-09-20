@@ -1,6 +1,7 @@
 // ARCH-017：Liquipedia Adapter → Sports Service → /api/v1 路由。
 import assert from 'node:assert/strict';
 import { buildTickerUrl, parseLiquipediaTicker } from '../../functions/_adapters/liquipedia-adapter.js';
+import { buildPandaScoreMatchesUrl, createPandaScoreProvider, normalizePandaScoreMatch } from '../../functions/_adapters/pandascore-adapter.js';
 import { createSportsService } from '../../functions/_services/sports-service.js';
 import { onRequestGet } from '../../functions/api/v1/sports/cs2/matches.js';
 
@@ -27,6 +28,33 @@ const html = `<div class="match-info">
 }
 
 {
+  const url = new URL(buildPandaScoreMatchesUrl({ from: '2026-09-20T00:00:00.000Z', to: '2026-09-29T00:00:00.000Z' }));
+  assert.equal(url.searchParams.get('per_page'), '100');
+  assert.equal(url.searchParams.get('range[begin_at]'), '2026-09-20T00:00:00.000Z,2026-09-29T00:00:00.000Z');
+  const match = normalizePandaScoreMatch({
+    id: 88, begin_at: '2026-09-20T12:00:00Z', status: 'not_started', number_of_games:3,
+    opponents:[{ opponent:{ id:1, name:'Natus Vincere', acronym:'NAVI', image_url:'navi.png' } }, { opponent:{ id:2, name:'Rare Atom', acronym:'RA', image_url:'ra.png' } }],
+    league:{ name:'ESL Pro League' }, serie:{ full_name:'Season 22' }, tournament:{ name:'Group A' }, results:[],
+  });
+  assert.equal(match.id, 'ps-88');
+  assert.equal(match.round, 'Bo3');
+  assert.equal(match.provider, 'pandascore');
+  assert.match(match.league, /ESL Pro League/);
+}
+
+{
+  let auth = '';
+  const provider = createPandaScoreProvider('secret', async (url, init) => {
+    auth = init.headers.Authorization;
+    assert.match(String(url), /api\.pandascore\.co\/csgo\/matches/);
+    return { ok:true, json:async () => [] };
+  });
+  const rows = await provider.getMatches({ limit:100 });
+  assert.equal(auth, 'Bearer secret');
+  assert.deepEqual(rows, []);
+}
+
+{
   const service = createSportsService({ liquipedia: { getMatches: async ({ limit }) => {
     assert.equal(limit, 200);
     return [{ id: 'one' }];
@@ -36,6 +64,28 @@ const html = `<div class="match-info">
   assert.equal(result.coverage.limit, 200);
   assert.equal(result.attribution.license, 'CC BY-SA 3.0');
   await assert.rejects(() => service.listCS2Matches({ scope: 'unknown' }), e => e.code === 'VALIDATION_ERROR');
+}
+
+{
+  let lpCalls = 0;
+  const service = createSportsService({
+    pandascore: { configured:true, getMatches:async () => [{ id:'ps-one' }] },
+    liquipedia: { getMatches:async () => { lpCalls++; return []; } },
+  });
+  const result = await service.listCS2Matches();
+  assert.equal(result.provider, 'pandascore');
+  assert.equal(result.matches[0].id, 'ps-one');
+  assert.equal(lpCalls, 0, 'PandaScore 成功时不请求有限降级源');
+}
+
+{
+  const service = createSportsService({
+    pandascore: { configured:true, getMatches:async () => { throw new Error('quota'); } },
+    liquipedia: { getMatches:async () => [{ id:'lp-fallback' }] },
+  });
+  const result = await service.listCS2Matches();
+  assert.equal(result.provider, 'liquipedia');
+  assert.equal(result.degraded, 'pandascore-error');
 }
 
 {
@@ -61,4 +111,3 @@ const html = `<div class="match-info">
 }
 
 console.log('sports-v1.test: 全部通过');
-

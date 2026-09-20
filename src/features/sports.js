@@ -1,5 +1,5 @@
 // InnerOS 前端赛事模块 V2 —— Sports Center 统一赛程中心（ARCH-016 / V1.20.0）
-// 用户只理解三个层次：我的主队(scope=team) / 赛事(scope=competition) / 日期(今天/明天/后天/未来)。
+// 用户只理解一条赛程流：主队 / 今日 / 明日 / 最近。
 // 数据流：UI → SportsScheduleService → FootballProvider/CS2Provider → normalizeMatch → Match → MatchList/DateGroup
 // 规则（违反必返工）：
 //   · Provider 原始对象禁止直接进 UI，一律 normalizeMatch 成统一 Match
@@ -90,7 +90,7 @@
         home: raw.home_score == null ? null : Number(raw.home_score),
         away: raw.away_score == null ? null : Number(raw.away_score),
       },
-      provider: isCS2 ? 'liquipedia' : 'api-football',
+      provider: raw.provider || (isCS2 ? 'liquipedia' : 'api-football'),
       providerMatchId: String(raw.id || ''),
       format: boMatch ? boMatch[0] : '', // CS2 Bo1/Bo3/Bo5（Provider 有数据时）
     };
@@ -113,16 +113,17 @@
   }
   function todayKey() { return dateKeyOffset(0); }
 
-  // 日期 tab：今天 / 明天 / 后天 / 未来（未来 = 后天之后 7 天，按本地日期分组）
+  // 四个固定入口：主队聚合未来 9 天；今日/明日精确自然日；最近展示随后 7 天。
   const DAY_TABS = [
+    { key: 'teams', label: '主队', offset: null },
     { key: 'today', label: '今天', offset: 0 },
     { key: 'tomorrow', label: '明天', offset: 1 },
-    { key: 'dayafter', label: '后天', offset: 2 },
-    { key: 'future', label: '未来', offset: null },
+    { key: 'recent', label: '最近', offset: null },
   ];
   function buildDayRange(tab) {
-    if (tab === 'future') return { from: dateKeyOffset(3), to: dateKeyOffset(9) };
-    const t = DAY_TABS.find(x => x.key === tab) || DAY_TABS[0];
+    if (tab === 'teams') return { from: dateKeyOffset(0), to: dateKeyOffset(8) };
+    if (tab === 'recent') return { from: dateKeyOffset(2), to: dateKeyOffset(8) };
+    const t = DAY_TABS.find(x => x.key === tab) || DAY_TABS.find(x => x.key === 'today');
     const key = dateKeyOffset(t.offset);
     return { from: key, to: key };
   }
@@ -189,6 +190,10 @@
     return matches.some(m => m.status === 'live') ? TTL.live : TTL.normal;
   }
   function clearCache() { rawCache.clear(); }
+  function rememberRaw(url, data) {
+    rawCache.set(url, { ts: Date.now(), data: data });
+    while (rawCache.size > 40) rawCache.delete(rawCache.keys().next().value);
+  }
   async function fetchV1(url) {
     const res = await window.InnerOSApi.get(url);
     return res.data;
@@ -206,7 +211,7 @@
     const pending = (async () => {
       try {
         const data = url.indexOf('/api/v1/') === 0 ? await fetchV1(url) : await fetchLegacy(url);
-        rawCache.set(url, { ts: Date.now(), data: data });
+        rememberRaw(url, data);
         return { data: data, stale: false };
       } catch (e) {
         if (entry) return { data: entry.data, stale: true };
@@ -227,6 +232,9 @@
     if (q.scope === 'team') return ['/api/v1/football/fixtures?team=' + encodeURIComponent(q.teamId)];
     if (q.scope === 'competition') {
       return ['/api/v1/football/fixtures?league=' + encodeURIComponent(q.competitionId) + '&next=25'];
+    }
+    if (q.from !== q.to) {
+      return ['/api/v1/football/fixtures?from=' + encodeURIComponent(q.from) + '&to=' + encodeURIComponent(q.to)];
     }
     const urls = [];
     for (let d = new Date(q.from + 'T12:00:00'); localDateKey(d) <= q.to; d.setDate(d.getDate() + 1)) {
@@ -282,6 +290,7 @@
       const result = await fetchCS2Raw();
       stale = result.stale;
       rawList = (result.data && result.data.matches) || [];
+      degraded = result.data && result.data.degraded || null;
     }
     for (const url of urls) {
       const r = await fetchRaw(url);
@@ -341,8 +350,9 @@
   }
   function sortMatches(list) {
     return list.slice().sort((a, b) => {
-      const la = a.status.state === 'live' ? 0 : 1;
-      const lb = b.status.state === 'live' ? 0 : 1;
+      const rank = { live: 0, scheduled: 1, postponed: 2, cancelled: 3, finished: 4 };
+      const la = rank[a.status.state] ?? 5;
+      const lb = rank[b.status.state] ?? 5;
       if (la !== lb) return la - lb;
       return (a.ts || 0) - (b.ts || 0);
     });
@@ -387,6 +397,7 @@
     'IEM Bucharest': 'IEM 布加勒斯特',
     'Intel Extreme Masters': 'IEM 英特尔极限大师赛',
     'ESL Pro League': 'ESL 职业联赛',
+    'ESL Challenger League': 'ESL 挑战者联赛',
     'ESL Challenger': 'ESL 挑战者联赛',
     'PGL Major': 'PGL Major',
     'PGL Astana': 'PGL 阿斯塔纳',
@@ -401,15 +412,24 @@
     'FISSURE Playground': 'FISSURE 系列赛',
     'FISSURE Masters': 'FISSURE 大师赛',
     'StarLadder Major': 'StarLadder Major 世界锦标赛',
+    'NODWIN Clutch Series': 'NODWIN Clutch 系列赛',
+    'CCT Europe Series': 'CCT 欧洲系列赛',
+    'HyperX Retake': 'HyperX Retake',
+    'European Pro League': '欧洲职业联赛',
+    'Stake Pulse Beat': 'Stake Pulse Beat',
+    'Crossfire': '交叉火力',
+    '5E Arena Asia Cup': '5E 亚洲杯',
   };
   // 通用词替换：按长度降序替换（避免 Group 先吃掉 Group A），品牌词（BLAST/IEM/ESL/PGL 等）保留
   const CS2_TOURNAMENT_WORDS = {
     'Groups': '小组赛', 'Group A': 'A组', 'Group B': 'B组', 'Group C': 'C组', 'Group D': 'D组',
     'Playoffs': '季后赛', 'Play-offs': '季后赛', 'Playoff': '季后赛',
     'Semifinals': '半决赛', 'Quarterfinals': '四分之一决赛', 'Finals': '总决赛', 'Final': '决赛',
-    'Season': '赛季', 'Qualifier': '预选赛', 'Stage 1': '第一阶段', 'Stage 2': '第二阶段', 'Stage 3': '第三阶段',
+    'Closed Qualifier': '封闭预选赛', 'Open Qualifier': '公开预选赛',
+    'South America': '南美', 'North America': '北美', 'Asia-Pacific': '亚太', 'Europe': '欧洲', 'European': '欧洲',
+    'Season': '赛季', 'Series': '系列赛', 'Qualifier': '预选赛', 'Stage 1': '第一阶段', 'Stage 2': '第二阶段', 'Stage 3': '第三阶段',
     'Fall': '秋季', 'Spring': '春季', 'Winter': '冬季', 'Summer': '夏季',
-    'World Championship': '世界锦标赛', 'Championship': '锦标赛',
+    'World Championship': '世界锦标赛', 'Championship': '锦标赛', 'League': '联赛',
   };
   function cs2TeamCN(name) {
     if (!name) return name;
@@ -424,7 +444,11 @@
     for (const key of Object.keys(CS2_TOURNAMENT_WORDS).sort((a, b) => b.length - a.length)) {
       out = out.split(key).join(CS2_TOURNAMENT_WORDS[key]);
     }
-    return out;
+    return out
+      .replace(/赛季\s*#?(\d+)/gi, '第$1季')
+      .replace(/系列赛\s+(\d+)/gi, '系列赛 第$1季')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
   }
 
   // ========== 7. 图片代理（API-Football 图片需要 key） ==========
@@ -434,44 +458,9 @@
     return url;
   }
 
-  // ========== 8. 队徽缓存（IndexedDB teams 表，避免重复请求） ==========
-  async function getCachedBadge(teamId, teamName, sport) {
-    const key = (sport || 'x') + ':' + (teamId || teamName || '');
-    try {
-      const db = await openTeamsDB();
-      return new Promise(resolve => {
-        const tx = db.transaction('teams', 'readonly');
-        const req = tx.objectStore('teams').get(key);
-        req.onsuccess = () => resolve(req.result ? req.result.badge : '');
-        req.onerror = () => resolve('');
-      });
-    } catch (e) { return ''; }
-  }
-  async function setCachedBadge(teamId, teamName, sport, badge) {
-    if (!badge) return;
-    const key = (sport || 'x') + ':' + (teamId || teamName || '');
-    try {
-      const db = await openTeamsDB();
-      const tx = db.transaction('teams', 'readwrite');
-      tx.objectStore('teams').put({ key: key, badge: badge, name: teamName, sport: sport, ts: Date.now() });
-    } catch (e) { /* 忽略 */ }
-  }
-  let _teamsDB = null;
-  function openTeamsDB() {
-    if (_teamsDB) return Promise.resolve(_teamsDB);
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open('memory_os', 4);
-      req.onsuccess = () => { _teamsDB = req.result; resolve(_teamsDB); };
-      req.onerror = () => reject(req.error);
-    });
-  }
+  // ========== 8. 队徽 ==========
+  // Provider URL 由浏览器 HTTP 缓存；禁止把每场临时队徽写入 teams（该表只保存用户手动关注的主队）。
   async function enrichBadges(matches, sport) {
-    await Promise.all(matches.map(async m => {
-      if (!m.home.logo) m.home.logo = await getCachedBadge(m.home.id, m.home.name, sport);
-      else await setCachedBadge(m.home.id, m.home.name, sport, m.home.logo);
-      if (!m.away.logo) m.away.logo = await getCachedBadge(m.away.id, m.away.name, sport);
-      else await setCachedBadge(m.away.id, m.away.name, sport, m.away.logo);
-    }));
     return matches;
   }
 
@@ -508,8 +497,15 @@
     return String(str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
   function renderBadge(logo, name) {
-    if (!logo) return '';
-    return `<img src="${logo}" class="sp-badge" alt="" loading="lazy" onerror="this.style.display='none'">`;
+    const fallback = escapeHtml(String(name || '?').trim().slice(0, 2).toUpperCase());
+    if (!logo) return `<span class="sp-badge-fallback" aria-hidden="true">${fallback}</span>`;
+    return `<img src="${logo}" class="sp-badge" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="sp-badge-fallback" hidden aria-hidden="true">${fallback}</span>`;
+  }
+  function sportIcon(sport) {
+    if (sport === 'cs2') {
+      return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>';
+    }
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m12 7 3 2.2-1.1 3.6h-3.8L9 9.2 12 7ZM5.1 10l4 2.8-1.5 4.5M18.9 10l-4 2.8 1.5 4.5M8 20l2.1-2.7h3.8L16 20"/></svg>';
   }
   function statusBadge(m) {
     const s = m.status.state;
@@ -579,12 +575,12 @@
       title = `${tabLabel}没有比赛`;
       desc = '试试其他日期，或点击上方主队/赛事查看专属赛程';
     }
-    const icon = ctx.sport === 'cs2' ? '🎮' : '⚽';
-    return `<div class="empty-state"><div class="empty-state-icon">${icon}</div><div class="empty-state-title">${title}</div><div class="empty-state-desc">${desc}</div></div>`;
+    return `<div class="empty-state"><div class="empty-state-icon sp-empty-sport">${sportIcon(ctx.sport)}</div><div class="empty-state-title">${title}</div><div class="empty-state-desc">${desc}</div></div>`;
   }
   function renderError(e) {
     const msg = (e && e.message) || '网络或数据源异常';
-    return `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-title">赛程加载失败</div><div class="empty-state-desc">${escapeHtml(msg)}，请稍后重试</div><div class="empty-state-action"><button class="sp-add-btn" onclick="window.InnerOSSports.retryList()">↻ 重新加载</button></div></div>`;
+    const icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 20h18.4L12 3Z"/><path d="M12 9v5M12 17.5v.2"/></svg>';
+    return `<div class="empty-state"><div class="empty-state-icon sp-empty-sport">${icon}</div><div class="empty-state-title">赛程加载失败</div><div class="empty-state-desc">${escapeHtml(msg)}，请稍后重试</div><div class="empty-state-action"><button class="sp-add-btn" onclick="window.InnerOSSports.retryList()">重新加载</button></div></div>`;
   }
 
   // ========== 12. MatchList 加载（统一 loading/empty/error/live） ==========
@@ -601,23 +597,29 @@
     const contentEl = document.getElementById('sp-list-content');
     if (!contentEl) return;
     const ctx = view.params;
-    const q = buildQuery(ctx);
     let result;
     try {
-      result = await querySchedule(q);
+      if ((ctx.scope || 'all') === 'all' && ctx.tab === 'teams') {
+        const followed = await getFollowedTeams(ctx.sport);
+        if (!followed.length) {
+          contentEl.innerHTML = `<div class="sp-teams-empty">还没有主队<button class="sp-add-btn" onclick="window.InnerOSSports.openAddTeam('${ctx.sport}')">添加主队</button></div>`;
+          return;
+        }
+        const batches = await Promise.all(followed.map(team => {
+          const teamQuery = buildQuery({ sport:ctx.sport, scope:'team', team, tab:'teams' });
+          return querySchedule(teamQuery);
+        }));
+        result = {
+          matches: sortMatches(dedupeMatches(batches.flatMap(item => item.matches))),
+          stale: batches.some(item => item.stale),
+          degraded: batches.find(item => item.degraded)?.degraded || null,
+        };
+      } else {
+        result = await querySchedule(buildQuery(ctx));
+      }
     } catch (e) {
       if (document.getElementById('sp-list-content') === contentEl) contentEl.innerHTML = renderError(e);
       return;
-    }
-    // V1.20.1：当天无比赛时不显示空态，自动递推展示接下来 9 天内的比赛
-    if (!result.matches.length && (ctx.scope || 'all') === 'all' && (ctx.tab || 'today') !== 'future') {
-      const wide = { ...q, from: todayKey(), to: dateKeyOffset(9) };
-      try {
-        const wideResult = await querySchedule(wide);
-        if (wideResult.matches.length) {
-          result = { matches: wideResult.matches, stale: wideResult.stale, degraded: wideResult.degraded, widened: true };
-        }
-      } catch (e) { /* 递推失败保持空态 */ }
     }
     await enrichBadges(result.matches, ctx.sport);
     if (document.getElementById('sp-list-content') !== contentEl) return; // 页面已切走，丢弃本次渲染
@@ -626,11 +628,9 @@
       return;
     }
     let html = '';
-    if (result.widened) {
-      const tabLabel = (DAY_TABS.find(t => t.key === (ctx.tab || 'today')) || DAY_TABS[0]).label;
-      html += `<div class="sp-notice">${escapeHtml(tabLabel)}没有比赛，以下自动递推显示接下来的赛程</div>`;
-    }
     if (result.stale) html += `<div class="sp-notice sp-notice-stale">数据获取失败，以下为最近一次成功数据，可能已过期</div>`;
+    if (result.degraded === 'limited-source') html += `<div class="sp-notice">CS2 当前为有限赛程（Liquipedia · CC BY-SA）；配置 PandaScore 后可补齐</div>`;
+    else if (result.degraded === 'pandascore-error') html += `<div class="sp-notice">完整赛程源暂不可用，已自动切换到有限数据</div>`;
     if (result.degraded === 'legacy') html += `<div class="sp-notice">足球数据源（API-Football）暂不可用，以下为旧数据源（TheSportsDB）赛程，可能不含全部联赛</div>`;
     else if (result.degraded === 'no-key') html += `<div class="sp-notice">足球数据源（API-Football）暂不可用（未配置 FOOTBALL_API_KEY 或已限流），暂无法查询主队/联赛赛程</div>`;
     const groups = groupByLocalDate(result.matches);
@@ -648,52 +648,22 @@
     loadList();
   }
 
-  // ========== 13. 首页（我的主队 + 赛事 + 日期 + MatchList） ==========
+  // ========== 13. 首页（主队 / 今日 / 明日 / 最近） ==========
   async function renderHome(container) {
     const sport = view.params.sport;
     const isFootball = sport === 'football';
-    const followed = await getFollowedTeams(sport);
-    let html = `<button class="sp-back-btn" onclick="window.InnerOSSports.exit()">← 资源整合</button>
-    <div class="page-header">
-      <div class="page-title">${isFootball ? '⚽ 足球 · Football' : '🎮 CS2 · Counter-Strike 2'}</div>
-      <div class="page-subtitle">主队 · 赛事 · 日期 统一赛程中心 · ${isFootball ? 'API-Football' : 'Liquipedia 官方数据（最多 200 场窗口）'}</div>
-    </div>`;
-
-    // 我的主队
-    html += `<div class="sp-section">
-      <div class="sp-section-header">
-        <span class="sp-section-title">⭐ 我的主队</span>
-        <button class="sp-add-btn" onclick="window.InnerOSSports.openAddTeam('${sport}')">＋ 添加</button>
-      </div>
-      <div class="sp-teams-row">`;
-    if (followed.length === 0) {
-      html += `<div class="sp-empty-inline">还没有主队，点击「＋ 添加」搜索你支持的${isFootball ? '球队' : '战队'}</div>`;
-    } else {
-      for (const t of followed) {
-        html += `<div class="sp-team-chip" onclick="window.InnerOSSports.openTeam('${escapeHtml(t.id)}', '${sport}')">
-          ${renderBadge(t.badge, t.name)}
-          <span class="sp-team-chip-name">${escapeHtml(t.name || '')}</span>
-          <button class="sp-team-remove" onclick="event.stopPropagation();window.InnerOSSports.removeTeam('${escapeHtml(t.id)}','${sport}')">×</button>
-        </div>`;
-      }
-    }
-    html += `</div></div>`;
-
-    // 赛事
-    html += `<div class="sp-section">
-      <div class="sp-section-header"><span class="sp-section-title">🏆 赛事</span></div>
-      <div id="sp-events">${renderSkeleton(4)}</div>
-    </div>`;
-
-    // 日期 + 统一 MatchList
-    html += `<div class="sp-section">
-      <div class="sp-section-header"><span class="sp-section-title">📅 日期</span></div>
+    let html = `<button class="sp-back-btn" onclick="window.InnerOSSports.exit()"><span aria-hidden="true">‹</span> 资源整合</button>
+    <div class="sp-home-head">
+      <span class="sp-sport-mark">${sportIcon(sport)}</span>
+      <div><h1>${isFootball ? '足球赛程' : 'CS2 赛程'}</h1></div>
+      <button class="sp-add-btn" onclick="window.InnerOSSports.openAddTeam('${sport}')">＋ 主队</button>
+    </div>
+    <div class="sp-section sp-schedule-section">
       ${renderTabs(view.params.tab || 'today')}
       <div class="sp-container" id="sp-list-content">${renderSkeleton(6)}</div>
     </div>`;
 
     container.innerHTML = html;
-    loadEvents(sport);
     loadList();
   }
 
@@ -743,7 +713,7 @@
 
   // ========== 13.5 资源整合页赛事汇总（足球 + CS2 同屏） ==========
   let summaryTab = 'today';
-  const SUMMARY_TABS = DAY_TABS.slice(0, 3);
+  const SUMMARY_TABS = DAY_TABS.filter(item => item.key !== 'teams');
 
   function renderSummaryCard(m) {
     const target = m.sport === 'cs2' ? 'res-cs' : 'res-football';
@@ -762,6 +732,7 @@
     let notice = '';
     if (result.stale) notice = '<div class="sports-summary-notice">当前显示最近一次成功数据</div>';
     if (result.degraded === 'legacy') notice = '<div class="sports-summary-notice">足球主源暂不可用，当前为有限降级数据</div>';
+    if (result.degraded === 'limited-source') notice = '<div class="sports-summary-notice">CS2 有限赛程 · Liquipedia CC BY-SA</div>';
     return notice + result.matches.slice(0, 6).map(renderSummaryCard).join('')
       + (result.matches.length > 6 ? `<button class="sports-summary-more" onclick="navigate('${sport === 'cs2' ? 'res-cs' : 'res-football'}')">查看全部 ${result.matches.length} 场 →</button>` : '');
   }
@@ -815,9 +786,9 @@
       const logo = proxyImg(ctx.competition.logo || '');
       scopeHtml = logo
         ? `<img src="${logo}" class="sp-league-logo" alt="" loading="lazy" onerror="this.style.display='none'">`
-        : '<span class="sp-event-emoji">🏆</span>';
+        : `<span class="sp-sport-mark">${sportIcon(ctx.sport)}</span>`;
     }
-    // V1.20.1：赛事页不再按今天/明天分类，直接展示完整未来赛程（含递推到下一场）；主队页保留日期 tab
+    // 赛事目录已从首页移除；兼容旧入口时，主队仍使用同一组日期 tab。
     const tabsHtml = isTeam ? renderTabs(ctx.tab || 'today') : '';
     container.innerHTML = `<div class="sp-page-header">
         <button class="sp-back-btn" onclick="window.InnerOSSports.back()">← 返回</button>
@@ -845,7 +816,7 @@
     if (sport !== 'football') {
       const contentEl = document.getElementById('sp-detail-content');
       if (contentEl) {
-        contentEl.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎮</div><div class="empty-state-title">CS2 比赛详情</div><div class="empty-state-desc">CS2 详细数据（地图比分、选手数据）需要额外 API 支持，当前 Liquipedia 免费接口无法提供。如需此功能，可考虑订阅 HLTV 或 PandaScore API。</div></div>`;
+        contentEl.innerHTML = `<div class="empty-state"><div class="empty-state-icon sp-empty-sport">${sportIcon('cs2')}</div><div class="empty-state-title">暂无更多详情</div><div class="empty-state-desc">赛程页已包含当前数据源提供的信息</div></div>`;
       }
       return;
     }

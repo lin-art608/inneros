@@ -108,7 +108,7 @@ function C() {
   assert.notEqual(Core.localDateKey(late), Core.localDateKey(early));
 }
 
-// ---------- 5. buildDayRange：今天/明天/后天/未来 ----------
+// ---------- 5. buildDayRange：主队/今天/明天/最近 ----------
 {
   const Core = C();
   const today = Core.todayKey();
@@ -116,11 +116,11 @@ function C() {
   assert.equal(r0.from, today); assert.equal(r0.to, today);
   const r1 = Core.buildDayRange('tomorrow');
   assert.equal(r1.from, Core.dateKeyOffset(1)); assert.equal(r1.to, Core.dateKeyOffset(1));
-  const r2 = Core.buildDayRange('dayafter');
-  assert.equal(r2.from, Core.dateKeyOffset(2)); assert.equal(r2.to, Core.dateKeyOffset(2));
-  const rf = Core.buildDayRange('future');
-  assert.equal(rf.from, Core.dateKeyOffset(3), '未来 = 后天之后');
-  assert.equal(rf.to, Core.dateKeyOffset(9));
+  const rt = Core.buildDayRange('teams');
+  assert.equal(rt.from, today); assert.equal(rt.to, Core.dateKeyOffset(8));
+  const rr = Core.buildDayRange('recent');
+  assert.equal(rr.from, Core.dateKeyOffset(2), '最近从后天开始，避免与今日/明日重复');
+  assert.equal(rr.to, Core.dateKeyOffset(8));
 }
 
 // ---------- 6. inDateRange / groupByLocalDate ----------
@@ -138,7 +138,7 @@ function C() {
   assert.ok(groups[1].label.startsWith('明天'), '明天组标签');
 }
 
-// ---------- 7. 排序：live 优先，其余按 startAt 升序 ----------
+// ---------- 7. 排序：直播/未开赛优先，已结束最后 ----------
 {
   const Core = C();
   const mk = (state, ts) => ({ ts, status: { state } });
@@ -146,7 +146,8 @@ function C() {
     mk('scheduled', 300), mk('finished', 100), mk('live', 200), mk('scheduled', 50),
   ]);
   assert.equal(out[0].status.state, 'live', '直播场次排最前');
-  assert.deepEqual(out.slice(1).map(m => m.ts), [50, 100, 300], '其余按时间升序');
+  assert.deepEqual(out.map(m => m.status.state), ['live', 'scheduled', 'scheduled', 'finished']);
+  assert.deepEqual(out.slice(1, 3).map(m => m.ts), [50, 300], '同状态按时间升序');
 }
 
 // ---------- 8. 去重：同 id 留信息更全的一场 ----------
@@ -191,10 +192,10 @@ function C() {
   const compUrls = Core.buildFootballUrls({ scope: 'competition', competitionId: '39', from: '2026-08-31', to: '2026-08-31' });
   assert.ok(compUrls[0].includes('league=39') && compUrls[0].includes('next=25'), '赛事页请求完整赛程: ' + compUrls[0]);
   assert.ok(!compUrls[0].includes('date='), '赛事页不做日期过滤');
-  // 首页 scope=all 未来：+3..+9 逐天
-  const allFuture = Core.buildFootballUrls({ scope: 'all', from: Core.dateKeyOffset(3), to: Core.dateKeyOffset(9) });
-  assert.equal(allFuture.length, 7);
-  assert.ok(allFuture.every(u => u.includes('date=')));
+  // 首页 scope=all 最近：+2..+8 逐天
+  const allFuture = Core.buildFootballUrls({ scope: 'all', from: Core.dateKeyOffset(2), to: Core.dateKeyOffset(8) });
+  assert.equal(allFuture.length, 1, '日期范围合并为一次请求，避免耗尽免费额度');
+  assert.ok(allFuture[0].includes('from=') && allFuture[0].includes('to='));
   // CS2 所有 scope 共用 v1 全场次窗口，再由前端按主队/赛事过滤
   assert.equal(Core.buildCS2Url({ scope: 'team' }), '/api/v1/sports/cs2/matches?scope=all');
   assert.equal(Core.buildCS2Url({ scope: 'competition' }), '/api/v1/sports/cs2/matches?scope=all');
@@ -284,6 +285,9 @@ function C() {
   assert.equal(Core.cs2TournamentCN('IEM Melbourne'), 'IEM 墨尔本');
   assert.equal(Core.cs2TournamentCN('BLAST Premier Fall Groups'), 'BLAST 秋季小组赛', '整串精确映射优先');
   assert.equal(Core.cs2TournamentCN('StarLadder Major'), 'StarLadder Major 世界锦标赛');
+  assert.equal(Core.cs2TournamentCN('NODWIN Clutch Series Season 12'), 'NODWIN Clutch 系列赛 第12季');
+  assert.equal(Core.cs2TournamentCN('CCT Europe Series 9'), 'CCT 欧洲系列赛 第9季');
+  assert.equal(Core.cs2TournamentCN('ESL Challenger League Season 52 Asia-Pacific'), 'ESL 挑战者联赛 第52季 亚太');
   assert.equal(Core.cs2TournamentCN(''), '');
 }
 

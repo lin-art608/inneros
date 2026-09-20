@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.27.0';
+const APP_VERSION = 'v1.28.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -778,13 +778,15 @@ function toggleNavGroup(group) {
 }
 
 function hubPageIcon(page) {
-  const typeMap = { today:'diary', timeline:'event', library:'book', 'res-cs':'game', 'res-football':'event' };
+  const typeMap = { today:'diary', timeline:'event', library:'book' };
   if (typeMap[page]) return typeIcon(typeMap[page], 'nav-hub-svg');
   const paths = {
     search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
     onthisday:'<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/>',
     random:'<path d="M4 7h3c4 0 5 10 9 10h4M17 4l3 3-3 3M4 17h3c1.6 0 2.8-1.5 4-3.5M17 14l3 3-3 3"/>',
     'year-review':'<path d="M12 3l2 5 5 .5-4 3.5 1.2 5-4.2-2.5L7.8 17 9 12 5 8.5 10 8z"/>',
+    'res-cs':'<circle cx="12" cy="12" r="6.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
+    'res-football':'<circle cx="12" cy="12" r="9"/><path d="m12 7 3 2.2-1.1 3.6h-3.8L9 9.2 12 7ZM5.1 10l4 2.8-1.5 4.5M18.9 10l-4 2.8 1.5 4.5"/>',
     'res-ai':'<path d="M12 3a3 3 0 00-3 3H7a3 3 0 00-3 3v6a3 3 0 003 3h2a3 3 0 006 0h2a3 3 0 003-3V9a3 3 0 00-3-3h-2a3 3 0 00-3-3z"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/>',
     'res-links':'<path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1"/>',
   };
@@ -797,18 +799,17 @@ function renderNavigationHub(page) {
   if (page === 'resources') {
     html += `<section class="resource-sports-summary" id="resource-sports-summary">
       <div class="resource-summary-header">
-        <div><span class="resource-summary-kicker">LIVE SCHEDULE</span><h2>赛事汇总</h2><p>足球与 CS2 同屏查看，数据加载完成后才呈现结果。</p></div>
+        <h2>今日赛程</h2>
         <div class="resource-summary-tabs">
           <button class="active" data-summary-tab="today" onclick="window.InnerOSSports.selectSummaryTab('today')">今天</button>
           <button data-summary-tab="tomorrow" onclick="window.InnerOSSports.selectSummaryTab('tomorrow')">明天</button>
-          <button data-summary-tab="dayafter" onclick="window.InnerOSSports.selectSummaryTab('dayafter')">后天</button>
+          <button data-summary-tab="recent" onclick="window.InnerOSSports.selectSummaryTab('recent')">最近</button>
         </div>
       </div>
       <div class="resource-summary-grid">
-        <article class="resource-summary-panel"><header><span>足球</span><button onclick="navigate('res-football')">完整中心 →</button></header><div data-summary-sport="football"></div></article>
-        <article class="resource-summary-panel"><header><span>CS2</span><button onclick="navigate('res-cs')">完整中心 →</button></header><div data-summary-sport="cs2"></div></article>
+        <article class="resource-summary-panel"><header><span>足球</span><button onclick="navigate('res-football')">全部</button></header><div data-summary-sport="football"></div></article>
+        <article class="resource-summary-panel"><header><span>CS2</span><button onclick="navigate('res-cs')">全部</button></header><div data-summary-sport="cs2"></div></article>
       </div>
-      <div class="resource-summary-source">足球 · API-Football　/　CS2 · Liquipedia（CC BY-SA 3.0）</div>
     </section>`;
   }
   content.innerHTML = html;
@@ -2482,8 +2483,12 @@ function bindViewerGestures() {
 }
 
 // === Sidebar ===
-function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); document.getElementById('overlay').classList.toggle('show'); }
-function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); document.getElementById('overlay').classList.remove('show'); }
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const open = !sidebar.classList.contains('open');
+  settleSidebar(open);
+}
+function closeSidebar() { settleSidebar(false); }
 
 // === Keyboard ===
 document.addEventListener('keydown', (e) => {
@@ -2544,57 +2549,99 @@ document.addEventListener('focusin', function(e) {
 // 同时保留浏览器原生纵向滚动。旧版只等 touchend，手势常被浏览器提前 cancel。
 let swipePointerId = null;
 let touchStartX = 0, touchStartY = 0, touchEndX = 0, touchEndY = 0;
-let touchSwipeIgnored = false, touchSwipeHandled = false;
+let touchSwipeIgnored = false, drawerDragging = false, drawerStartOpen = false;
+let drawerProgress = 0, drawerLastX = 0, drawerLastAt = 0, drawerVelocityX = 0;
+let suppressSidebarClickUntil = 0;
+document.addEventListener('click', function(e) {
+  if (Date.now() < suppressSidebarClickUntil && e.target?.closest?.('#sidebar')) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+}, true);
 document.addEventListener('pointerdown', function(e) {
   if (!window.matchMedia('(max-width: 820px)').matches || !e.isPrimary || (e.button !== undefined && e.button !== 0)) return;
   const sidebarOpen = document.getElementById('sidebar').classList.contains('open');
   const target = e.target && e.target.closest ? e.target : null;
   touchSwipeIgnored = !sidebarOpen && !!target?.closest('input,textarea,select,#img-viewer,.modal-overlay,.sp-tabs,.lib-tabs,.memory-photo-gallery,.chat-thread');
-  touchSwipeHandled = false;
+  drawerDragging = false;
+  drawerStartOpen = sidebarOpen;
+  drawerProgress = sidebarOpen ? 1 : 0;
   swipePointerId = e.pointerId;
   touchStartX = e.clientX;
   touchStartY = e.clientY;
   touchEndX = touchStartX;
   touchEndY = touchStartY;
+  drawerLastX = e.clientX;
+  drawerLastAt = performance.now();
+  drawerVelocityX = 0;
 });
 document.addEventListener('pointermove', function(e) {
-  if (e.pointerId !== swipePointerId || touchSwipeIgnored || touchSwipeHandled || imageViewerOpen) return;
+  if (e.pointerId !== swipePointerId || touchSwipeIgnored || imageViewerOpen) return;
   touchEndX = e.clientX;
   touchEndY = e.clientY;
-  const action = getSidebarSwipeAction();
-  if (!action) return;
+  const dx = touchEndX - touchStartX;
+  const dy = touchEndY - touchStartY;
+  if (!drawerDragging) {
+    if (Math.abs(dx) < 6) return;
+    if (Math.abs(dx) <= Math.abs(dy) * 1.1 || (!drawerStartOpen && dx < 0) || (drawerStartOpen && dx > 0)) {
+      touchSwipeIgnored = true;
+      return;
+    }
+    drawerDragging = true;
+    document.getElementById('sidebar').classList.add('dragging');
+    document.getElementById('overlay').classList.add('show', 'dragging');
+  }
   e.preventDefault();
-  applySidebarSwipe(action);
-  touchSwipeHandled = true;
+  const now = performance.now();
+  const elapsed = Math.max(1, now - drawerLastAt);
+  drawerVelocityX = (e.clientX - drawerLastX) / elapsed;
+  drawerLastX = e.clientX;
+  drawerLastAt = now;
+  updateSidebarDrag(dx);
 });
 document.addEventListener('pointerup', function(e) {
   if (e.pointerId !== swipePointerId) return;
   touchEndX = e.clientX;
   touchEndY = e.clientY;
-  if (!touchSwipeHandled) handleSwipeGesture();
+  if (drawerDragging) {
+    suppressSidebarClickUntil = Date.now() + 350;
+    const open = window.InnerOSNavigation?.settleDrawer({ progress:drawerProgress, velocityX:drawerVelocityX }) ?? drawerProgress >= 0.5;
+    settleSidebar(open, true);
+  }
   swipePointerId = null;
 });
 document.addEventListener('pointercancel', function(e) {
-  if (e.pointerId === swipePointerId) swipePointerId = null;
+  if (e.pointerId !== swipePointerId) return;
+  if (drawerDragging) settleSidebar(drawerStartOpen, true);
+  swipePointerId = null;
 });
-function getSidebarSwipeAction() {
+function updateSidebarDrag(deltaX) {
   const sidebar = document.getElementById('sidebar');
-  const isOpen = sidebar.classList.contains('open');
-  return window.InnerOSNavigation?.swipeAction({ startX:touchStartX, startY:touchStartY, endX:touchEndX, endY:touchEndY, sidebarOpen:isOpen, threshold:56 });
+  const overlay = document.getElementById('overlay');
+  drawerProgress = window.InnerOSNavigation?.drawerProgress({ deltaX:deltaX, width:sidebar.offsetWidth, sidebarOpen:drawerStartOpen })
+    ?? Math.max(0, Math.min(1, (drawerStartOpen ? 1 : 0) + deltaX / Math.max(1, sidebar.offsetWidth)));
+  sidebar.style.transform = `translate3d(${(drawerProgress - 1) * 100}%,0,0)`;
+  overlay.style.opacity = String(drawerProgress);
 }
-function applySidebarSwipe(action) {
+function settleSidebar(open, animateFromDrag) {
   const sidebar = document.getElementById('sidebar');
-  if (action === 'open') {
-    sidebar.classList.add('open');
-    document.getElementById('overlay').classList.add('show');
-  } else if (action === 'close') {
-    sidebar.classList.remove('open');
-    document.getElementById('overlay').classList.remove('show');
+  const overlay = document.getElementById('overlay');
+  sidebar.classList.toggle('open', !!open);
+  overlay.classList.toggle('show', !!open || !!animateFromDrag);
+  sidebar.classList.remove('dragging');
+  overlay.classList.remove('dragging');
+  if (animateFromDrag) {
+    requestAnimationFrame(() => {
+      sidebar.style.transform = '';
+      overlay.style.opacity = '';
+      if (!open) overlay.classList.remove('show');
+    });
+  } else {
+    sidebar.style.transform = '';
+    overlay.style.opacity = '';
+    overlay.classList.toggle('show', !!open);
   }
-}
-function handleSwipeGesture() {
-  if (imageViewerOpen || touchSwipeIgnored) return;
-  applySidebarSwipe(getSidebarSwipeAction());
+  drawerDragging = false;
 }
 
 // ============================================================

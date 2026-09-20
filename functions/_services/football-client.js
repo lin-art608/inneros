@@ -5,6 +5,17 @@
 
 const BASE = 'https://v3.football.api-sports.io';
 
+export const FOOTBALL_LEAGUE_CN = Object.freeze({
+  1:'世界杯', 2:'欧冠', 3:'欧联杯', 4:'欧洲杯', 9:'美洲杯', 15:'世俱杯',
+  39:'英超', 40:'英冠', 45:'英格兰足总杯', 48:'英格兰联赛杯',
+  61:'法甲', 66:'法国杯', 78:'德甲', 81:'德国杯', 135:'意甲', 137:'意大利杯',
+  140:'西甲', 143:'国王杯', 169:'中超', 848:'欧协联',
+});
+
+export function footballLeagueCN(id, fallback) {
+  return FOOTBALL_LEAGUE_CN[Number(id)] || fallback || '';
+}
+
 // V1.20.2：记录最近一次上游状态码，供路由写进错误 message（用户可在 UI 直接看到
 // 是 401（key 无效）/403（被封禁）/429（限流）——排查不用猜）
 let _lastStatus = 0;
@@ -71,7 +82,7 @@ export function normalizeFixture(f) {
     ts,
     date: d,
     time: t,
-    league: league.name || '',
+    league: footballLeagueCN(league.id, league.name),
     league_id: String(league.id || ''),
     league_logo: league.logo || '',
     round: f.league?.round || '',

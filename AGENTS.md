@@ -17,9 +17,9 @@
 |---|---|
 | `index.html` | 单页外壳，全部 CSS 内联。页面路由：memory / resources 两个父级 Hub，以及 today / quickchat(速信) / timeline / library / search / onthisday / random / year-review / settings / res-cs / res-football / res-ai / res-links / knowledge / ai-assistant |
 | `app.js` | 前端主逻辑（渐进式拆分中，新功能优先放 `src/features/`）。分节：TYPE_META / 图片代理 / ContentProvider / IndexedDB v4 / 账户与同步引擎 / 速记对话 / 各页渲染 / History 返回栈（Sports 渲染已全部迁出，仅剩 2 个薄委托） |
-| `src/features/navigation.js` | V1.27.0 页面父子关系、记忆/资源 Hub 与移动端横滑判定（IIFE + `window.InnerOSNavigation`）。返回目标必须查 `PAGE_PARENT`，禁止再用访问历史猜产品层级 |
+| `src/features/navigation.js` | V1.28.0 页面父子关系、记忆/资源 Hub 与移动端抽屉手势纯逻辑（IIFE + `window.InnerOSNavigation`）。`drawerProgress/settleDrawer` 驱动手指跟随与速度判定；返回目标必须查 `PAGE_PARENT` |
 | `src/features/media.js` | 前端媒体数据层（电影/书籍/音乐搜索+详情+字段映射，IIFE + `window.InnerOSMedia`） |
-| `src/features/sports.js` | V1.27.0 Sports Center V2（足球+CS2，IIFE + `window.InnerOSSports`）。统一 Match + SportsScheduleQuery；资源 Hub 内提供双项目三日汇总；同 URL 并发读取必须经 `rawInflight` 合并，避免触发 Provider 限流；CS2 使用 v1 最多 200 场窗口，不套 A 级白名单 |
+| `src/features/sports.js` | V1.28.0 紧凑赛程中心（足球+CS2，IIFE + `window.InnerOSSports`）。固定「主队/今日/明日/最近」四入口，直播与未开赛优先；同 URL 并发读取经 `rawInflight` 合并，内存缓存上限 40；赛程队徽禁止批量写 IndexedDB |
 | `src/features/memory-detail.js` | V1.25.0 记忆详情 UI 纯逻辑：统一线性 SVG 类型图标、Unicode 字素安全截断、日记兜底标题、初记/续写篇章标签、相册循环索引（IIFE + `window.InnerOSMemoryDetail`） |
 | `src/services/api-client.js` | 前端统一 API Client（`window.InnerOSApi`，兼容新旧信封） |
 | `server.py` | 本地服务默认 :8765（可用 `INNEROS_PORT` 临时换端口）。代理：`/img`（豆瓣图）、`/api/douban`、`/api/sports`、`/api/v1/sports/cs2/matches`；`/api/v1/football/**`、`/api/auth`、`/api/sync` **反代到 pages.dev**；另有 `/api/search` |
@@ -36,11 +36,12 @@
 | `functions/_repositories/device-repository.js` | ARCH-008 设备访问：ensureDevice/getCursor/updateCursor（last_seq 由 Service 传入，便于脱离 D1 单测） |
 | `functions/_services/memory-service.js` | Memory 业务编排：createMemory（领域校验）/list（归一化）/append（空追加拒绝）/delete（墓碑）/NOT_FOUND 语义 |
 | `functions/_services/media-service.js` | 媒体编排：Provider 选择（movie/book→douban，music→itunes）/query 校验/错误映射（第三方原始错误只进日志） |
-| `functions/_services/sports-service.js` | ARCH-017 体育编排：CS2 查询参数校验、Liquipedia Provider 调用、覆盖信息与 CC BY-SA 署名、第三方错误映射 |
+| `functions/_services/sports-service.js` | ARCH-017 体育编排：CS2 优先 PandaScore，未配置/失败时回退 Liquipedia；必须返回真实 provider/degraded 状态，禁止把有限窗口标成完整数据 |
 | `functions/_services/sync-service.js` | ARCH-008/008.1 同步编排：push（validateOperation→幂等→applyOperation→推进游标）/pull（增量+排除本机）。`applyOperation` 的 kind→repository 分发在此，勿搬回路由。请求级错误抛 `ServiceError` + `ErrorCode`；单条错误带 `code` 字段（客户端按 code 判断，禁止依赖中文 message）。可语句化的 5 种 kind 走 `db.batch` 与 operation 记录同事务 |
 | `functions/_adapters/douban-adapter.js` | 豆瓣适配器：searchMedia/getMediaDetail 标准结构 + 旧形状兼容输出（movie/book） |
 | `functions/_adapters/itunes-adapter.js` | ARCH-011 iTunes 适配器（music）：searchMedia/getMediaDetail 标准结构；免 Key、country=CN；iTunes 无评分/简介 → score=null、description='' |
 | `functions/_adapters/liquipedia-adapter.js` | ARCH-017 Liquipedia 适配器：官方 MediaWiki action=parse、最多 200 场 ticker、标准比赛字段；描述性 UA + gzip + 15 分钟边缘缓存 |
+| `functions/_adapters/pandascore-adapter.js` | V1.28.0 PandaScore CS2 赛程适配器：免费 Fixtures API，最多两页/200 场，5 分钟边缘缓存；密钥只读 `PANDASCORE_API_TOKEN` |
 | `functions/_infra/errors.js` | 统一错误模型（ARCH-002）：ok/fail/errors.*/ServiceError + requestId |
 | `functions/api/v1/` | 新版 API（统一信封）：me / memories / media/search / media/detail / sports/cs2/matches |
 | `app.js` 电影链路 | ARCH-009：搜索与详情走 `InnerOSApi` → `/api/v1/media/search\|detail`，`mediaToWorkFields()` 做标准结构→本地字段映射；v1 失败回退 `/api/douban` |
@@ -81,6 +82,7 @@ curl -X POST https://inneros.pages.dev/api/...     # 线上接口探测（部署
 3. **合规红线**：不引入付费服务（R2 免费档也要绑卡，禁用）；密钥只进 CF 环境变量（现 `EMAIL_API_KEY`）；禁止 mock 冒充真实数据；不接 Supabase；不改 DNS。
 4. **Resend 测试模式**：未验证域名只能发给 Resend 账号本人邮箱（403 已转中文提示）。验证码逻辑：配置了 `EMAIL_API_KEY` 才强制验证码。
 5. **Liquipedia**：只能走官方 MediaWiki API，禁止抓网页 HTML；必须 gzip + 描述性 UA。通用 API ≤1 次/2 秒，`action=parse` ≤1 次/30 秒；赛事 parse 缓存≥15min；UI 必须展示 Liquipedia + CC BY-SA 署名。**坚果云**：风控拦数据中心 IP，已弃用，勿再排查。
+   **PandaScore**：CS2 完整赛程优先源，token 仅放 Cloudflare `PANDASCORE_API_TOKEN`；不得写入前端或仓库。没有 token 时如实显示 Liquipedia 有限回退，不抓取 5E/HLTV 页面补数据。
 6. **D1 限制**：绑定参数 ≤1MB —— 附件 base64 压缩到 ≤1280px/JPEG0.8 后仍超 900KB 则跳过云端（原图只留本地）。
 7. IndexedDB 结构变更必须递增 `DB_VERSION` 并写迁移（v4 做过数字 id→UUID 迁移，勿回退）。
 8. **UI 约定**：右下角＋按钮只在记忆页显示（非记忆页 navigate 里隐藏）；详情页打开时＋=追加到当前记录（captureTriggerClick）；手机详情页左上角保留返回兜底，右上角为更多菜单+分享，删除收进更多菜单；首页/时间线不放编辑图标，篇章编辑只在详情出现；只有日记标题可在详情原位编辑，电影/书籍等标题只读；首页摘要固定展示初记；首页赛程=收藏制（★ localStorage `inneros_fav_matches`）；速记(type `quick`)不计入统计；日记留空标题才按 Unicode 字素安全生成兜底标题；时间线每条直显日期时间类型；侧边栏 overflow-y:auto；皮肤偏好保存在 localStorage `inneros_skin`。

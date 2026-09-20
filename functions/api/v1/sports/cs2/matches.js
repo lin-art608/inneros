@@ -2,12 +2,15 @@
 
 import { ok, fail, errors, ServiceError } from '../../../../_infra/errors.js';
 import { liquipediaProvider } from '../../../../_adapters/liquipedia-adapter.js';
+import { createPandaScoreProvider } from '../../../../_adapters/pandascore-adapter.js';
 import { createSportsService } from '../../../../_services/sports-service.js';
-
-const service = createSportsService({ liquipedia: liquipediaProvider });
 
 export async function onRequestGet(context) {
   const scope = new URL(context.request.url).searchParams.get('scope') || 'all';
+  const service = createSportsService({
+    pandascore: createPandaScoreProvider(context.env?.PANDASCORE_API_TOKEN),
+    liquipedia: liquipediaProvider,
+  });
   try {
     return ok(await service.listCS2Matches({ scope }), {
       headers: { 'Cache-Control': 'public, max-age=300, s-maxage=900' },
@@ -19,4 +22,3 @@ export async function onRequestGet(context) {
     return errors.internal('内部错误');
   }
 }
-

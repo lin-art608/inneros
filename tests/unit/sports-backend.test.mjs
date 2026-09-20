@@ -5,7 +5,7 @@
 //   3. /api/sports?type=cs2matches —— 默认 A 级白名单过滤；tier=all 全量返回（主队查询不被 Tier1 截断）
 // 运行：node tests/unit/sports-backend.test.mjs（零依赖，mock 全局 fetch）
 import assert from 'node:assert/strict';
-import { normalizeFixture, POPULAR_LEAGUES } from '../../functions/_services/football-client.js';
+import { normalizeFixture, POPULAR_LEAGUES, footballLeagueCN } from '../../functions/_services/football-client.js';
 import { onRequestGet as fixturesGet } from '../../functions/api/v1/football/fixtures.js';
 import { onRequestGet as sportsGet } from '../../functions/api/sports.js';
 
@@ -34,6 +34,11 @@ function apiFixture(short, { leagueId = 39, goalsHome = 1, goalsAway = 2 } = {})
 }
 
 // ---------- 1. normalizeFixture：状态映射 ----------
+{
+  assert.equal(footballLeagueCN(39, 'Premier League'), '英超');
+  assert.equal(footballLeagueCN(99999, 'Unknown Cup'), 'Unknown Cup');
+}
+
 {
   const cases = [
     ['1H', 'live'], ['HT', 'live'], ['2H', 'live'], ['LIVE', 'live'],
@@ -159,6 +164,20 @@ function resetFetch(impl) { fetchLog = []; fetchImpl = impl; }
   const body = await callFixtures('?date=2026-08-31');
   assert.equal(body.data.matches.length, 1, 'scope=all 只保留常用联赛');
   assert.equal(body.data.matches[0].league_id, '39');
+}
+
+// ---------- 6.05 日期范围：最近 7 天只消耗一次上游请求 ----------
+{
+  resetFetch((u) => {
+    assert.ok(u.includes('from=2026-09-22') && u.includes('to=2026-09-28'), '范围参数必须原样透传: ' + u);
+    return apiFootballRes([apiFixture('NS', { leagueId:39 })]);
+  });
+  const body = await callFixtures('?from=2026-09-22&to=2026-09-28');
+  assert.equal(fetchLog.length, 1);
+  assert.equal(body.data.matches.length, 1);
+  const invalid = await callFixtures('?from=bad&to=2026-09-28');
+  assert.equal(invalid.success, false);
+  assert.equal(invalid.error.code, 'VALIDATION_ERROR');
 }
 
 // ---------- 6.1 中超 ID 正确，避免把希腊 Super League 1 混入汇总 ----------

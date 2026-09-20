@@ -509,18 +509,29 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
     def handle_cs2_v1(self):
         """本地开发版 /api/v1/sports/cs2/matches，与 Cloudflare 统一信封保持一致。"""
         try:
-            matches = self._lp_cs2_matches()
+            token = os.environ.get('PANDASCORE_API_TOKEN', '').strip()
+            provider = 'pandascore' if token else 'liquipedia'
+            degraded = None
+            if token:
+                try:
+                    matches = self._pandascore_cs2_matches(token)
+                except Exception:
+                    matches = self._lp_cs2_matches()
+                    provider = 'liquipedia'
+                    degraded = 'pandascore-error'
+            else:
+                matches = self._lp_cs2_matches()
+                degraded = 'limited-source'
             self._send_json({
                 'success': True,
                 'data': {
                     'matches': matches,
-                    'provider': 'liquipedia',
+                    'provider': provider,
+                    'degraded': degraded,
                     'coverage': {'scope': 'all', 'limit': 200, 'returned': len(matches)},
-                    'attribution': {
-                        'name': 'Liquipedia',
-                        'license': 'CC BY-SA 3.0',
-                        'url': 'https://liquipedia.net/counterstrike/Liquipedia:Matches',
-                    },
+                    'attribution': ({'name': 'PandaScore', 'url': 'https://www.pandascore.co/'} if provider == 'pandascore' else {
+                        'name': 'Liquipedia', 'license': 'CC BY-SA 3.0',
+                        'url': 'https://liquipedia.net/counterstrike/Liquipedia:Matches'}),
                 },
             })
         except Exception:
@@ -533,6 +544,64 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
                     'retryable': True,
                 },
             }, 502)
+
+    def _pandascore_cs2_matches(self, token):
+        """PandaScore 免费 Fixtures：本地环境配置 token 后与线上同样优先使用。"""
+        now = time.time()
+        start = datetime.utcfromtimestamp(now - 86400).isoformat(timespec='seconds') + 'Z'
+        end = datetime.utcfromtimestamp(now + 9 * 86400).isoformat(timespec='seconds') + 'Z'
+        rows = []
+        for page in (1, 2):
+            query = urllib.parse.urlencode({
+                'range[begin_at]': start + ',' + end,
+                'sort': 'begin_at', 'page': page, 'per_page': 100,
+            })
+            url = 'https://api.pandascore.co/csgo/matches?' + query
+            def fetch_page(url=url):
+                req = urllib.request.Request(url)
+                req.add_header('Authorization', 'Bearer ' + token)
+                req.add_header('Accept', 'application/json')
+                with urllib.request.urlopen(req, timeout=20) as response:
+                    return json.loads(response.read().decode('utf-8', 'ignore'))
+            batch = cached_fetch_json('pandascore:' + url, fetch_page)
+            if not isinstance(batch, list):
+                raise RuntimeError('pandascore invalid payload')
+            rows.extend(batch)
+            if len(batch) < 100:
+                break
+
+        def normalize(match):
+            opponents = match.get('opponents') or []
+            home = ((opponents[0] if len(opponents) > 0 else {}).get('opponent') or {})
+            away = ((opponents[1] if len(opponents) > 1 else {}).get('opponent') or {})
+            begin_at = match.get('begin_at') or match.get('scheduled_at')
+            try:
+                ts = int(datetime.fromisoformat(begin_at.replace('Z', '+00:00')).timestamp() * 1000) if begin_at else None
+            except Exception:
+                ts = None
+            scores = {str(item.get('team_id')): item.get('score') for item in (match.get('results') or [])}
+            raw_status = match.get('status') or ''
+            status = {'running': 'live', 'finished': 'finished', 'canceled': 'cancelled', 'postponed': 'postponed'}.get(raw_status, 'upcoming')
+            league = match.get('league') or {}
+            serie = match.get('serie') or {}
+            tournament = match.get('tournament') or {}
+            names = []
+            for value in (league.get('name'), serie.get('full_name') or serie.get('name'), tournament.get('name')):
+                if value and value not in names:
+                    names.append(value)
+            games = match.get('number_of_games')
+            return {
+                'sport': 'cs2', 'id': 'ps-' + str(match.get('id') or ''),
+                'home_id': str(home.get('id') or ''), 'home_name': home.get('acronym') or home.get('name') or '待定',
+                'home_badge': home.get('image_url') or '',
+                'away_id': str(away.get('id') or ''), 'away_name': away.get('acronym') or away.get('name') or '待定',
+                'away_badge': away.get('image_url') or '', 'ts': ts, 'league': ' · '.join(names),
+                'round': ('Bo' + str(games)) if isinstance(games, int) and games > 0 else '',
+                'status': status, 'status_text': raw_status,
+                'home_score': scores.get(str(home.get('id'))), 'away_score': scores.get(str(away.get('id'))),
+                'provider': 'pandascore',
+            }
+        return [normalize(match) for match in rows[:200]]
 
     # Liquipedia API 合规：gzip + 描述性 UA；action=parse 最多 1 次/30 秒，本地缓存 15 分钟。
     _lp_cache = {'ts': 0, 'data': None}
