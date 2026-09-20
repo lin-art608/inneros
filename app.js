@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.26.0';
+const APP_VERSION = 'v1.27.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -792,7 +792,27 @@ function hubPageIcon(page) {
 }
 
 function renderNavigationHub(page) {
-  document.getElementById('content').innerHTML = window.InnerOSNavigation?.hubHtml(page, hubPageIcon) || '';
+  const content = document.getElementById('content');
+  let html = window.InnerOSNavigation?.hubHtml(page, hubPageIcon) || '';
+  if (page === 'resources') {
+    html += `<section class="resource-sports-summary" id="resource-sports-summary">
+      <div class="resource-summary-header">
+        <div><span class="resource-summary-kicker">LIVE SCHEDULE</span><h2>赛事汇总</h2><p>足球与 CS2 同屏查看，数据加载完成后才呈现结果。</p></div>
+        <div class="resource-summary-tabs">
+          <button class="active" data-summary-tab="today" onclick="window.InnerOSSports.selectSummaryTab('today')">今天</button>
+          <button data-summary-tab="tomorrow" onclick="window.InnerOSSports.selectSummaryTab('tomorrow')">明天</button>
+          <button data-summary-tab="dayafter" onclick="window.InnerOSSports.selectSummaryTab('dayafter')">后天</button>
+        </div>
+      </div>
+      <div class="resource-summary-grid">
+        <article class="resource-summary-panel"><header><span>足球</span><button onclick="navigate('res-football')">完整中心 →</button></header><div data-summary-sport="football"></div></article>
+        <article class="resource-summary-panel"><header><span>CS2</span><button onclick="navigate('res-cs')">完整中心 →</button></header><div data-summary-sport="cs2"></div></article>
+      </div>
+      <div class="resource-summary-source">足球 · API-Football　/　CS2 · Liquipedia（CC BY-SA 3.0）</div>
+    </section>`;
+  }
+  content.innerHTML = html;
+  if (page === 'resources') window.InnerOSSports?.mountSummary();
 }
 
 async function navigateToParent(page = currentPage) {
@@ -2519,26 +2539,51 @@ document.addEventListener('focusin', function(e) {
   }
 });
 
-// === Mobile Touch Gestures ===
-let touchStartX = 0, touchStartY = 0, touchEndX = 0, touchEndY = 0, touchSwipeIgnored = false;
-document.addEventListener('touchstart', function(e) {
-  const point = e.changedTouches[0];
+// === Mobile Sidebar Swipe ===
+// 用 Pointer Events + touch-action:pan-y 接管横向拖动：手指从页面中部起滑也能打开侧栏，
+// 同时保留浏览器原生纵向滚动。旧版只等 touchend，手势常被浏览器提前 cancel。
+let swipePointerId = null;
+let touchStartX = 0, touchStartY = 0, touchEndX = 0, touchEndY = 0;
+let touchSwipeIgnored = false, touchSwipeHandled = false;
+document.addEventListener('pointerdown', function(e) {
+  if (!window.matchMedia('(max-width: 820px)').matches || !e.isPrimary || (e.button !== undefined && e.button !== 0)) return;
   const sidebarOpen = document.getElementById('sidebar').classList.contains('open');
-  touchSwipeIgnored = !sidebarOpen && !!e.target.closest('input,textarea,select,a,#img-viewer,.modal-overlay,.sp-tabs,.lib-tabs,.memory-photo-gallery,.chat-thread');
-  touchStartX = point.clientX;
-  touchStartY = point.clientY;
-}, { passive: true });
-document.addEventListener('touchend', function(e) {
-  const point = e.changedTouches[0];
-  touchEndX = point.clientX;
-  touchEndY = point.clientY;
-  handleSwipeGesture();
-}, { passive: true });
-function handleSwipeGesture() {
-  if (imageViewerOpen || touchSwipeIgnored) return;
+  const target = e.target && e.target.closest ? e.target : null;
+  touchSwipeIgnored = !sidebarOpen && !!target?.closest('input,textarea,select,#img-viewer,.modal-overlay,.sp-tabs,.lib-tabs,.memory-photo-gallery,.chat-thread');
+  touchSwipeHandled = false;
+  swipePointerId = e.pointerId;
+  touchStartX = e.clientX;
+  touchStartY = e.clientY;
+  touchEndX = touchStartX;
+  touchEndY = touchStartY;
+});
+document.addEventListener('pointermove', function(e) {
+  if (e.pointerId !== swipePointerId || touchSwipeIgnored || touchSwipeHandled || imageViewerOpen) return;
+  touchEndX = e.clientX;
+  touchEndY = e.clientY;
+  const action = getSidebarSwipeAction();
+  if (!action) return;
+  e.preventDefault();
+  applySidebarSwipe(action);
+  touchSwipeHandled = true;
+});
+document.addEventListener('pointerup', function(e) {
+  if (e.pointerId !== swipePointerId) return;
+  touchEndX = e.clientX;
+  touchEndY = e.clientY;
+  if (!touchSwipeHandled) handleSwipeGesture();
+  swipePointerId = null;
+});
+document.addEventListener('pointercancel', function(e) {
+  if (e.pointerId === swipePointerId) swipePointerId = null;
+});
+function getSidebarSwipeAction() {
   const sidebar = document.getElementById('sidebar');
   const isOpen = sidebar.classList.contains('open');
-  const action = window.InnerOSNavigation?.swipeAction({ startX:touchStartX, startY:touchStartY, endX:touchEndX, endY:touchEndY, sidebarOpen:isOpen });
+  return window.InnerOSNavigation?.swipeAction({ startX:touchStartX, startY:touchStartY, endX:touchEndX, endY:touchEndY, sidebarOpen:isOpen, threshold:56 });
+}
+function applySidebarSwipe(action) {
+  const sidebar = document.getElementById('sidebar');
   if (action === 'open') {
     sidebar.classList.add('open');
     document.getElementById('overlay').classList.add('show');
@@ -2546,6 +2591,10 @@ function handleSwipeGesture() {
     sidebar.classList.remove('open');
     document.getElementById('overlay').classList.remove('show');
   }
+}
+function handleSwipeGesture() {
+  if (imageViewerOpen || touchSwipeIgnored) return;
+  applySidebarSwipe(getSidebarSwipeAction());
 }
 
 // ============================================================

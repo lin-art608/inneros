@@ -32,7 +32,7 @@ def cached_fetch_json(cache_key, fetch_fn):
     HTTP_CACHE[cache_key] = (time.time() + HTTP_CACHE_TTL, data)
     return data
 
-PORT = 8765
+PORT = int(os.environ.get('INNEROS_PORT', '8765'))
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
 # In-memory image cache: {url: {type, data, ts}}
@@ -130,7 +130,8 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(payload)
 
     def do_GET(self):
-        if self.path.startswith('/api/auth') or self.path.startswith('/api/sync'):
+        if (self.path.startswith('/api/auth') or self.path.startswith('/api/sync')
+                or self.path.startswith('/api/v1/football')):
             self._proxy_api()
         elif self.path.startswith('/img?url='):
             self.handle_image_proxy()

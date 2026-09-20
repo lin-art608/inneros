@@ -17,12 +17,12 @@
 |---|---|
 | `index.html` | 单页外壳，全部 CSS 内联。页面路由：memory / resources 两个父级 Hub，以及 today / quickchat(速信) / timeline / library / search / onthisday / random / year-review / settings / res-cs / res-football / res-ai / res-links / knowledge / ai-assistant |
 | `app.js` | 前端主逻辑（渐进式拆分中，新功能优先放 `src/features/`）。分节：TYPE_META / 图片代理 / ContentProvider / IndexedDB v4 / 账户与同步引擎 / 速记对话 / 各页渲染 / History 返回栈（Sports 渲染已全部迁出，仅剩 2 个薄委托） |
-| `src/features/navigation.js` | V1.26.0 页面父子关系、记忆/资源 Hub 与移动端横滑判定（IIFE + `window.InnerOSNavigation`）。返回目标必须查 `PAGE_PARENT`，禁止再用访问历史猜产品层级 |
+| `src/features/navigation.js` | V1.27.0 页面父子关系、记忆/资源 Hub 与移动端横滑判定（IIFE + `window.InnerOSNavigation`）。返回目标必须查 `PAGE_PARENT`，禁止再用访问历史猜产品层级 |
 | `src/features/media.js` | 前端媒体数据层（电影/书籍/音乐搜索+详情+字段映射，IIFE + `window.InnerOSMedia`） |
-| `src/features/sports.js` | V1.26.0 Sports Center V2（足球+CS2，IIFE + `window.InnerOSSports`）。统一 Match + SportsScheduleQuery；足球主队走单队接口，CS2 所有 scope 共用 v1 最多 200 场窗口后按主队/赛事过滤，不再套 A 级白名单；纯逻辑经 `Core` 导出供 node vm 单测 |
+| `src/features/sports.js` | V1.27.0 Sports Center V2（足球+CS2，IIFE + `window.InnerOSSports`）。统一 Match + SportsScheduleQuery；资源 Hub 内提供双项目三日汇总；同 URL 并发读取必须经 `rawInflight` 合并，避免触发 Provider 限流；CS2 使用 v1 最多 200 场窗口，不套 A 级白名单 |
 | `src/features/memory-detail.js` | V1.25.0 记忆详情 UI 纯逻辑：统一线性 SVG 类型图标、Unicode 字素安全截断、日记兜底标题、初记/续写篇章标签、相册循环索引（IIFE + `window.InnerOSMemoryDetail`） |
 | `src/services/api-client.js` | 前端统一 API Client（`window.InnerOSApi`，兼容新旧信封） |
-| `server.py` | 本地服务 :8765。代理：`/img`（豆瓣图）、`/api/douban`、`/api/sports`、`/api/v1/sports/cs2/matches`、`/api/auth`+`/api/sync`（**反代到 pages.dev**）、`/api/search` |
+| `server.py` | 本地服务默认 :8765（可用 `INNEROS_PORT` 临时换端口）。代理：`/img`（豆瓣图）、`/api/douban`、`/api/sports`、`/api/v1/sports/cs2/matches`；`/api/v1/football/**`、`/api/auth`、`/api/sync` **反代到 pages.dev**；另有 `/api/search` |
 | `functions/_lib.js` | D1 schema 自建（IF NOT EXISTS）/ PBKDF2 / Cookie 会话 |
 | `functions/api/auth/[action].js` | register / login / logout / me / send-code（Resend 验证码） |
 | `functions/api/sync/[action].js` | push（幂等批量）/ pull（游标增量）。**ARCH-008 后为薄路由**：只 auth/parse/service/response，编排在 sync-service |

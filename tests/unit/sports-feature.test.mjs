@@ -358,6 +358,33 @@ function C() {
   await assert.rejects(() => h2.S.Core.querySchedule(h2.S.Core.buildQuery({ sport: 'football', scope: 'all', tab: 'today' })), /down/);
 }
 
+// ---------- 16.5 同 URL 并发请求合并：赛事汇总与列表不可同时打两次 Liquipedia ----------
+{
+  let calls = 0;
+  const tsToday = new Date(); tsToday.setHours(20, 0, 0, 0);
+  const raw = [{ id: 'lp-one', home_id: 'A', home_name: 'A', away_id: 'B', away_name: 'B', ts: tsToday.getTime(), league: 'L', status: 'upcoming' }];
+  const h = load({
+    getImpl: async () => {
+      calls++;
+      await new Promise(resolve => setTimeout(resolve, 20));
+      return { data: { matches: raw } };
+    },
+    fetchImpl: async () => { throw new Error('不应走旧接口'); },
+  });
+  const query = h.S.Core.buildQuery({ sport: 'cs2', scope: 'all', tab: 'today' });
+  const [a, b] = await Promise.all([h.S.Core.querySchedule(query), h.S.Core.querySchedule(query)]);
+  assert.equal(calls, 1, '相同 URL 的并发读取必须复用一个进行中的请求');
+  assert.equal(a.matches.length, 1);
+  assert.equal(b.matches.length, 1);
+}
+
+// ---------- 16.6 热门联赛 ID：中超不得误用希腊超联赛 197 ----------
+{
+  const leagues = C().POPULAR_LEAGUES;
+  assert.ok(leagues.some(item => item.id === 169 && item.name === '中超'));
+  assert.ok(!leagues.some(item => item.id === 197), '197 是希腊 Super League 1，不能标成中超');
+}
+
 // ---------- 17. 未配置 FOOTBALL_API_KEY：首页回退旧数据源，主队/联赛如实提示 ----------
 {
   const tsToday = new Date(); tsToday.setHours(20, 0, 0, 0);

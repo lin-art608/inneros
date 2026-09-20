@@ -95,5 +95,5 @@ export const POPULAR_LEAGUES = [
   { id: 61, name: '法甲', country: 'France', logo: 'https://media-1.api-sports.io/football/leagues/61.png' },
   { id: 2, name: '欧冠', country: 'Europe', logo: 'https://media-1.api-sports.io/football/leagues/2.png' },
   { id: 3, name: '欧联杯', country: 'Europe', logo: 'https://media-1.api-sports.io/football/leagues/3.png' },
-  { id: 197, name: '中超', country: 'China', logo: 'https://media-1.api-sports.io/football/leagues/197.png' },
+  { id: 169, name: '中超', country: 'China', logo: 'https://media-1.api-sports.io/football/leagues/169.png' },
 ];

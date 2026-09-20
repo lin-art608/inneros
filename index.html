@@ -450,6 +450,30 @@ body.viewer-open { overflow:hidden; }
 .nav-hub-card strong { font-size:15px; margin-bottom:4px; }
 .nav-hub-card small { color:var(--text-secondary); font-size:12px; line-height:1.45; }
 .nav-hub-card i { color:var(--text-tertiary); font-style:normal; font-size:18px; }
+.resource-sports-summary { max-width:920px; margin:34px auto 0; padding-top:30px; border-top:1px solid var(--border); }
+.resource-summary-header { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:18px; }
+.resource-summary-kicker { color:var(--accent); font-size:10px; font-weight:700; letter-spacing:.2em; }
+.resource-summary-header h2 { margin:7px 0 5px; font-family:var(--font-serif); font-size:28px; font-weight:500; }
+.resource-summary-header p { color:var(--text-secondary); font-size:12px; }
+.resource-summary-tabs { display:flex; gap:5px; padding:4px; border-radius:12px; background:var(--bg-subtle); flex-shrink:0; }
+.resource-summary-tabs button { border:0; border-radius:9px; padding:8px 13px; background:transparent; color:var(--text-secondary); cursor:pointer; font-family:var(--font-sans); }
+.resource-summary-tabs button.active { background:var(--bg-elevated); color:var(--text); box-shadow:var(--shadow-sm); }
+.resource-summary-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.resource-summary-panel { min-width:0; padding:16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-elevated); }
+.resource-summary-panel > header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:15px; font-weight:700; }
+.resource-summary-panel > header button,.sports-summary-more { border:0; background:none; color:var(--accent); font-family:var(--font-sans); font-size:11px; cursor:pointer; }
+.sports-summary-match { display:block; width:100%; padding:11px 0; border:0; border-bottom:1px solid var(--border); background:none; color:var(--text); text-align:left; cursor:pointer; font-family:var(--font-sans); }
+.sports-summary-meta,.sports-summary-teams { display:grid; align-items:center; gap:8px; }
+.sports-summary-meta { grid-template-columns:1fr auto; margin-bottom:7px; color:var(--text-tertiary); font-size:10px; }
+.sports-summary-meta b { font-weight:400; }
+.sports-summary-teams { grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); font-size:12px; }
+.sports-summary-teams span:last-child { text-align:right; }
+.sports-summary-teams strong { font-size:12px; white-space:nowrap; }
+.sports-summary-more { width:100%; padding:12px 0 2px; }
+.sports-summary-empty { padding:28px 10px; color:var(--text-tertiary); font-size:12px; line-height:1.8; text-align:center; }
+.sports-summary-empty button { border:0; background:none; color:var(--accent); cursor:pointer; }
+.sports-summary-notice { margin-bottom:8px; padding:8px; border-radius:8px; background:var(--bg-subtle); color:var(--text-secondary); font-size:10px; }
+.resource-summary-source { margin-top:12px; color:var(--text-tertiary); font-size:10px; text-align:right; }
 
 /* Mobile */
 .menu-toggle {
@@ -1112,7 +1136,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 @media (max-width: 768px) {
   .sidebar { transform:translateX(-100%); width:280px; }
   .sidebar.open { transform:translateX(0); }
-  .main { margin-left:0; width:100%; min-width:0; overflow-x:clip; }
+  .main { margin-left:0; width:100%; min-width:0; overflow-x:clip; touch-action:pan-y; overscroll-behavior-x:none; }
   .menu-toggle { display:flex; }
   .content { padding:64px 16px 100px; }
   .today-header { flex-direction:column; }
@@ -1150,6 +1174,10 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
   .nav-hub-grid { grid-template-columns:1fr; }
   .nav-hub-hero { padding-top:20px; }
   .nav-hub-hero h1 { font-size:34px; }
+  .resource-summary-header { align-items:flex-start; flex-direction:column; }
+  .resource-summary-tabs { width:100%; }
+  .resource-summary-tabs button { flex:1; }
+  .resource-summary-grid { grid-template-columns:1fr; }
   .viewer-nav { width:38px; height:52px; font-size:24px; }
   .book-status-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .book-status-tab { white-space:nowrap; padding:8px 12px; }
@@ -1561,8 +1589,8 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 
 <script src="src/services/api-client.js?v=1.20.1"></script>
 <script src="src/features/media.js?v=1.20.1"></script>
-<script src="src/features/navigation.js?v=1.26.0"></script>
-<script src="src/features/sports.js?v=1.26.0"></script>
+<script src="src/features/navigation.js?v=1.27.0"></script>
+<script src="src/features/sports.js?v=1.27.0"></script>
 <script src="src/features/memory-detail.js?v=1.25.0"></script>
 <link rel="stylesheet" href="src/pet/pet.css?v=1.23.0">
 <script src="src/pet/pet-config.js?v=1.23.0"></script>
@@ -1573,6 +1601,6 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <script src="src/pet/pet-events.js?v=1.23.0"></script>
 <script src="src/pet/pet-interact.js?v=1.23.0"></script>
 <script src="src/pet/pet-mount.js?v=1.23.0"></script>
-<script src="app.js?v=1.26.0"></script>
+<script src="app.js?v=1.27.0"></script>
 </body>
 </html>

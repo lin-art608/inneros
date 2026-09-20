@@ -5,7 +5,7 @@
 //   3. /api/sports?type=cs2matches —— 默认 A 级白名单过滤；tier=all 全量返回（主队查询不被 Tier1 截断）
 // 运行：node tests/unit/sports-backend.test.mjs（零依赖，mock 全局 fetch）
 import assert from 'node:assert/strict';
-import { normalizeFixture } from '../../functions/_services/football-client.js';
+import { normalizeFixture, POPULAR_LEAGUES } from '../../functions/_services/football-client.js';
 import { onRequestGet as fixturesGet } from '../../functions/api/v1/football/fixtures.js';
 import { onRequestGet as sportsGet } from '../../functions/api/sports.js';
 
@@ -159,6 +159,12 @@ function resetFetch(impl) { fetchLog = []; fetchImpl = impl; }
   const body = await callFixtures('?date=2026-08-31');
   assert.equal(body.data.matches.length, 1, 'scope=all 只保留常用联赛');
   assert.equal(body.data.matches[0].league_id, '39');
+}
+
+// ---------- 6.1 中超 ID 正确，避免把希腊 Super League 1 混入汇总 ----------
+{
+  assert.ok(POPULAR_LEAGUES.some(item => item.id === 169 && item.name === '中超'));
+  assert.ok(!POPULAR_LEAGUES.some(item => item.id === 197));
 }
 
 // ---------- 7. 指定联赛 + 日期：不做热门过滤（主队/联赛查询不受截断） ----------

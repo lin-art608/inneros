@@ -181,6 +181,7 @@
 
   // ========== 4. Provider 层（请求构造 + 短 TTL 缓存） ==========
   const rawCache = new Map(); // url → { ts, data }
+  const rawInflight = new Map(); // url → Promise；同屏多个组件复用同一次上游请求
   const TTL = { normal: 120 * 1000, live: 30 * 1000 }; // 含直播场次时缓存更短
 
   function entryTTL(entry) {
@@ -201,14 +202,21 @@
   async function fetchRaw(url) {
     const entry = rawCache.get(url);
     if (entry && Date.now() - entry.ts < entryTTL(entry)) return { data: entry.data, stale: false };
-    try {
-      const data = url.indexOf('/api/v1/') === 0 ? await fetchV1(url) : await fetchLegacy(url);
-      rawCache.set(url, { ts: Date.now(), data: data });
-      return { data: data, stale: false };
-    } catch (e) {
-      if (entry) return { data: entry.data, stale: true };
-      throw e;
-    }
+    if (rawInflight.has(url)) return rawInflight.get(url);
+    const pending = (async () => {
+      try {
+        const data = url.indexOf('/api/v1/') === 0 ? await fetchV1(url) : await fetchLegacy(url);
+        rawCache.set(url, { ts: Date.now(), data: data });
+        return { data: data, stale: false };
+      } catch (e) {
+        if (entry) return { data: entry.data, stale: true };
+        throw e;
+      } finally {
+        rawInflight.delete(url);
+      }
+    })();
+    rawInflight.set(url, pending);
+    return pending;
   }
 
   // 足球 Provider：API-Football（/api/v1/football/**）
@@ -458,12 +466,12 @@
     });
   }
   async function enrichBadges(matches, sport) {
-    for (const m of matches) {
+    await Promise.all(matches.map(async m => {
       if (!m.home.logo) m.home.logo = await getCachedBadge(m.home.id, m.home.name, sport);
       else await setCachedBadge(m.home.id, m.home.name, sport, m.home.logo);
       if (!m.away.logo) m.away.logo = await getCachedBadge(m.away.id, m.away.name, sport);
       else await setCachedBadge(m.away.id, m.away.name, sport, m.away.logo);
-    }
+    }));
     return matches;
   }
 
@@ -476,7 +484,7 @@
     { id: 61, name: '法甲', logo: 'https://media-1.api-sports.io/football/leagues/61.png' },
     { id: 2, name: '欧冠', logo: 'https://media-1.api-sports.io/football/leagues/2.png' },
     { id: 3, name: '欧联杯', logo: 'https://media-1.api-sports.io/football/leagues/3.png' },
-    { id: 197, name: '中超', logo: 'https://media-1.api-sports.io/football/leagues/197.png' },
+    { id: 169, name: '中超', logo: 'https://media-1.api-sports.io/football/leagues/169.png' },
   ];
 
   // ========== 10. 主队管理 ==========
@@ -731,6 +739,67 @@
     } catch (e) {
       el.innerHTML = `<div class="sp-empty-inline">赛事列表加载失败，<a href="javascript:void(0)" onclick="window.InnerOSSports.refresh()">点击重试</a></div>`;
     }
+  }
+
+  // ========== 13.5 资源整合页赛事汇总（足球 + CS2 同屏） ==========
+  let summaryTab = 'today';
+  const SUMMARY_TABS = DAY_TABS.slice(0, 3);
+
+  function renderSummaryCard(m) {
+    const target = m.sport === 'cs2' ? 'res-cs' : 'res-football';
+    return `<button class="sports-summary-match" onclick="navigate('${target}')">
+      <span class="sports-summary-meta">${escapeHtml(m.competition.name || '')}<b>${statusBadge(m)}</b></span>
+      <span class="sports-summary-teams"><span>${escapeHtml(m.home.name || '待定')}</span><strong>${scoreHtml(m)}</strong><span>${escapeHtml(m.away.name || '待定')}</span></span>
+    </button>`;
+  }
+
+  function renderSummaryResult(result, sport) {
+    if (!result.matches.length) {
+      if (result.degraded === 'legacy') return '<div class="sports-summary-empty">足球主源暂时不可用，降级源也没有当天赛程<br><button onclick="window.InnerOSSports.reloadSummary()">重新加载</button></div>';
+      if (result.degraded === 'no-key') return '<div class="sports-summary-empty">足球数据源尚未配置，请在 Cloudflare 设置 FOOTBALL_API_KEY</div>';
+      return `<div class="sports-summary-empty">这一天暂无${sport === 'cs2' ? ' CS2' : '足球'}比赛</div>`;
+    }
+    let notice = '';
+    if (result.stale) notice = '<div class="sports-summary-notice">当前显示最近一次成功数据</div>';
+    if (result.degraded === 'legacy') notice = '<div class="sports-summary-notice">足球主源暂不可用，当前为有限降级数据</div>';
+    return notice + result.matches.slice(0, 6).map(renderSummaryCard).join('')
+      + (result.matches.length > 6 ? `<button class="sports-summary-more" onclick="navigate('${sport === 'cs2' ? 'res-cs' : 'res-football'}')">查看全部 ${result.matches.length} 场 →</button>` : '');
+  }
+
+  async function loadSummarySport(sport, tab, host) {
+    try {
+      const result = await querySchedule(buildQuery({ sport, scope: 'all', tab }));
+      if (!document.body.contains(host) || summaryTab !== tab) return;
+      host.innerHTML = renderSummaryResult(result, sport);
+    } catch (error) {
+      if (!document.body.contains(host) || summaryTab !== tab) return;
+      host.innerHTML = `<div class="sports-summary-empty">${sport === 'cs2' ? 'CS2' : '足球'}数据暂时不可用<br><button onclick="window.InnerOSSports.reloadSummary()">重新加载</button></div>`;
+    }
+  }
+
+  function loadResourceSummary() {
+    const root = document.getElementById('resource-sports-summary');
+    if (!root) return;
+    for (const sport of ['football', 'cs2']) {
+      const host = root.querySelector(`[data-summary-sport="${sport}"]`);
+      if (!host) continue;
+      host.innerHTML = renderSkeleton(2);
+      loadSummarySport(sport, summaryTab, host);
+    }
+  }
+
+  function selectSummaryTab(tab) {
+    if (!SUMMARY_TABS.some(item => item.key === tab)) return;
+    summaryTab = tab;
+    document.querySelectorAll('#resource-sports-summary [data-summary-tab]').forEach(button => {
+      button.classList.toggle('active', button.dataset.summaryTab === tab);
+    });
+    loadResourceSummary();
+  }
+
+  function mountSummary() {
+    summaryTab = 'today';
+    loadResourceSummary();
   }
 
   // ========== 14. 统一 Schedule 页（scope=team / scope=competition 共用） ==========
@@ -1022,6 +1091,9 @@
     back: goBack,
     exit: () => onExit(),
     refresh: render,
+    mountSummary: mountSummary,
+    selectSummaryTab: selectSummaryTab,
+    reloadSummary: () => { clearCache(); loadResourceSummary(); },
     // 纯逻辑导出（node vm 单测用，无 DOM 依赖）
     Core: Object.freeze({
       normalizeMatch: normalizeMatch,
