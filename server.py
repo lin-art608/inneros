@@ -134,6 +134,8 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
             self._proxy_api()
         elif self.path.startswith('/img?url='):
             self.handle_image_proxy()
+        elif self.path.startswith('/api/v1/sports/cs2/matches'):
+            self.handle_cs2_v1()
         elif self.path.startswith('/api/sports'):
             self.handle_sports()
         elif self.path.startswith('/api/douban'):
@@ -330,7 +332,7 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
 
         def tsb_fetch(path):
             def do():
-                url = f'https://www.thesportsdb.com/api/v1/json/3/{path}'
+                url = f'https://www.thesportsdb.com/api/v1/json/123/{path}'
                 req = urllib.request.Request(url)
                 req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
                 req.add_header('Accept', 'application/json')
@@ -503,7 +505,35 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
         except Exception:
             self._send_json({'results': [], 'matches': []}, 502)
 
-    # Liquipedia API 合规：gzip 必需 + 描述性 UA + 缓存降频（≤2 req/s，见 liquipedia.net/api-terms-of-use）
+    def handle_cs2_v1(self):
+        """本地开发版 /api/v1/sports/cs2/matches，与 Cloudflare 统一信封保持一致。"""
+        try:
+            matches = self._lp_cs2_matches()
+            self._send_json({
+                'success': True,
+                'data': {
+                    'matches': matches,
+                    'provider': 'liquipedia',
+                    'coverage': {'scope': 'all', 'limit': 200, 'returned': len(matches)},
+                    'attribution': {
+                        'name': 'Liquipedia',
+                        'license': 'CC BY-SA 3.0',
+                        'url': 'https://liquipedia.net/counterstrike/Liquipedia:Matches',
+                    },
+                },
+            })
+        except Exception:
+            self._send_json({
+                'success': False,
+                'error': {
+                    'code': 'PROVIDER_ERROR',
+                    'message': 'CS2 赛事服务暂时不可用，请稍后重试',
+                    'requestId': 'local_sports',
+                    'retryable': True,
+                },
+            }, 502)
+
+    # Liquipedia API 合规：gzip + 描述性 UA；action=parse 最多 1 次/30 秒，本地缓存 15 分钟。
     _lp_cache = {'ts': 0, 'data': None}
 
     def _lp_search_teams(self, q):
@@ -564,11 +594,15 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
         return cached_fetch_json('lp:' + url, do)
 
     def _lp_cs2_matches(self):
-        # 本地内存缓存 5 分钟，与线上 cf cacheTtl=300 对齐，避免高频打到 Liquipedia
+        # 单次 action=parse 展开最多 200 场，缓存 15 分钟，避免刷新触发外部请求。
         now = time.time()
-        if self._lp_cache['data'] and now - self._lp_cache['ts'] < 300:
+        if self._lp_cache['data'] and now - self._lp_cache['ts'] < 900:
             return self._lp_cache['data']
-        d = self._lp_fetch_json('https://liquipedia.net/counterstrike/api.php?action=parse&page=Liquipedia:Matches&format=json&prop=text')
+        template = '{{#invoke:Lua|invoke|module=Widget/Factory|fn=fromTemplate|widget=Match/Ticker/Container|limit=200}}'
+        query = urllib.parse.urlencode({
+            'action': 'parse', 'text': template, 'contentmodel': 'wikitext', 'prop': 'text', 'format': 'json'
+        })
+        d = self._lp_fetch_json('https://liquipedia.net/counterstrike/api.php?' + query)
         html = ((d.get('parse') or {}).get('text') or {}).get('*') or ''
         if not html:
             raise RuntimeError('liquipedia empty')

@@ -6,7 +6,7 @@
 //   · scope=team：以 teamId 为主，不受热门联赛(POPULAR_LEAGUES)/A 级(Tier1) 过滤截断
 //   · scope=competition：以 competitionId 为主
 //   · 日期按用户本地时区自然日计算，跨午夜比赛必须进入正确自然日（禁止字符串截取日期代替时区转换）
-//   · UI 不直接访问第三方 API（统一走 /api/v1/** 与 /api/sports 代理）
+//   · UI 不直接访问第三方 API（主链统一走 /api/v1/**；/api/sports 仅作兼容降级）
 // 纯逻辑挂 window.InnerOSSports.Core 供 node vm 单测（无 DOM 依赖）。
 // IIFE + window.InnerOSSports
 (function () {
@@ -15,6 +15,7 @@
   // ========== 0. 页面状态 ==========
   let view = { page: 'home', params: { sport: 'football', scope: 'all', tab: 'today' } };
   let historyStack = [];
+  let onExit = function () {};
 
   function navigateTo(page, params) {
     // params 浅拷贝入栈：selectTab 只改当前 params，不污染历史记录
@@ -26,6 +27,8 @@
     if (historyStack.length > 0) {
       view = historyStack.pop();
       render();
+    } else {
+      onExit();
     }
   }
 
@@ -225,12 +228,16 @@
   }
   const LEGACY_FOOTBALL_URL = '/api/sports?type=matches&leagues=4328,4335,4331,4332,4334,4480';
 
-  // CS2 Provider：Liquipedia ticker（/api/sports?type=cs2matches）
-  // scope=team → tier=all：主队查询拉全量，不受 A 级(Tier1) 过滤截断；其余场景默认 A 级赛事
-  function buildCS2Url(q) {
-    return q.scope === 'team'
-      ? '/api/sports?type=cs2matches&tier=all'
-      : '/api/sports?type=cs2matches';
+  // CS2 Provider：Liquipedia 官方 MediaWiki API 经 v1 后端 Adapter/Service 归一化。
+  // 所有 scope 共用最多 200 场窗口，不再用 A 级白名单截断；旧接口仅在 v1 故障时兼容降级。
+  function buildCS2Url() { return '/api/v1/sports/cs2/matches?scope=all'; }
+  const LEGACY_CS2_URL = '/api/sports?type=cs2matches&tier=all';
+  async function fetchCS2Raw() {
+    try {
+      return await fetchRaw(buildCS2Url());
+    } catch (error) {
+      return fetchRaw(LEGACY_CS2_URL);
+    }
   }
   function normKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9一-鿿]/g, ''); }
   // 标准化 team identity：兼容 Liquipedia 页面标题(lp: 前缀)/全称/短名/中文名
@@ -259,10 +266,15 @@
   // ========== 5. SportsScheduleService ==========
   // query → Provider 拉取 → scope 过滤 → normalizeMatch → 日期过滤 → 去重 → 排序
   async function querySchedule(q) {
-    const urls = q.sport === 'cs2' ? [buildCS2Url(q)] : buildFootballUrls(q);
+    const urls = q.sport === 'cs2' ? [] : buildFootballUrls(q);
     let stale = false;
     let degraded = null;
     let rawList = [];
+    if (q.sport === 'cs2') {
+      const result = await fetchCS2Raw();
+      stale = result.stale;
+      rawList = (result.data && result.data.matches) || [];
+    }
     for (const url of urls) {
       const r = await fetchRaw(url);
       if (r.stale) stale = true;
@@ -633,9 +645,10 @@
     const sport = view.params.sport;
     const isFootball = sport === 'football';
     const followed = await getFollowedTeams(sport);
-    let html = `<div class="page-header">
+    let html = `<button class="sp-back-btn" onclick="window.InnerOSSports.exit()">← 资源整合</button>
+    <div class="page-header">
       <div class="page-title">${isFootball ? '⚽ 足球 · Football' : '🎮 CS2 · Counter-Strike 2'}</div>
-      <div class="page-subtitle">主队 · 赛事 · 日期 统一赛程中心 · ${isFootball ? 'API-Football' : 'Liquipedia'} 数据源</div>
+      <div class="page-subtitle">主队 · 赛事 · 日期 统一赛程中心 · ${isFootball ? 'API-Football' : 'Liquipedia 官方数据（最多 200 场窗口）'}</div>
     </div>`;
 
     // 我的主队
@@ -689,10 +702,10 @@
       }).join('') + `</div>`;
       return;
     }
-    // CS2：从 A 级赛程派生赛事列表（与日期列表共用同一缓存，零额外请求）
+    // CS2：从完整赛程窗口派生赛事列表（与日期列表共用同一缓存，零额外请求）
     // V1.20.2：按基础名聚合——同一赛事的 Group A/B 合并为一张卡（不再分开显示）
     try {
-      const r = await fetchRaw(buildCS2Url({ scope: 'all' }));
+      const r = await fetchCS2Raw();
       const raw = (r.data && r.data.matches) || [];
       const byComp = new Map();
       for (const m of raw) {
@@ -704,7 +717,7 @@
       }
       const events = [...byComp.values()].sort((a, b) => a.nextTs - b.nextTs);
       if (!events.length) {
-        el.innerHTML = `<div class="sp-empty-inline">暂无 A 级赛事，稍后再来看看</div>`;
+        el.innerHTML = `<div class="sp-empty-inline">当前赛程窗口暂无赛事，稍后再来看看</div>`;
         return;
       }
       el.innerHTML = `<div class="sp-league-grid">` + events.map(ev => {
@@ -714,7 +727,7 @@
           <span class="sp-league-name">${escapeHtml(cs2TournamentCN(ev.league))}</span>
           <span class="sp-event-meta">${ev.count} 场 · 最近 ${nextLabel}</span>
         </div>`;
-      }).join('') + `</div>`;
+      }).join('') + `</div><div class="sp-empty-inline">数据来自 <a href="https://liquipedia.net/counterstrike/Liquipedia:Matches" target="_blank" rel="noopener">Liquipedia</a> · CC BY-SA 3.0</div>`;
     } catch (e) {
       el.innerHTML = `<div class="sp-empty-inline">赛事列表加载失败，<a href="javascript:void(0)" onclick="window.InnerOSSports.refresh()">点击重试</a></div>`;
     }
@@ -993,6 +1006,7 @@
 
   // ========== 19. 对外 API ==========
   window.InnerOSSports = Object.freeze({
+    configure: (options) => { if (options && typeof options.onExit === 'function') onExit = options.onExit; },
     renderFootball: (container) => { historyStack = []; view = { page: 'home', params: { sport: 'football', scope: 'all', tab: 'today' } }; render(); },
     renderCS2: (container) => { historyStack = []; view = { page: 'home', params: { sport: 'cs2', scope: 'all', tab: 'today' } }; render(); },
     openTeam: openTeam,
@@ -1006,6 +1020,7 @@
     selectTab: selectTab,
     retryList: retryList,
     back: goBack,
+    exit: () => onExit(),
     refresh: render,
     // 纯逻辑导出（node vm 单测用，无 DOM 依赖）
     Core: Object.freeze({

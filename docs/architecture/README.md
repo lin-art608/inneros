@@ -45,8 +45,9 @@ functions/
 ├─ _services/      # Application Service（ARCH-P1 起填充）
 └─ _adapters/      # 第三方适配器（豆瓣已有 douban.js 路由，V2 迁移至 _adapters）
 src/
-└─ services/
-   └─ api-client.js  # 前端统一 API Client（经典脚本，无打包器约束）
+├─ services/
+│  └─ api-client.js  # 前端统一 API Client（经典脚本，无打包器约束）
+└─ features/         # 领域 UI 模块；页面层级/手势等跨页规则也在此以纯函数集中维护
 tests/               # unit / integration / e2e（P8 补齐，先手工+语法检查）
 docs/architecture/   # 本文件
 ```
@@ -98,4 +99,4 @@ docs/architecture/   # 本文件
 ## 8. 阶段路线（详见方案十六节）
 
 P0 基线（本文档）→ P1 Service/Client 分层 → P2 Domain+Repository → P3 Media Adapter → P4 Sync Engine 收口 → P5 UI 模块化 → P6 WeFlow Ingestion → P7 AI Gateway+ChatLab → P8 测试与发布。
-当前进度：**ARCH-001 ~ ARCH-003 完成，等待下一阶段指令。**
+当前进度：**ARCH-001 ~ ARCH-017 渐进落地**。已覆盖统一错误/信封、Domain/Repository/Service、同步、媒体、前端 feature 与体育 Provider 垂直切片；旧 `/api/*` 仅保兼容，新功能继续遵守本文件边界。

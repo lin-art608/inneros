@@ -1,7 +1,7 @@
 // V1.20.0 Sports Center V2 前端单测（ARCH-016）
 // 用 node vm 加载 src/features/sports.js（IIFE 挂 window.InnerOSSports），
 // mock InnerOSApi 与 fetch，验证统一 Match / SportsScheduleQuery / 日期分组 / 排序 / 去重 /
-// Provider 请求构造（主队不受热门联赛与 Tier1 过滤）/ 缓存与降级。
+// Provider 请求构造（主队不受热门联赛过滤、CS2 全场次窗口）/ 缓存与降级。
 // 运行：node tests/unit/sports-feature.test.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -34,6 +34,18 @@ function C() {
     getImpl: async () => ({ data: { matches: [] } }),
     fetchImpl: async () => ({ ok: true, json: async () => ({ matches: [] }) }),
   }).S.Core;
+}
+
+// ---------- 0. 赛事首页返回：交给外层产品父级（资源整合） ----------
+{
+  const h = load({
+    getImpl: async () => ({ data: { matches: [] } }),
+    fetchImpl: async () => ({ ok: true, json: async () => ({ matches: [] }) }),
+  });
+  let exited = 0;
+  h.S.configure({ onExit: () => { exited++; } });
+  h.S.back();
+  assert.equal(exited, 1, '赛事模块首页返回必须交给外层资源父级');
 }
 
 // ---------- 1. normalizeMatch：足球原始对象 → 统一 Match ----------
@@ -183,10 +195,10 @@ function C() {
   const allFuture = Core.buildFootballUrls({ scope: 'all', from: Core.dateKeyOffset(3), to: Core.dateKeyOffset(9) });
   assert.equal(allFuture.length, 7);
   assert.ok(allFuture.every(u => u.includes('date=')));
-  // CS2 team：tier=all（不受 A 级白名单截断）；其余默认 A 级
-  assert.ok(Core.buildCS2Url({ scope: 'team' }).includes('tier=all'));
-  assert.ok(!Core.buildCS2Url({ scope: 'competition' }).includes('tier=all'));
-  assert.ok(!Core.buildCS2Url({ scope: 'all' }).includes('tier=all'));
+  // CS2 所有 scope 共用 v1 全场次窗口，再由前端按主队/赛事过滤
+  assert.equal(Core.buildCS2Url({ scope: 'team' }), '/api/v1/sports/cs2/matches?scope=all');
+  assert.equal(Core.buildCS2Url({ scope: 'competition' }), '/api/v1/sports/cs2/matches?scope=all');
+  assert.equal(Core.buildCS2Url({ scope: 'all' }), '/api/v1/sports/cs2/matches?scope=all');
 }
 
 // ---------- 11. CS2 主队身份匹配（lp: 前缀 / 全称 / 短名 / 中文） ----------
@@ -221,7 +233,7 @@ function C() {
   assert.equal(r.matches[0].status.state, 'scheduled');
 }
 
-// ---------- 13. querySchedule：CS2 主队不受 Tier1 过滤（tier=all + B 级赛事保留） ----------
+// ---------- 13. querySchedule：CS2 主队不受赛事等级过滤（v1 全场次 + B 级赛事保留） ----------
 {
   const tsToday = new Date(); tsToday.setHours(18, 0, 0, 0);
   const cs2Raw = [
@@ -229,11 +241,11 @@ function C() {
     { id: 'lp-2-tyloo-vs-navi', home_id: 'TYLOO', home_name: 'TYLOO', away_id: 'Natus Vincere', away_name: 'NAVI', ts: tsToday.getTime() + 3600e3, league: 'ECL Season 48', status: 'upcoming', round: 'Bo1' },
   ];
   const h = load({
-    getImpl: async () => ({ matches: [] }),
-    fetchImpl: async (url) => {
-      assert.ok(url.includes('type=cs2matches') && url.includes('tier=all'), 'CS2 主队查询必须请求全量（tier=all）');
-      return { ok: true, json: async () => ({ matches: cs2Raw }) };
+    getImpl: async (url) => {
+      assert.equal(url, '/api/v1/sports/cs2/matches?scope=all', 'CS2 主队查询必须走 v1 全量窗口');
+      return { data: { matches: cs2Raw } };
     },
+    fetchImpl: async () => { throw new Error('v1 成功时不应请求旧接口'); },
   });
   const q = h.S.Core.buildQuery({ sport: 'cs2', scope: 'team', team: { id: 'lp:Natus Vincere', name: 'NAVI', full: 'Natus Vincere' }, tab: 'today' });
   const r = await h.S.Core.querySchedule(q);
@@ -251,11 +263,11 @@ function C() {
     { id: 'lp-2', home_id: 'G2 Esports', home_name: 'G2', away_id: 'Team Vitality', away_name: 'Vitality', ts: tsToday.getTime(), league: 'BLAST Premier Fall Groups', status: 'upcoming' },
   ];
   const h = load({
-    getImpl: async () => ({ matches: [] }),
-    fetchImpl: async (url) => {
-      assert.ok(!url.includes('tier=all'), '非主队查询默认 A 级赛事');
-      return { ok: true, json: async () => ({ matches: cs2Raw }) };
+    getImpl: async (url) => {
+      assert.equal(url, '/api/v1/sports/cs2/matches?scope=all');
+      return { data: { matches: cs2Raw } };
     },
+    fetchImpl: async () => { throw new Error('v1 成功时不应请求旧接口'); },
   });
   const q = h.S.Core.buildQuery({ sport: 'cs2', scope: 'competition', competition: { id: 'IEM Cologne', name: 'IEM 科隆' }, tab: 'today' });
   const r = await h.S.Core.querySchedule(q);

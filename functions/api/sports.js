@@ -6,11 +6,10 @@
 //      替代此前 nextDate() 生成的假赛程（V1.2 §6.1 禁止项）。
 //   3) type=cs2matches —— CS2 真实赛程（Liquipedia MediaWiki API，免密钥），
 //      解析 Liquipedia:Matches ticker（未来+进行中场次，含时间戳/队名/队标/赛事/赛制）。
-// Liquipedia API 合规：要求 gzip + 描述性 UA（含联系方式）+ ≤2 req/s，见 liquipedia.net/api-terms-of-use；
-// 本函数经 cf cacheTtl=300 边缘缓存，远低于限流阈值。
-// 边缘缓存 10 分钟，降低对免费接口的请求压力。
+// Liquipedia API 合规：要求 gzip + 描述性 UA；action=parse 最多 1 次/30 秒。
+// 旧路由保留兼容，主链已迁至 /api/v1/sports/cs2/matches；边缘缓存 15 分钟。
 
-const TSB_KEY = '3'; // TheSportsDB 免费 Key（公开测试用）
+const TSB_KEY = '123'; // TheSportsDB 官方免费 Key（旧 key=3 已失效）
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const LP_API = 'https://liquipedia.net/counterstrike/api.php';
 const LP_UA = 'InnerOS/1.0 (https://inneros.pages.dev; contact: dev@inneros.asia)';
@@ -193,7 +192,7 @@ function jsonResponse(obj, status) {
 async function lpFetch(url) {
   const res = await fetch(url, {
     headers: { 'User-Agent': LP_UA, 'Accept-Encoding': 'gzip' },
-    cf: { cacheEverything: true, cacheTtl: 300 },
+    cf: { cacheEverything: true, cacheTtl: 900 },
   });
   if (!res.ok) throw new Error('liquipedia ' + res.status);
   return res.json();
@@ -293,7 +292,7 @@ function isCS2Tier1(league) {
 }
 
 async function cs2Matches() {
-  const d = await lpFetch(`${LP_API}?action=parse&page=Liquipedia:Matches&format=json&prop=text`);
+  const d = await lpFetch(buildCS2TickerUrl());
   const html = d.parse && d.parse.text && d.parse.text['*'];
   if (!html) throw new Error('liquipedia empty');
   const all = parseLpTicker(html);
@@ -303,10 +302,15 @@ async function cs2Matches() {
 // V2 Sports Center：主队查询用全量 ticker（不套 A 级白名单），
 // 保证 scope=team 不被 Tier1 过滤截断；赛事发现/赛事页继续用 cs2Matches()。
 async function cs2MatchesAll() {
-  const d = await lpFetch(`${LP_API}?action=parse&page=Liquipedia:Matches&format=json&prop=text`);
+  const d = await lpFetch(buildCS2TickerUrl());
   const html = d.parse && d.parse.text && d.parse.text['*'];
   if (!html) throw new Error('liquipedia empty');
   return parseLpTicker(html);
+}
+
+function buildCS2TickerUrl() {
+  const text = '{{#invoke:Lua|invoke|module=Widget/Factory|fn=fromTemplate|widget=Match/Ticker/Container|limit=200}}';
+  return `${LP_API}?action=parse&text=${encodeURIComponent(text)}&contentmodel=wikitext&prop=text&format=json`;
 }
 
 export async function onRequestGet(context) {

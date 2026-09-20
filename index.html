@@ -215,6 +215,7 @@ body {
   border:none; background:none; text-align:left; width:100%; font-family:var(--font-sans);
 }
 .nav-group-header:hover { background:var(--bg-subtle); }
+.nav-group-header.active { background:var(--bg-subtle); color:var(--accent); }
 .nav-group-header svg { width:18px; height:18px; flex-shrink:0; }
 .nav-group-header .nav-label { flex:1; display:flex; flex-direction:column; gap:1px; }
 .nav-group-header .nav-cn { font-size:15px; color:var(--text); font-weight:600; }
@@ -435,6 +436,20 @@ body.viewer-open { overflow:hidden; }
 .theme-toggle:hover { background:var(--bg-subtle); color:var(--text); }
 .main { flex:1; margin-left:240px; min-height:100vh; min-width:0; width:calc(100% - 240px); display:flex; flex-direction:column; }
 .content { flex:1; padding:48px 56px; max-width:1200px; width:100%; min-width:0; margin:0 auto; }
+.nav-hub { max-width:920px; margin:0 auto; }
+.nav-hub-hero { padding:36px 4px 34px; border-bottom:1px solid var(--border); margin-bottom:24px; }
+.nav-hub-hero > span { color:var(--accent); font-size:10px; font-weight:700; letter-spacing:.24em; }
+.nav-hub-hero h1 { margin:9px 0 8px; font-family:var(--font-serif); font-size:40px; font-weight:500; }
+.nav-hub-hero p { color:var(--text-secondary); font-size:14px; }
+.nav-hub-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.nav-hub-card { display:grid; grid-template-columns:46px 1fr auto; align-items:center; gap:14px; padding:20px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-elevated); color:var(--text); text-align:left; cursor:pointer; font-family:var(--font-sans); transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease; }
+.nav-hub-card:hover { transform:translateY(-2px); border-color:var(--border-strong); box-shadow:var(--shadow); }
+.nav-hub-icon { width:46px; height:46px; display:flex; align-items:center; justify-content:center; border-radius:13px; background:var(--bg-subtle); color:var(--accent); }
+.nav-hub-svg { width:23px; height:23px; }
+.nav-hub-card strong,.nav-hub-card small { display:block; }
+.nav-hub-card strong { font-size:15px; margin-bottom:4px; }
+.nav-hub-card small { color:var(--text-secondary); font-size:12px; line-height:1.45; }
+.nav-hub-card i { color:var(--text-tertiary); font-style:normal; font-size:18px; }
 
 /* Mobile */
 .menu-toggle {
@@ -1132,6 +1147,9 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
   .detail-meta-grid { grid-template-columns:repeat(2, 1fr); gap:12px; }
   .detail-title-input { font-size:30px; }
   .skin-grid { grid-template-columns:1fr; }
+  .nav-hub-grid { grid-template-columns:1fr; }
+  .nav-hub-hero { padding-top:20px; }
+  .nav-hub-hero h1 { font-size:34px; }
   .viewer-nav { width:38px; height:52px; font-size:24px; }
   .book-status-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .book-status-tab { white-space:nowrap; padding:8px 12px; }
@@ -1367,7 +1385,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
     <nav class="nav">
       <!-- Memory Group -->
       <div class="nav-group open" id="nav-group-memory">
-        <button class="nav-group-header" onclick="toggleNavGroup('memory')">
+        <button class="nav-group-header" data-page="memory" onclick="navigate('memory')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
           <span class="nav-label"><span class="nav-cn">记忆</span><span class="nav-en">Memory</span></span>
           <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
@@ -1406,7 +1424,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 
       <!-- Resources Group -->
       <div class="nav-group" id="nav-group-resources">
-        <button class="nav-group-header" onclick="toggleNavGroup('resources')">
+        <button class="nav-group-header" data-page="resources" onclick="navigate('resources')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
           <span class="nav-label"><span class="nav-cn">资源整合</span><span class="nav-en">Resources</span></span>
           <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
@@ -1543,7 +1561,8 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 
 <script src="src/services/api-client.js?v=1.20.1"></script>
 <script src="src/features/media.js?v=1.20.1"></script>
-<script src="src/features/sports.js?v=1.20.2"></script>
+<script src="src/features/navigation.js?v=1.26.0"></script>
+<script src="src/features/sports.js?v=1.26.0"></script>
 <script src="src/features/memory-detail.js?v=1.25.0"></script>
 <link rel="stylesheet" href="src/pet/pet.css?v=1.23.0">
 <script src="src/pet/pet-config.js?v=1.23.0"></script>
@@ -1554,6 +1573,6 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <script src="src/pet/pet-events.js?v=1.23.0"></script>
 <script src="src/pet/pet-interact.js?v=1.23.0"></script>
 <script src="src/pet/pet-mount.js?v=1.23.0"></script>
-<script src="app.js?v=1.25.0"></script>
+<script src="app.js?v=1.26.0"></script>
 </body>
 </html>

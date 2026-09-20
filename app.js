@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.25.0';
+const APP_VERSION = 'v1.26.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -777,6 +777,32 @@ function toggleNavGroup(group) {
   if (el) el.classList.toggle('open');
 }
 
+function hubPageIcon(page) {
+  const typeMap = { today:'diary', timeline:'event', library:'book', 'res-cs':'game', 'res-football':'event' };
+  if (typeMap[page]) return typeIcon(typeMap[page], 'nav-hub-svg');
+  const paths = {
+    search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+    onthisday:'<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/>',
+    random:'<path d="M4 7h3c4 0 5 10 9 10h4M17 4l3 3-3 3M4 17h3c1.6 0 2.8-1.5 4-3.5M17 14l3 3-3 3"/>',
+    'year-review':'<path d="M12 3l2 5 5 .5-4 3.5 1.2 5-4.2-2.5L7.8 17 9 12 5 8.5 10 8z"/>',
+    'res-ai':'<path d="M12 3a3 3 0 00-3 3H7a3 3 0 00-3 3v6a3 3 0 003 3h2a3 3 0 006 0h2a3 3 0 003-3V9a3 3 0 00-3-3h-2a3 3 0 00-3-3z"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/>',
+    'res-links':'<path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1"/>',
+  };
+  return `<svg class="nav-hub-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[page] || paths.search}</svg>`;
+}
+
+function renderNavigationHub(page) {
+  document.getElementById('content').innerHTML = window.InnerOSNavigation?.hubHtml(page, hubPageIcon) || '';
+}
+
+async function navigateToParent(page = currentPage) {
+  const parent = window.InnerOSNavigation?.parentOf(page);
+  if (!parent) return false;
+  history.replaceState({ __inneros:true, page:parent }, '');
+  await navigate(parent, true);
+  return true;
+}
+
 async function navigate(page, fromPop = false) {
   const prevPage = currentPage;
   currentPage = page;
@@ -787,12 +813,13 @@ async function navigate(page, fromPop = false) {
     if (page === prevPage) history.replaceState(st, '');
     else history.pushState(st, '');
   }
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav-item,.nav-group-header').forEach(el => el.classList.remove('active'));
   const navEl = document.querySelector(`[data-page="${page}"]`);
   if (navEl) navEl.classList.add('active');
 
   // Auto-expand the parent group when navigating to a sub-item
   const groupMap = {
+    memory:'memory', resources:'resources',
     today:'memory', timeline:'memory', library:'memory', search:'memory',
     onthisday:'memory', random:'memory', 'year-review':'memory',
     'res-cs':'resources', 'res-football':'resources', 'res-ai':'resources', 'res-links':'resources'
@@ -811,6 +838,8 @@ async function navigate(page, fromPop = false) {
   content.classList.add('fade-in');
   try {
     switch(page) {
+      case 'memory': renderNavigationHub('memory'); break;
+      case 'resources': renderNavigationHub('resources'); break;
       case 'today': await renderToday(); break;
       case 'quickchat': await renderQuickChat(); break;
       case 'timeline': await renderTimeline(); break;
@@ -832,7 +861,7 @@ async function navigate(page, fromPop = false) {
     content.innerHTML = `<div class="error-state"><div class="error-state-icon">⚠</div><div class="error-state-title">页面加载失败</div><div class="error-state-desc">请刷新页面重试</div><button class="error-state-retry" onclick="navigate('${page}')">重试</button></div>`;
   }
   // 右下角＋仅记忆相关页面显示（用户要求：非记忆界面不放添加按钮）
-  const memoryPages = ['today','timeline','library','search','onthisday','random','year-review'];
+  const memoryPages = ['memory','today','timeline','library','search','onthisday','random','year-review'];
   const capBtn = document.querySelector('.capture-trigger');
   if (capBtn) capBtn.style.display = memoryPages.includes(page) ? '' : 'none';
   closeSidebar();
@@ -841,12 +870,14 @@ async function navigate(page, fromPop = false) {
 // === Resources: CS Esports / Football（V2 起渲染迁 src/features/sports.js）===
 async function renderResourceCS() {
   const container = document.getElementById('content');
+  window.InnerOSSports.configure({ onExit: () => navigateToParent('res-cs') });
   await window.InnerOSSports.renderCS2(container);
 }
 
 
 async function renderResourceFootball() {
   const container = document.getElementById('content');
+  window.InnerOSSports.configure({ onExit: () => navigateToParent('res-football') });
   await window.InnerOSSports.renderFootball(container);
 }
 
@@ -2454,12 +2485,14 @@ window.addEventListener('popstate', async (e) => {
   const st = e.state || {};
   if (imageViewerOpen && !st.viewer) { closeViewer(true); return; }
   if (st.viewer && !imageViewerOpen) { openViewer(st.viewerSrc, true); return; }
-  if (selectorOpenSport && st.selector !== selectorOpenSport) closeTeamSelector(true);
-  if (captureOpen && !st.capture) closeCapture(true);
+  if (selectorOpenSport && st.selector !== selectorOpenSport) { closeTeamSelector(true); return; }
+  if (captureOpen && !st.capture) { closeCapture(true); return; }
   // 详情层：当前状态不再带 detail → 回到来源页面
   if (detailOpenId != null && !st.detail) { await navigate((st.__inneros && st.page) ? st.page : currentPage, true); return; }
   if (st.detail && st.detail !== detailOpenId) { await openDetail(st.detail, true); return; }
-  // 页面层：跨页回退
+  // 页面层：先回产品定义的父级 Hub，不受用户此前浏览顺序影响。
+  if (detailOpenId == null && await navigateToParent(currentPage)) return;
+  // 已在顶级页面时才允许按真实历史状态切换。
   if (st.__inneros && st.page && st.page !== currentPage && detailOpenId == null) await navigate(st.page, true);
 });
 
@@ -2487,27 +2520,29 @@ document.addEventListener('focusin', function(e) {
 });
 
 // === Mobile Touch Gestures ===
-let touchStartX = 0, touchStartY = 0, touchEndX = 0, touchEndY = 0;
+let touchStartX = 0, touchStartY = 0, touchEndX = 0, touchEndY = 0, touchSwipeIgnored = false;
 document.addEventListener('touchstart', function(e) {
-  touchStartX = e.changedTouches[0].screenX;
-  touchStartY = e.changedTouches[0].screenY;
+  const point = e.changedTouches[0];
+  const sidebarOpen = document.getElementById('sidebar').classList.contains('open');
+  touchSwipeIgnored = !sidebarOpen && !!e.target.closest('input,textarea,select,a,#img-viewer,.modal-overlay,.sp-tabs,.lib-tabs,.memory-photo-gallery,.chat-thread');
+  touchStartX = point.clientX;
+  touchStartY = point.clientY;
 }, { passive: true });
 document.addEventListener('touchend', function(e) {
-  touchEndX = e.changedTouches[0].screenX;
-  touchEndY = e.changedTouches[0].screenY;
+  const point = e.changedTouches[0];
+  touchEndX = point.clientX;
+  touchEndY = point.clientY;
   handleSwipeGesture();
 }, { passive: true });
 function handleSwipeGesture() {
-  if (imageViewerOpen) return;
-  const deltaX = touchEndX - touchStartX;
-  const deltaY = touchEndY - touchStartY;
-  if (Math.abs(deltaX) < 60 || Math.abs(deltaY) > 80) return;
+  if (imageViewerOpen || touchSwipeIgnored) return;
   const sidebar = document.getElementById('sidebar');
   const isOpen = sidebar.classList.contains('open');
-  if (deltaX > 0 && !isOpen && touchStartX < 40) {
+  const action = window.InnerOSNavigation?.swipeAction({ startX:touchStartX, startY:touchStartY, endX:touchEndX, endY:touchEndY, sidebarOpen:isOpen });
+  if (action === 'open') {
     sidebar.classList.add('open');
     document.getElementById('overlay').classList.add('show');
-  } else if (deltaX < 0 && isOpen) {
+  } else if (action === 'close') {
     sidebar.classList.remove('open');
     document.getElementById('overlay').classList.remove('show');
   }
