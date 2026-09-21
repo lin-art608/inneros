@@ -2,12 +2,13 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.28.1';
+const APP_VERSION = 'v1.29.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
 const TYPE_META = {
   movie:  { char:'影', label:'电影', color:'var(--c-movie)' },
+  series: { char:'剧', label:'剧集', color:'var(--c-series)' },
   book:   { char:'书', label:'书籍', color:'var(--c-book)' },
   music:  { char:'乐', label:'音乐', color:'var(--c-music)' },
   game:   { char:'游', label:'游戏', color:'var(--c-game)' },
@@ -117,6 +118,7 @@ async function downloadImageAsDataURL(url) {
 // 游戏（FreeToGame）未迁（非 v1 标准链路，保持原样）。
 let workSearchTimer = null;
 let selectedMovie = null;
+let selectedSeries = null;
 let selectedMusic = null;
 let selectedGame = null;
 let workSearchResults = [];
@@ -124,6 +126,7 @@ const ContentProvider = {
   // ARCH-012：电影/书籍/音乐搜索逻辑已迁至 src/features/media.js（InnerOSMedia），
   // 此处保留薄委托，供既有调用点无感使用。游戏（FreeToGame）未迁，保持原样。
   async searchMovie(query) { return InnerOSMedia.searchMovie(query); },
+  async searchSeries(query) { return InnerOSMedia.searchSeries(query); },
   async searchBook(query) { return InnerOSMedia.searchBook(query); },
   async searchMusic(query) { return InnerOSMedia.searchMusic(query); },
   async searchGame(query) {
@@ -303,7 +306,7 @@ function mergeDetail(target, detail) {
 async function selectWorkResult(type, idx) {
   const r = workSearchResults[idx];
   if (!r) return;
-  if (type === 'movie') selectedMovie = { ...r }; else if (type === 'music') selectedMusic = { ...r }; else if (type === 'game') selectedGame = { ...r };
+  if (type === 'movie') selectedMovie = { ...r }; else if (type === 'series') selectedSeries = { ...r }; else if (type === 'music') selectedMusic = { ...r }; else if (type === 'game') selectedGame = { ...r };
   document.getElementById('capture-title').value = r.title;
   const extra = document.getElementById('capture-extra'); if (extra) extra.value = r.artist || r.platform || '';
   document.querySelectorAll('.douban-result-item').forEach((el, i) => {
@@ -315,11 +318,11 @@ async function selectWorkResult(type, idx) {
   const [dataUrl, detail] = await Promise.all([
     downloadImageAsDataURL(r[imageKey]),
     // ARCH-011：music 也走详情补全（iTunes lookup，幂等）；movie 详情补简介/评分；book 走 selectBookResult 单独处理
-    (type === 'movie' || type === 'music') ? enrichWorkDetail(type, r) : Promise.resolve(null),
+    (type === 'movie' || type === 'series' || type === 'music') ? enrichWorkDetail(type, r) : Promise.resolve(null),
   ]);
   if (detail) mergeDetail(r, detail);
   if (dataUrl) r[imageKey] = dataUrl;
-  if (type === 'movie') selectedMovie = { ...r }; else if (type === 'music') selectedMusic = { ...r }; else if (type === 'game') selectedGame = { ...r };
+  if (type === 'movie') selectedMovie = { ...r }; else if (type === 'series') selectedSeries = { ...r }; else if (type === 'music') selectedMusic = { ...r }; else if (type === 'game') selectedGame = { ...r };
   showToast('已导入：' + r.title, 'success');
 }
 
@@ -327,7 +330,7 @@ async function fixSeedPosters() {
   try {
     const all = await dbGetAll();
     const needsFix = all.filter(e =>
-      (e.type === 'movie' && e.poster && !e.poster.startsWith('data:')) ||
+      ((e.type === 'movie' || e.type === 'series') && e.poster && !e.poster.startsWith('data:')) ||
       (e.type === 'book' && e.cover && !e.cover.startsWith('data:')) ||
       (e.type === 'game' && e.cover && !e.cover.startsWith('data:'))
     );
@@ -342,7 +345,7 @@ async function fixSeedPosters() {
         if (match) { if (match.release_date && !entry.release_date) entry.release_date = match.release_date; if (match.original_title && !entry.original_title) entry.original_title = match.original_title; dataUrl = await downloadImageAsDataURL(match.poster); }
       } else {
         dataUrl = await downloadImageAsDataURL(imgUrl);
-        if (!dataUrl && entry.type === 'movie' && entry.title) {
+        if (!dataUrl && (entry.type === 'movie' || entry.type === 'series') && entry.title) {
           const results = await ContentProvider.searchMovie(entry.title);
           const match = results.find(r => r.title.includes(entry.title)) || results[0];
           if (match) { if (match.release_date && !entry.release_date) entry.release_date = match.release_date; if (match.original_title && !entry.original_title) entry.original_title = match.original_title; dataUrl = await downloadImageAsDataURL(match.poster); }
@@ -864,7 +867,7 @@ async function navigate(page, fromPop = false) {
       case 'today': await renderToday(); break;
       case 'quickchat': await renderQuickChat(); break;
       case 'timeline': await renderTimeline(); break;
-      case 'library': await renderLibrary('movie'); break;
+      case 'library': await renderLibrary(window.InnerOSLibrary?.current() || 'movie'); break;
       case 'search': renderSearch(); break;
       case 'onthisday': await renderOnThisDay(); break;
       case 'random': await renderRandom(); break;
@@ -1076,24 +1079,11 @@ async function renderToday() {
   const todayStr = now.toISOString().slice(0,10);
   const todayEntries = sorted.filter(e => getEntryDate(e) === todayStr);
   const totalMovies = all.filter(e=>e.type==='movie').length;
+  const totalSeries = all.filter(e=>e.type==='series').length;
   const totalBooks = all.filter(e=>e.type==='book').length;
   const weekdays = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
   const todayDisplay = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日`;
-  let html = `<div class="today-header"><div class="today-date">${todayDisplay}<span class="day">${weekdays[now.getDay()]} · 今天</span></div><div class="today-stats"><div class="today-stat">今日 <strong>${todayEntries.length}</strong> 条</div><div class="today-stat">共 <strong>${all.length}</strong> 条记忆</div><div class="today-stat">电影 <strong>${totalMovies}</strong> · 书籍 <strong>${totalBooks}</strong></div></div></div>`;
-
-  // 收藏的赛程（用户在资源页点 ★ 收藏的比赛才会出现在首页）
-  const favIds = getFavMatchIds();
-  if (favIds.size > 0) {
-    const followedTeams = await dbGetTeams();
-    const allIds = followedTeams.flatMap(t => [t.provider_team_id, t.tsdb_id].filter(Boolean));
-    const allMatches = [...getUnifiedMatches('cs2'), ...getUnifiedMatches('football')];
-    const favMatches = allMatches.filter(m => favIds.has(m.id)).sort((a,b) => (a.ts||0) - (b.ts||0));
-    if (favMatches.length > 0) {
-      html += `<div class="my-schedule-section card-enter"><div class="section-label">⭐ 收藏的赛程 · Favorites</div><div class="match-list">`;
-      favMatches.slice(0, 8).forEach(m => { html += renderMatchCard(m, allIds); });
-      html += `</div></div>`;
-    }
-  }
+  let html = `<div class="today-header"><div class="today-date">${todayDisplay}<span class="day">${weekdays[now.getDay()]} · 今天</span></div><div class="today-stats"><div class="today-stat">今日 <strong>${todayEntries.length}</strong> 条</div><div class="today-stat">共 <strong>${all.length}</strong> 条记忆</div><div class="today-stat">影视 <strong>${totalMovies + totalSeries}</strong> · 书籍 <strong>${totalBooks}</strong></div></div></div>`;
 
   if (todayEntries.length > 0) {
     html += '<div class="today-entries">';
@@ -1127,6 +1117,7 @@ async function renderTimeline() {
     <div class="filter-bar">
       <button class="filter-chip active" onclick="setFilter('all',this)"><span>全部</span></button>
       <button class="filter-chip" onclick="setFilter('movie',this)">${typeIcon('movie','filter-type-icon')}电影</button>
+      <button class="filter-chip" onclick="setFilter('series',this)">${typeIcon('series','filter-type-icon')}剧集</button>
       <button class="filter-chip" onclick="setFilter('book',this)">${typeIcon('book','filter-type-icon')}书籍</button>
       <button class="filter-chip" onclick="setFilter('music',this)">${typeIcon('music','filter-type-icon')}音乐</button>
       <button class="filter-chip" onclick="setFilter('game',this)">${typeIcon('game','filter-type-icon')}游戏</button>
@@ -1203,30 +1194,30 @@ function setFilter(type) {
 // === Library ===
 async function renderLibrary(tab) {
   const all = await dbGetAll();
-  const c = { movie:all.filter(e=>e.type==='movie').length, book:all.filter(e=>e.type==='book').length, music:all.filter(e=>e.type==='music').length, game:all.filter(e=>e.type==='game').length, place:all.filter(e=>e.type==='place').length };
+  const activeTab = window.InnerOSLibrary?.activate(tab) || 'movie';
+  const tabs = window.InnerOSLibrary?.definitions() || [{ type:'movie', label:'电影' }, { type:'series', label:'剧集' }, { type:'book', label:'书籍' }, { type:'place', label:'地点' }];
+  const c = window.InnerOSLibrary?.counts(all) || {};
   document.getElementById('content').innerHTML = `
     <div class="page-header"><div class="page-title">收藏 · Library</div></div>
     <div class="lib-tabs">
-      <button class="lib-tab ${tab==='movie'?'active':''}" onclick="renderLibraryTab('movie')">${typeIcon('movie','lib-tab-icon')}电影 <span class="count">${c.movie}</span></button>
-      <button class="lib-tab ${tab==='book'?'active':''}" onclick="renderLibraryTab('book')">${typeIcon('book','lib-tab-icon')}书籍 <span class="count">${c.book}</span></button>
-      <button class="lib-tab ${tab==='music'?'active':''}" onclick="renderLibraryTab('music')">${typeIcon('music','lib-tab-icon')}音乐 <span class="count">${c.music}</span></button>
-      <button class="lib-tab ${tab==='game'?'active':''}" onclick="renderLibraryTab('game')">${typeIcon('game','lib-tab-icon')}游戏 <span class="count">${c.game}</span></button>
-      <button class="lib-tab ${tab==='place'?'active':''}" onclick="renderLibraryTab('place')">${typeIcon('place','lib-tab-icon')}地点 <span class="count">${c.place}</span></button>
+      ${tabs.map(item => `<button class="lib-tab ${activeTab===item.type?'active':''}" data-library-tab="${item.type}" onclick="renderLibraryTab('${item.type}')">${typeIcon(item.type,'lib-tab-icon')}${item.label} <span class="count">${c[item.type] || 0}</span></button>`).join('')}
     </div>
     <div id="lib-content"></div>`;
-  await renderLibraryTab(tab);
+  await renderLibraryTab(activeTab);
 }
 
 async function renderLibraryTab(tab) {
+  tab = window.InnerOSLibrary?.activate(tab) || tab;
   document.querySelectorAll('.lib-tab').forEach(t => t.classList.remove('active'));
-  const labels = { movie:'电影', book:'书籍', music:'音乐', game:'游戏', place:'地点' };
-  const tabEl = Array.from(document.querySelectorAll('.lib-tab')).find(t => t.textContent.includes(labels[tab]));
+  const labels = { movie:'电影', series:'剧集', book:'书籍', place:'地点' };
+  const tabEl = document.querySelector(`.lib-tab[data-library-tab="${tab}"]`);
   if (tabEl) tabEl.classList.add('active');
   const content = document.getElementById('lib-content');
   const items = sortEntries((await dbGetAll()).filter(e => e.type === tab));
 
-  if (tab === 'movie') {
+  if (tab === 'movie' || tab === 'series') {
     window._movieItems = items;
+    window._movieType = tab;
     window._movieFilter = {};
     const thisYear = items.filter(m => (getEntryDate(m)||'').slice(0,4) === String(new Date().getFullYear())).length;
     // 分类 chips：全部 / 高分(豆瓣≥8.5) / 按类型（取自数据中的 genres）
@@ -1241,16 +1232,16 @@ async function renderLibraryTab(tab) {
       <div class="lib-toolbar">
         <div class="lib-search-box">
           <svg class="lib-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" class="lib-search-input" id="movie-search" placeholder="搜索电影名、导演..." oninput="filterMovieWall()">
+          <input type="text" class="lib-search-input" id="movie-search" placeholder="搜索${labels[tab]}名、主创..." oninput="filterMovieWall()">
         </div>
       </div>
       ${chipsHtml}
       <div class="lib-stats-bar">
         <div class="lib-stat"><span class="lib-stat-num">${items.length}</span><span class="lib-stat-label">部</span></div>
-        <div class="lib-stat"><span class="lib-stat-num">${thisYear}</span><span class="lib-stat-label">今年看过</span></div>
+        <div class="lib-stat"><span class="lib-stat-num">${thisYear}</span><span class="lib-stat-label">今年记录</span></div>
       </div>`;
     content.innerHTML = html + '<div id="movie-wall-content"></div>';
-    renderMovieWallContent(movieFiltered(items));
+    renderMovieWallContent(movieFiltered(items), tab);
   } else if (tab === 'book') {
     window._bookItems = items;
     const wantRead = items.filter(b => !b.finish_date && !b.start_date).length;
@@ -1275,21 +1266,6 @@ async function renderLibraryTab(tab) {
       ${tagChips}`;
     content.innerHTML = html + '<div id="book-wall-content"></div>';
     renderBookWallContent(bookFiltered(items), 'all');
-  } else if (tab === 'music') {
-    let html = '<div class="books-grid">';
-    items.forEach(m => {
-      html += `<div class="book-card" onclick="openDetail('${m.id}')"><div class="entry-icon library-cover-icon type-music">${typeIcon('music','library-type-icon')}</div><div class="book-info"><div class="book-title">${m.title}</div><div class="book-author">${m.artist||''}</div><div class="book-date">${(m.date||'').replace(/-/g,'/')}</div></div></div>`;
-    });
-    content.innerHTML = items.length ? html + '</div>' : `<div class="empty-state"><div class="empty-state-icon">${typeIcon('music','empty-type-icon')}</div><div class="empty-state-title">还没有音乐记录</div><div class="empty-state-desc">点击 + 按钮，记录你听过的音乐</div></div>`;
-  } else if (tab === 'game') {
-    let html = '<div class="books-grid">';
-    items.forEach(g => {
-      const coverHtml = g.cover
-        ? `<img class="book-cover" src="${proxyImage(g.cover)}" alt="${g.title}" loading="lazy" onerror="this.style.display='none'">`
-        : `<div class="book-cover library-cover-icon type-game">${typeIcon('game','library-type-icon')}</div>`;
-      html += `<div class="book-card" onclick="openDetail('${g.id}')">${coverHtml}<div class="book-info"><div class="book-title">${g.title}</div><div class="book-author">${g.platform||''}</div><div class="book-date">${g.finish_date?'完成于 '+g.finish_date.replace(/-/g,'/'):'进行中'}</div></div></div>`;
-    });
-    content.innerHTML = items.length ? html + '</div>' : `<div class="empty-state"><div class="empty-state-icon">${typeIcon('game','empty-type-icon')}</div><div class="empty-state-title">还没有游戏记录</div><div class="empty-state-desc">点击 + 按钮，记录你玩过的游戏</div></div>`;
   } else if (tab === 'place') {
     let html = '<div class="books-grid">';
     items.forEach(p => {
@@ -1300,11 +1276,12 @@ async function renderLibraryTab(tab) {
 }
 
 // === Movie Wall Content Renderer ===
-function renderMovieWallContent(items) {
+function renderMovieWallContent(items, type = window._movieType || 'movie') {
   const container = document.getElementById('movie-wall-content');
   if (!container) return;
+  const label = type === 'series' ? '剧集' : '电影';
   if (items.length === 0) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${typeIcon('movie','empty-type-icon')}</div><div class="empty-state-title">没有符合条件的电影</div><div class="empty-state-desc">试试调整搜索或筛选条件</div></div>`;
+    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${typeIcon(type,'empty-type-icon')}</div><div class="empty-state-title">没有符合条件的${label}</div><div class="empty-state-desc">试试调整搜索或筛选条件</div></div>`;
     return;
   }
   const byYear = {};
@@ -1321,7 +1298,7 @@ function renderMovieWallContent(items) {
     html += `<div class="year-section card-enter" style="animation-delay:${yi*0.08}s"><div class="year-header"><div class="year-number">${y}</div><div class="year-count">${byYear[y].length} 部</div></div><div class="poster-wall">`;
     byYear[y].forEach((m, mi) => {
       const delay = (yi*0.08 + mi*0.03).toFixed(2);
-      html += `<div class="poster-item card-enter" style="animation-delay:${delay}s" onclick="openDetail('${m.id}')">${renderPosterWall(m)}<div class="poster-title">${m.title}</div><div class="poster-meta">${m.director || ''}${m.release_date ? ' · ' + m.release_date : ''}</div></div>`;
+      html += `<div class="poster-item card-enter" style="animation-delay:${delay}s" onclick="openDetail('${m.id}')">${renderPosterWall(m)}<div class="poster-title">${escapeHtml(m.title)}</div><div class="poster-meta">${escapeHtml(m.director || '')}${m.release_date ? ' · ' + escapeHtml(m.release_date) : ''}</div></div>`;
     });
     html += '</div></div>';
   });
@@ -1350,7 +1327,7 @@ function filterMovieWall() {
            (m.director||'').toLowerCase().includes(q) ||
            (m.genres||[]).some(g => g.toLowerCase().includes(q));
   });
-  renderMovieWallContent(filtered);
+  renderMovieWallContent(filtered, window._movieType || 'movie');
 }
 
 // === Book Wall Content Renderer ===
@@ -1504,8 +1481,8 @@ async function renderYearReview(yearOverride) {
   window._reviewYear = year;
   const yearEntries = all.filter(e => (getEntryDate(e)||'').slice(0,4) === String(year));
   const movies = yearEntries.filter(e => e.type === 'movie');
+  const series = yearEntries.filter(e => e.type === 'series');
   const books = yearEntries.filter(e => e.type === 'book' && e.finish_date);
-  const games = yearEntries.filter(e => e.type === 'game');
   const events = yearEntries.filter(e => e.type === 'event' || e.type === 'diary');
   const typeCounts = {};
   yearEntries.forEach(e => { typeCounts[e.type] = (typeCounts[e.type] || 0) + 1; });
@@ -1532,7 +1509,7 @@ async function renderYearReview(yearOverride) {
       <div class="yr-hero-bg" style="background:linear-gradient(135deg, var(--accent), var(--accent-soft));"></div>
       <div class="yr-hero-content">
         <div class="yr-hero-year">${year}</div>
-        <div class="yr-hero-summary">${yearEntries.length} 条记忆 · ${movies.length} 部电影 · ${books.length} 本书 · ${events.length} 条记录</div>
+        <div class="yr-hero-summary">${yearEntries.length} 条记忆 · ${movies.length} 部电影 · ${series.length} 部剧集 · ${books.length} 本书</div>
       </div>
     </div>`;
 
@@ -1540,8 +1517,8 @@ async function renderYearReview(yearOverride) {
   html += `<div class="yr-stats-grid">`;
   const statItems = [
     { type:'movie', label:'电影', num:movies.length, color:'var(--c-movie)' },
+    { type:'series', label:'剧集', num:series.length, color:'var(--c-series)' },
     { type:'book', label:'书籍', num:books.length, color:'var(--c-book)' },
-    { type:'game', label:'游戏', num:games.length, color:'var(--c-game)' },
     { type:'diary', label:'记录', num:events.length, color:'var(--c-event)' },
   ];
   statItems.forEach((s, i) => {
@@ -1873,7 +1850,7 @@ async function openDetail(id, fromPop = false) {
 
   // 我的记录 (Personal data — user's own experience)
   let perHtml = '';
-  if (date) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">${e.type==='movie'?'观看日期':e.type==='book'?'读完日期':e.type==='game'?'游玩日期':'日期'}</span><span class="detail-meta-value">${date.replace(/-/g,'/')}</span></div>`;
+  if (date) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">${e.type==='movie'||e.type==='series'?'观看日期':e.type==='book'?'读完日期':e.type==='game'?'游玩日期':'日期'}</span><span class="detail-meta-value">${date.replace(/-/g,'/')}</span></div>`;
   if (time) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">时间</span><span class="detail-meta-value">${time}</span></div>`;
   if (e.mood) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">心情</span><span class="detail-meta-value">${e.mood}</span></div>`;
   if (e.category) perHtml += `<div class="detail-meta-item"><span class="detail-meta-label">分类</span><span class="detail-meta-value">${e.category}</span></div>`;
@@ -2038,11 +2015,12 @@ function closeViewer(fromPop = false) {
 
 // 右下角＋：详情页时 = 给当前记录追加；否则新建记录
 function captureTriggerClick() {
-  if (detailOpenId != null) openCapture(detailOpenId); else openCapture(null);
+  if (detailOpenId != null) openCapture(detailOpenId);
+  else openCapture(null, currentPage === 'library' ? window.InnerOSLibrary?.current() : null);
 }
 
 // === Quick Capture ===
-function openCapture(entryId) {
+function openCapture(entryId, preferredType = null) {
   editingId = entryId;
   const saveBtn = document.getElementById('save-btn');
   if (entryId) {
@@ -2057,6 +2035,7 @@ function openCapture(entryId) {
     document.getElementById('step-form').style.display = 'none';
     selectedType = null;
     selectedMovie = null;
+    selectedSeries = null;
     selectedBook = null;
     selectedMusic = null;
     selectedGame = null;
@@ -2066,6 +2045,7 @@ function openCapture(entryId) {
   // 记录弹窗入历史栈：浏览器返回键关闭弹窗/回上一层，而不是退出网页
   history.pushState({ __inneros: true, page: currentPage, capture: true }, '');
   captureOpen = true;
+  if (!entryId && preferredType) selectType(preferredType);
 }
 
 function backToTypeSelect() {
@@ -2096,18 +2076,20 @@ function selectType(type) {
   const today = localDate();
   const now = localTime();
 
-  if (type === 'movie') {
+  if (type === 'movie' || type === 'series') {
+    const isSeries = type === 'series';
+    const label = isSeries ? '剧集' : '电影';
     container.innerHTML = `
       <div class="douban-search">
-        <div class="field-label" style="margin-bottom:8px;">🔍 搜索电影，自动导入信息</div>
+        <div class="field-label" style="margin-bottom:8px;">搜索${label}，自动导入信息</div>
         <div class="douban-search-box">
-          <input type="text" class="field-input" id="douban-input" data-work-search="movie" placeholder="输入电影名，如：奥本海默..." oninput="debouncedWorkSearch('movie',this.value)">
+          <input type="text" class="field-input" id="douban-input" data-work-search="${type}" placeholder="输入${label}名..." oninput="debouncedWorkSearch('${type}',this.value)">
         </div>
         <div id="douban-results" class="douban-results"></div>
       </div>
       <div class="capture-fields show" id="capture-fields">
-        <div class="field-row"><div class="field-label">片名</div><input type="text" class="field-input" id="capture-title" placeholder="搜索后自动填充" readonly></div>
-        <div class="field-row"><div class="field-label">观后感</div><textarea class="field-textarea" id="capture-review" placeholder="写一些你的想法..."></textarea></div>
+        <div class="field-row"><div class="field-label">${isSeries ? '剧名' : '片名'}</div><input type="text" class="field-input" id="capture-title" placeholder="搜索后自动填充" readonly></div>
+        <div class="field-row"><div class="field-label">观看记录</div><textarea class="field-textarea" id="capture-review" placeholder="写一些你的想法..."></textarea></div>
         ${renderPhotoUpload()}
       </div>`;
     document.getElementById('douban-input').focus();
@@ -2203,7 +2185,7 @@ function selectType(type) {
 function resetCaptureForm() {
   appendMode = false;
   selectedType = null; uploadedPhotos = []; photoFailures = [];
-  selectedMovie = null; selectedBook = null; selectedMusic = null; selectedGame = null;
+  selectedMovie = null; selectedSeries = null; selectedBook = null; selectedMusic = null; selectedGame = null;
   document.getElementById('workflow-container').innerHTML = '';
 }
 
@@ -2219,6 +2201,7 @@ async function loadEntryForEdit(id) {
   // ARCH-009/010 复核：编辑重建 selected* 时保留标准 media 块，
   // 否则"追加记录"会用旧字段覆盖掉标准结构（providerMetadata 丢失）。
   selectedMovie = (e.type === 'movie' && e.poster) ? { poster: e.poster, title: e.title, release_date: e.release_date || '', original_title: e.original_title || '', media: e.media || null } : null;
+  selectedSeries = (e.type === 'series' && e.poster) ? { poster: e.poster, title: e.title, release_date: e.release_date || '', original_title: e.original_title || '', media: e.media || null } : null;
   selectedBook = (e.type === 'book' && e.cover) ? { cover:e.cover, authors:e.author, publisher:e.publisher, isbn:e.isbn, categories:e.genres, description:e.book_description, pageCount:e.page_count, media: e.media || null } : null;
   if (e.type === 'event' && e.category) setEventCategory(e.category);
   if (e.type === 'book' && e.reading_status) setReadingStatus(e.reading_status);
@@ -2251,9 +2234,10 @@ function closeCapture(fromPop = false) {
   editingId = null;
   document.getElementById('back-btn').style.display = '';
   const was = captureOpen;
-  captureOpen = false;
   // 弹窗是历史栈中的一层：页面内关闭走 history.back()，与浏览器返回键同一条路径
-  if (!fromPop && was) history.back();
+  // history.back() 触发 popstate 前必须保留 captureOpen=true，否则会被误判成页面返回并跳到父级 Hub。
+  if (!fromPop && was) { history.back(); return; }
+  captureOpen = false;
 }
 
 async function saveCapture() {
@@ -2296,10 +2280,11 @@ async function saveCapture() {
     const merged = { ...ex };
     merged.entries = entries;
     // Update base fields if changed by search
-    if (selectedType === 'movie' && selectedMovie) {
-      Object.assign(merged, { poster:selectedMovie.poster, release_date:selectedMovie.release_date, original_title:selectedMovie.original_title, director:selectedMovie.director, genres:selectedMovie.genres, description:selectedMovie.description, provider:selectedMovie.provider, external_id:selectedMovie.external_id });
+    const selectedVisual = selectedType === 'movie' ? selectedMovie : selectedType === 'series' ? selectedSeries : null;
+    if ((selectedType === 'movie' || selectedType === 'series') && selectedVisual) {
+      Object.assign(merged, { poster:selectedVisual.poster, release_date:selectedVisual.release_date, original_title:selectedVisual.original_title, director:selectedVisual.director, genres:selectedVisual.genres, description:selectedVisual.description, provider:selectedVisual.provider, external_id:selectedVisual.external_id });
       // ARCH-009 复核：重新搜索选择时会带来新的标准 media 块；编辑重建场景保留原块
-      if (selectedMovie.media) merged.media = selectedMovie.media;
+      if (selectedVisual.media) merged.media = selectedVisual.media;
     }
     if (selectedType === 'book' && selectedBook) {
       merged.cover = selectedBook.cover;
@@ -2338,7 +2323,7 @@ async function saveCapture() {
     try {
       if (authState.loggedIn) {
         await enqueueEntryAppend(merged.id, newEntry);
-        if (selectedMovie || selectedBook) await enqueueMemoryUpsert(merged);
+        if (selectedMovie || selectedSeries || selectedBook) await enqueueMemoryUpsert(merged);
         syncNow();
       }
     } catch (e) { console.warn('同步入队失败', e); }
@@ -2349,9 +2334,10 @@ async function saveCapture() {
   } else {
     // New record
     const entry = { type: selectedType, title, created_at: now.toISOString(), updated_at: now.toISOString(), entries: [newEntry] };
-    if (selectedType === 'movie') {
+    if (selectedType === 'movie' || selectedType === 'series') {
       entry.watch_date = today; entry.watch_time = time;
-      if (selectedMovie) Object.assign(entry, selectedMovie);
+      const selectedVisual = selectedType === 'movie' ? selectedMovie : selectedSeries;
+      if (selectedVisual) Object.assign(entry, selectedVisual);
     } else if (selectedType === 'book') {
       if (readingStatus === 'done') { entry.finish_date = today; entry.reading_status = 'done'; }
       else if (readingStatus === 'reading') { entry.start_date = today; entry.reading_status = 'reading'; }
@@ -2936,7 +2922,8 @@ async function pullOps(collect) {
     if (!r.ok) throw new Error(r.data.error || '拉取失败');
     const ops = r.data.ops || [];
     if (ops.length) await replayOps(ops, collect);
-    localStorage.setItem('inneros_sync_cursor', String(r.data.last_seq || 0));
+    const pageCursor = r.data.next_cursor ?? (r.data.has_more && ops.length ? ops[ops.length - 1].seq : r.data.last_seq);
+    localStorage.setItem('inneros_sync_cursor', String(pageCursor || cursor));
     if (!r.data.has_more) return;
   }
 }
@@ -2950,13 +2937,17 @@ async function replayOps(ops, collect) {
         if (p.deleted) { await dbDelete(op.entity_id); touched = true; continue; }
         const incoming = { ...(p.data || {}), id: op.entity_id };
         const ex = await dbGet(op.entity_id);
-        if (ex) await dbPut({ ...ex, ...incoming, id: op.entity_id });
+        if (ex) {
+          const merged = { ...ex, ...incoming, id: op.entity_id };
+          delete merged.sync_shell;
+          await dbPut(merged);
+        }
         else await dbPut(incoming);
         touched = true;
       } else if (op.kind === 'append_entry') {
         const e = p.entry || {};
         let mem = await dbGet(p.memory_id);
-        if (!mem) mem = { id: p.memory_id, type: 'movie', title: '（来自其他设备）', entries: [] };
+        if (!mem) mem = { id: p.memory_id, type: 'custom', title: '（同步恢复中）', entries: [], sync_shell: true };
         mem.entries = mem.entries || [];
         if (!mem.entries.some(x => x.id === e.id)) {
           mem.entries.push({ id: e.id, created_at: e.created_at, content: e.content || '', photos: [], photo_ids: e.photo_ids || [] });
@@ -2994,7 +2985,15 @@ async function replayOps(ops, collect) {
 // 首次登录引导：先回放云端（第二台设备即恢复数据），再把本地非 seed 数据推上去
 async function ensureSyncBootstrap() {
   bootCloudKeys = new Set();
-  await pullOps(true); // collect=true：顺手收集云端已有数据的键，用于 seed 去重
+  // V1.29 修复旧版分页游标跳页：每个账户仅一次从 0 幂等重放，补回遗漏的主体记录。
+  const replayFlag = 'inneros_sync_replay_v129_' + (authState.email || 'local');
+  if (localStorage.getItem(replayFlag) !== '1') {
+    localStorage.setItem('inneros_sync_cursor', '0');
+    await pullOps(true);
+    localStorage.setItem(replayFlag, '1');
+  } else {
+    await pullOps(true); // collect=true：顺手收集云端已有数据的键，用于 seed 去重
+  }
   const bootFlag = 'inneros_bootstrap_done_' + (authState.email || 'local');
   if (localStorage.getItem(bootFlag) === '1') { await dedupSeeds(); return; }
   await removeLegacySeeds(); // 清理历史演示数据残留（不上传）
@@ -3207,7 +3206,7 @@ function toggleFavMatch(id) {
 }
 // 设置统计 → 收藏对应页签
 async function jumpLibrary(type) {
-  if (['movie','book','music','game','place'].includes(type)) { await navigate('library'); renderLibraryTab(type); }
+  if (['movie','series','book','place'].includes(type)) { await navigate('library'); renderLibraryTab(type); }
   else { await navigate('timeline'); setFilter(type); }
 }
 

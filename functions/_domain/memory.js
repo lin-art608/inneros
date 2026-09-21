@@ -4,7 +4,7 @@
 // normalizeMemory() 把旧形态映射为标准 Memory；存储层格式不变（回滚零成本）。
 
 export const MEMORY_TYPES = ['media', 'event', 'diary', 'note', 'place', 'conversation'];
-export const MEDIA_TYPES = ['movie', 'book', 'music', 'game'];
+export const MEDIA_TYPES = ['movie', 'series', 'book', 'music', 'game'];
 
 const MEDIA_TYPE_SET = new Set(MEDIA_TYPES);
 

@@ -87,7 +87,10 @@ export function createSyncService({ memoryRepository, operationRepository, devic
         userId, cursor: from, excludeDeviceId: deviceId, limit: MAX_OPS_PER_PULL,
       });
       const lastSeq = await operationRepository.maxSeq(userId);
-      return { ops, lastSeq, hasMore: ops.length === MAX_OPS_PER_PULL };
+      const hasMore = ops.length === MAX_OPS_PER_PULL;
+      // 分页未结束时只能推进到本页最后一条；若直接返回账户最大 seq，客户端会跳过中间页。
+      const nextCursor = hasMore && ops.length ? Number(ops[ops.length - 1].seq) : lastSeq;
+      return { ops, lastSeq, nextCursor, hasMore };
     },
   };
 }

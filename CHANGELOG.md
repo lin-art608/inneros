@@ -7,6 +7,35 @@
 
 ## [Unreleased]
 
+### V1.29.0 记忆主线收拢、剧集收藏与同步漏项修复（2026-09-21）
+
+> 根因：9 月 14 日异常记录（`7a345223-6add-4570-8ef6-50e5311253b0`）在电脑 IndexedDB 中只有 `append_entry`，主体 `upsert_memory` 被旧版分页游标跳过；客户端为无主体条目创建的临时壳又硬编码成 `type=movie`、标题“（来自其他设备）”，因此日记被误归为电影。另有收藏页分类与添加入口没有上下文，所有＋按钮都先回到统一类型选择。
+
+**Fixed**
+
+- 同步 pull 新增 `next_cursor`：有下一页时只推进到本页最后一条真实 seq，读完后才推进到 `last_seq`，不再跨页漏操作
+- V1.29 每个账户首次运行从游标 0 幂等重放一次，自动补回历史漏掉的主体记录；无主体临时壳改为中性 `custom` 类型并标记待恢复，不再冒充电影
+- 修复添加弹窗取消时过早清除 `captureOpen`，导致 `popstate` 把“关闭弹窗”误判成“收藏页返回记忆 Hub”的层级错误
+
+**Added**
+
+- 收藏新增“剧集”分类，复用 `/api/v1/media/search|detail?type=series` → MediaService → DoubanAdapter 影视链路，保存后保持独立 `series` 类型
+- 新增 `src/features/library.js`，集中管理收藏页可见分类、当前页签与计数；新增对应零依赖单测
+
+**Changed**
+
+- 收藏页只展示电影、剧集、书籍、地点；音乐与游戏历史数据保留在时间线、搜索和同步中，不做删除
+- 收藏页点击右下角＋直接打开当前分类的添加表单，不再先显示统一类型选择
+- 主导航暂时封存资源整合、速信、知识库与 AI 助手入口，旧路由与实现保留；“今天”页同步移除赛程收藏区，当前阶段聚焦记忆体验
+- 年度回顾用剧集替代游戏主统计，首页影视计数合并电影与剧集
+
+#### 实测
+
+- 数据诊断：在 Edge 的 `https_inneros.asia` IndexedDB 日志中确认异常记录只有追加篇章，`type=movie` 与标题“（来自其他设备）”均来自旧版同步临时壳，不读取或输出日记正文
+- `node --check`：app、library/media/navigation/memory-detail、Media/Sync Service 与 Douban Adapter 全部通过
+- `bash tests/run-all.sh`：17 套单元/集成测试全部通过；新增 501 条操作分页回归，确认第一页 `next_cursor=500`、第二页可继续取得 seq 501
+- 真实浏览器：桌面与 375×812 / 390×844 / 430×932 均无页面横向溢出；收藏仅显示 4 个目标分类；剧集＋直达剧集表单；取消后留在收藏页；页面中心右滑可跟手打开主菜单；控制台 0 error
+
 ### V1.28.1 PandaScore Secret 与代理链路收口（2026-09-20）
 
 > 根因：V1.28.0 预留的环境变量名为 `PANDASCORE_API_TOKEN`，与 Cloudflare Pages 已配置的 `PANDASCORE_TOKEN` 不一致；前端还保留了 v1 请求失败后访问旧 `/api/sports` CS2 路由的兼容分支，使 Provider 降级存在两套入口。

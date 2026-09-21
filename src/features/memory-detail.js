@@ -4,6 +4,7 @@
 
   const ICONS = {
     movie: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5l2-3M12 5l2-3M17 5l2-3M3 10h18"/>',
+    series: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 22h8M12 19v3M9 9l3 2 3-2"/>',
     book: '<path d="M4 19.5A2.5 2.5 0 016.5 17H20V3H6.5A2.5 2.5 0 004 5.5z"/><path d="M4 5.5v14A2.5 2.5 0 016.5 22H20"/>',
     music: '<path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>',
     game: '<path d="M8.5 7h7a5.5 5.5 0 015.2 7.3l-1.1 3.2a2 2 0 01-3.2.9L14 16h-4l-2.4 2.4a2 2 0 01-3.2-.9l-1.1-3.2A5.5 5.5 0 018.5 7z"/><path d="M7 11v4M5 13h4M16 12h.01M18 14h.01"/>',

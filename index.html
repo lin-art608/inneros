@@ -33,6 +33,7 @@
   --radius-sm: 8px;
   --radius-lg: 20px;
   --c-movie: #6B5B95;
+  --c-series: #9C5F5A;
   --c-book: #88A096;
   --c-music: #C97B63;
   --c-game: #5A8BAD;
@@ -67,7 +68,7 @@ body[data-skin="smoke"] {
   --text:#F2E9DD; --text-secondary:#B8AA9A; --text-tertiary:#786C60;
   --border:#393129; --border-strong:#554739; --accent:#D49A5B; --accent-soft:#8F5E36;
   --shadow:0 1px 3px rgba(0,0,0,.32),0 8px 24px rgba(0,0,0,.2); --shadow-lg:0 18px 48px rgba(0,0,0,.38);
-  --c-movie:#B69ADB; --c-book:#8DB7A3; --c-music:#E28E72; --c-game:#7FAED0; --c-place:#D3B267; --c-event:#D08A63;
+  --c-movie:#B69ADB; --c-series:#D18A82; --c-book:#8DB7A3; --c-music:#E28E72; --c-game:#7FAED0; --c-place:#D3B267; --c-event:#D08A63;
   --danger:#E77B72; --success:#83B783;
   background:radial-gradient(circle at 82% 8%,rgba(212,154,91,.09),transparent 30%),radial-gradient(circle at 14% 78%,rgba(143,94,54,.08),transparent 28%),var(--bg);
 }
@@ -591,6 +592,7 @@ body.viewer-open { overflow:hidden; }
 .entry-rating { color:var(--c-movie); letter-spacing:1px; }
 .entry-poster { width:48px; height:68px; border-radius:6px; object-fit:cover; flex-shrink:0; background:var(--bg-subtle); }
 .type-movie  .entry-icon { background:rgba(107,91,149,0.12); color:var(--c-movie); }
+.type-series .entry-icon { background:rgba(156,95,90,0.12); color:var(--c-series); }
 .type-book   .entry-icon { background:rgba(136,160,150,0.15); color:var(--c-book); }
 .type-music  .entry-icon { background:rgba(201,123,99,0.12); color:var(--c-music); }
 .type-game   .entry-icon { background:rgba(90,139,173,0.12); color:var(--c-game); }
@@ -1459,55 +1461,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
         </div>
       </div>
 
-      <!-- Resources Group -->
-      <div class="nav-group" id="nav-group-resources">
-        <button class="nav-group-header" data-page="resources" onclick="navigate('resources')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
-          <span class="nav-label"><span class="nav-cn">资源整合</span><span class="nav-en">Resources</span></span>
-          <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
-        <div class="nav-subitems" id="nav-sub-resources">
-          <button class="nav-item" data-page="res-cs" onclick="navigate('res-cs')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
-            <span class="nav-label"><span class="nav-cn">CS赛事</span><span class="nav-en">CS Esports</span></span>
-          </button>
-          <button class="nav-item" data-page="res-football" onclick="navigate('res-football')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="m12 7 3 2.2-1.1 3.6h-3.8L9 9.2 12 7ZM5.1 10l4 2.8-1.5 4.5M18.9 10l-4 2.8 1.5 4.5"/></svg>
-            <span class="nav-label"><span class="nav-cn">足球</span><span class="nav-en">Football</span></span>
-          </button>
-          <button class="nav-item" data-page="res-ai" onclick="navigate('res-ai')">
-            <span class="nav-label"><span class="nav-cn">AI工具</span><span class="nav-en">AI Tools</span></span>
-          </button>
-          <button class="nav-item" data-page="res-links" onclick="navigate('res-links')">
-            <span class="nav-label"><span class="nav-cn">常用资源</span><span class="nav-en">Quick Links</span></span>
-          </button>
-        </div>
-      </div>
-
-      <!-- 速信（Quick Express） -->
-      <div class="nav-group" id="nav-group-quick">
-        <button class="nav-group-header" onclick="navigate('quickchat')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-          <span class="nav-label"><span class="nav-cn">速信</span><span class="nav-en">Express</span></span>
-        </button>
-      </div>
-
-      <!-- Knowledge -->
-      <div class="nav-group" id="nav-group-knowledge">
-        <button class="nav-group-header" onclick="navigate('knowledge')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0112 4.5v15a2.5 2.5 0 00-2.5-2.5H4V2z"/><path d="M14.5 2A2.5 2.5 0 0012 4.5v15a2.5 2.5 0 012.5-2.5H20V2z"/></svg>
-          <span class="nav-label"><span class="nav-cn">知识库</span><span class="nav-en">Knowledge</span></span>
-        </button>
-      </div>
-
-      <!-- AI Assistant -->
-      <div class="nav-group" id="nav-group-ai">
-        <button class="nav-group-header" onclick="navigate('ai-assistant')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 00-3 3v1H7a3 3 0 00-3 3v3H3a1 1 0 100 2h1v3a3 3 0 003 3h2v1a3 3 0 006 0v-1h2a3 3 0 003-3v-3h1a1 1 0 100-2h-1V9a3 3 0 00-3-3h-2V5a3 3 0 00-3-3z"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/></svg>
-          <span class="nav-label"><span class="nav-cn">AI助手</span><span class="nav-en">AI Assistant</span></span>
-        </button>
-      </div>
-
+      <!-- 资源整合、速信、知识库与 AI 助手保留直达路由，V1.29 起暂不在主导航展示。 -->
       <div class="nav-divider"></div>
 
       <button class="nav-item" data-page="settings" onclick="navigate('settings')">
@@ -1545,6 +1499,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
       </div>
       <div class="type-grid" id="type-grid">
         <div class="type-card" data-type="movie" onclick="selectType('movie')"><span class="emoji"></span><span class="type-card-label">电影</span><span class="type-card-hint">搜索导入</span></div>
+        <div class="type-card" data-type="series" onclick="selectType('series')"><span class="emoji"></span><span class="type-card-label">剧集</span><span class="type-card-hint">搜索导入</span></div>
         <div class="type-card" data-type="book" onclick="selectType('book')"><span class="emoji"></span><span class="type-card-label">书籍</span><span class="type-card-hint">搜索导入</span></div>
         <div class="type-card" data-type="diary" onclick="selectType('diary')"><span class="emoji"></span><span class="type-card-label">日记</span><span class="type-card-hint">直接写</span></div>
         <div class="type-card" data-type="event" onclick="selectType('event')"><span class="emoji"></span><span class="type-card-label">事件</span><span class="type-card-hint">记一笔</span></div>
@@ -1599,10 +1554,11 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 </div>
 
 <script src="src/services/api-client.js?v=1.20.1"></script>
-<script src="src/features/media.js?v=1.20.1"></script>
-<script src="src/features/navigation.js?v=1.28.1"></script>
+<script src="src/features/media.js?v=1.29.0"></script>
+<script src="src/features/navigation.js?v=1.29.0"></script>
+<script src="src/features/library.js?v=1.29.0"></script>
 <script src="src/features/sports.js?v=1.28.1"></script>
-<script src="src/features/memory-detail.js?v=1.25.0"></script>
+<script src="src/features/memory-detail.js?v=1.29.0"></script>
 <link rel="stylesheet" href="src/pet/pet.css?v=1.23.0">
 <script src="src/pet/pet-config.js?v=1.23.0"></script>
 <script src="src/pet/pet-state.js?v=1.23.0"></script>
@@ -1612,6 +1568,6 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <script src="src/pet/pet-events.js?v=1.23.0"></script>
 <script src="src/pet/pet-interact.js?v=1.23.0"></script>
 <script src="src/pet/pet-mount.js?v=1.23.0"></script>
-<script src="app.js?v=1.28.1"></script>
+<script src="app.js?v=1.29.0"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 // InnerOS 前端媒体数据层（ARCH-012 前端模块化 / V1.16.1 收口）
-// 把电影/书籍/音乐「搜索 → 详情 → 字段映射」的纯数据逻辑从 app.js 抽离到此，
+// 把电影/剧集/书籍/音乐「搜索 → 详情 → 字段映射」的纯数据逻辑从 app.js 抽离到此，
 // app.js 只保留 DOM 渲染、状态协调与用户交互生命周期。
 // 边界：
 //   - 本文件不碰 DOM、不碰 app.js 内部变量，只依赖 window.InnerOSApi + 原生 fetch；
@@ -119,6 +119,20 @@
     return legacyDoubanSearch('movie', query);
   }
 
+  // 剧集复用豆瓣影视检索，但 v1 全程保留 series 类型，避免保存后混入电影收藏。
+  async function searchSeries(query) {
+    if (window.InnerOSApi) {
+      try {
+        const res = await window.InnerOSApi.get(`/api/v1/media/search?type=series&query=${encodeURIComponent(query)}`);
+        const items = (res.data && res.data.items) || [];
+        if (items.length > 0) return items.map(x => mediaToWorkFields(x, 'series'));
+      } catch (e) {
+        console.warn('[series] v1 搜索失败，回退影视兼容接口：', (e && (e.code || e.message)) || e);
+      }
+    }
+    return legacyDoubanSearch('movie', query);
+  }
+
   // 书籍搜索（ARCH-010）：v1 标准接口 → MediaService → DoubanAdapter；失败回退 legacy
   async function searchBook(query) {
     if (window.InnerOSApi) {
@@ -152,12 +166,12 @@
   async function enrichWorkDetail(type, r) {
     if (!r || !r.external_id) return null;
     const kind = type === 'book' ? 'book' : 'movie';
-    if (type === 'movie' && window.InnerOSApi) {
+    if ((type === 'movie' || type === 'series') && window.InnerOSApi) {
       try {
-        const res = await window.InnerOSApi.get(`/api/v1/media/detail?type=movie&id=${encodeURIComponent(r.external_id)}`);
-        if (res.data && res.data.title) return mediaToWorkFields(res.data, 'movie');
+        const res = await window.InnerOSApi.get(`/api/v1/media/detail?type=${type}&id=${encodeURIComponent(r.external_id)}`);
+        if (res.data && res.data.title) return mediaToWorkFields(res.data, type);
       } catch (e) {
-        console.warn('[movie] v1 详情失败，回退 legacy：', (e && (e.code || e.message)) || e);
+        console.warn(`[${type}] v1 详情失败，回退 legacy：`, (e && (e.code || e.message)) || e);
       }
     }
     if (type === 'book' && window.InnerOSApi) {
@@ -185,6 +199,7 @@
   window.InnerOSMedia = Object.freeze({
     mediaToWorkFields: mediaToWorkFields,
     searchMovie: searchMovie,
+    searchSeries: searchSeries,
     searchBook: searchBook,
     searchMusic: searchMusic,
     enrichWorkDetail: enrichWorkDetail,

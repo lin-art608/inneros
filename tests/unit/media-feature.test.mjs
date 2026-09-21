@@ -56,6 +56,15 @@ const okGet = (items) => async () => ({ data: { items } });
   assert.equal(m.fetchCalls.length, 0, 'v1 书籍成功时不得触发 fallback fetch');
 }
 
+// 2b) v1 series 成功 → 保留独立类型且不触发 fallback
+{
+  const m = load({ getImpl: okGet([okItem('series')]) });
+  const r = await m.InnerOSMedia.searchSeries('漫长的季节');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].media.mediaType, 'series');
+  assert.equal(m.fetchCalls.length, 0, 'v1 剧集成功时不得触发 fallback fetch');
+}
+
 // 3) v1 music 成功 → 绝不触发 fallback
 {
   const m = load({ getImpl: okGet([okItem('music')]) });
@@ -101,4 +110,4 @@ const okGet = (items) => async () => ({ data: { items } });
   assert.equal(music.album, '魔杰座');
 }
 
-console.log('media-feature.test: 全部通过（7 组）');
+console.log('media-feature.test: 全部通过（8 组）');

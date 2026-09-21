@@ -1,6 +1,6 @@
 // /api/sync/[action] —— push（本机操作批量上报）| pull（增量回放）
 // ARCH-008：路由只负责 auth / parse / service / response，同步编排已收口到 _services/sync-service.js。
-// 响应形状与旧协议**完全兼容**（push: ok/applied/skipped/errors/last_seq；pull: ok/ops/last_seq/has_more）。
+// 响应形状向后兼容（pull 新增 next_cursor；旧字段 last_seq/has_more 保留）。
 // 操作日志协议：每笔本地改动是一个 operation，op_id 全局唯一 → 幂等；
 // 服务端按 seq 单调编号，各设备用 last_seq 游标增量拉取其他设备的操作。
 // 冲突规则：追加条目永不冲突；元数据新者胜但败方数据保留进 _conflicts 并标 conflict=1；
@@ -73,5 +73,5 @@ export async function onRequestGet(context) {
   const deviceName = url.searchParams.get('device_name') || '';
 
   const result = await buildSyncService(db).pull({ userId: user.id, cursor, deviceId, deviceName });
-  return json({ ok: true, ops: result.ops, last_seq: result.lastSeq, has_more: result.hasMore });
+  return json({ ok: true, ops: result.ops, last_seq: result.lastSeq, next_cursor: result.nextCursor, has_more: result.hasMore });
 }

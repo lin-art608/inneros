@@ -1,6 +1,6 @@
 // Application Service：媒体搜索/详情（ARCH-007）
 // 依赖注入：providers（{ douban: DoubanAdapter, itunes: iTunesAdapter }）。职责：
-//   1) Provider 选择（movie/book → douban；music → itunes；未知类型 → 明确拒绝）
+//   1) Provider 选择（movie/series/book → douban；music → itunes；未知类型 → 明确拒绝）
 //   2) 参数校验（query 必填、去空白）
 //   3) 统一错误映射（第三方异常 → PROVIDER_ERROR 且 retryable，原始错误不泄漏）
 // 禁止：DOM、Cookie、Cloudflare Request、SQL、直接 fetch 第三方（fetch 在 Adapter 内）。
@@ -12,7 +12,7 @@ import { ErrorCode, ServiceError } from '../_infra/errors.js';
 
 export function createMediaService({ providers }) {
   // ARCH-011：music → itunes（iTunes Search API，免 Key、CORS 友好、country=CN 覆盖中文歌）
-  const SUPPORTED = { movie: 'douban', book: 'douban', music: 'itunes' };
+  const SUPPORTED = { movie: 'douban', series: 'douban', book: 'douban', music: 'itunes' };
 
   function businessError(code, message, status = 400, retryable = false) {
     return new ServiceError(code, message, { status, retryable });

@@ -1,4 +1,4 @@
-// GET /api/v1/media/detail?type=movie|book&id=... —— 统一媒体详情（ARCH-009）
+// GET /api/v1/media/detail?type=movie|series|book|music&id=... —— 统一媒体详情（ARCH-009）
 // 电影垂直切片的"详情"环节：Route → MediaService → DoubanAdapter → 标准 Media。
 // 未来换 TMDB/OpenLibrary 只增 Adapter，不改本路由，也不改 UI 读取方式。
 

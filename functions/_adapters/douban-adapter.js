@@ -92,7 +92,7 @@ export async function searchMedia({ type, query }) {
   const res = await fetchDouban(`https://${kind}.douban.com/j/subject_suggest?q=${encodeURIComponent(query)}`, referer, 'application/json, text/javascript, */*; q=0.01');
   const data = await res.json();
   const raw = Array.isArray(data) ? data : [];
-  return raw.map(it => ({ ...mapSuggestItem(it), mediaType: kind })); // ARCH-010：标准模型必须带 mediaType
+  return raw.map(it => ({ ...mapSuggestItem(it), mediaType: type === 'series' ? 'series' : kind })); // 剧集复用豆瓣影视接口，但保留独立业务类型
 }
 
 export async function getMediaDetail({ type, id }) {
@@ -111,7 +111,7 @@ export async function getMediaDetail({ type, id }) {
   }
   const res = await fetchDouban(`https://m.douban.com/rexxar/api/v2/movie/${id}`, `https://m.douban.com/movie/${id}/`, 'application/json');
   const d = await res.json();
-  return mapMovieDetail(d, id);
+  return { ...mapMovieDetail(d, id), mediaType: type === 'series' ? 'series' : 'movie' };
 }
 
 // Provider 形态（media-service 依赖注入用）

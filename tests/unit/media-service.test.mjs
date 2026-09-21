@@ -29,6 +29,16 @@ function fakeDouban(impl = {}) {
   assert.equal(r.source, 'douban-book');
 }
 
+// 2b) series → 复用 douban provider，但保留 series 业务类型
+{
+  let seen = null;
+  const svc = createMediaService({ providers: { douban: { async search(ctx) { seen = ctx; return [{ externalId: 'tv1', title: '漫长的季节', source: 'douban', mediaType: 'series' }]; } } } });
+  const r = await svc.searchMedia({ type: 'series', query: '漫长的季节' });
+  assert.deepEqual(seen, { type: 'series', query: '漫长的季节' });
+  assert.equal(r.items[0].mediaType, 'series');
+  assert.equal(r.source, 'douban');
+}
+
 // 3) query 空白 → VALIDATION_ERROR
 {
   const svc = createMediaService({ providers: { douban: fakeDouban() } });
@@ -38,7 +48,7 @@ function fakeDouban(impl = {}) {
   assert.equal(e.status, 400);
 }
 
-// 4) 未知类型（如 anime/series 未接入）→ 明确拒绝，不落到 provider
+// 4) 未知类型（如 anime）→ 明确拒绝，不落到 provider
 {
   let called = false;
   const svc = createMediaService({ providers: { douban: { async search() { called = true; } } } });

@@ -41,6 +41,19 @@ import { normalizeMemory } from '../../functions/_domain/memory.js';
   assert.equal(validateMedia({ title: 'X', mediaType: 'anime' }).ok, false);
   assert.equal(validateMedia({ title: 'X', score: 'abc' }).ok, false);
   assert.ok(MEDIA_TYPES.includes('movie'));
+  assert.ok(MEDIA_TYPES.includes('series'));
+}
+
+// 4b) 剧集沿用影视字段，但标准类型保持 series
+{
+  const patch = mediaToMemoryPatch({
+    externalId: 'tv-1', mediaType: 'series', source: 'douban', title: '漫长的季节',
+    creators: ['辛爽'], genres: ['剧情'], score: 9.4, providerMetadata: { runtime: 60 },
+  }, 'series');
+  assert.equal(patch.type, 'series');
+  assert.equal(patch.director, '辛爽');
+  assert.equal(patch.media.mediaType, 'series');
+  assert.equal(normalizeMemory({ id: 'series-1', ...patch }).media.mediaType, 'series');
 }
 
 // 4) mediaToMemoryPatch（电影）：旧字段 + 标准 media 块 + providerMetadata 三者都在
@@ -146,4 +159,4 @@ import { normalizeMemory } from '../../functions/_domain/memory.js';
   assert.equal(norm.title, '稻香');
 }
 
-console.log('media-domain.test: 全部通过（9 组）');
+console.log('media-domain.test: 全部通过（10 组）');

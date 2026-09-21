@@ -15,12 +15,13 @@
 ## 结构地图（改哪查哪）
 | 文件 | 内容 |
 |---|---|
-| `index.html` | 单页外壳，全部 CSS 内联。页面路由：memory / resources 两个父级 Hub，以及 today / quickchat(速信) / timeline / library / search / onthisday / random / year-review / settings / res-cs / res-football / res-ai / res-links / knowledge / ai-assistant |
+| `index.html` | 单页外壳，全部 CSS 内联。V1.29 主导航仅展示记忆模块与设置；resources / quickchat / knowledge / ai-assistant 等旧路由保留但入口封存，勿删数据或擅自恢复入口 |
 | `app.js` | 前端主逻辑（渐进式拆分中，新功能优先放 `src/features/`）。分节：TYPE_META / 图片代理 / ContentProvider / IndexedDB v4 / 账户与同步引擎 / 速记对话 / 各页渲染 / History 返回栈（Sports 渲染已全部迁出，仅剩 2 个薄委托） |
-| `src/features/navigation.js` | V1.28.0 页面父子关系、记忆/资源 Hub 与移动端抽屉手势纯逻辑（IIFE + `window.InnerOSNavigation`）。`drawerProgress/settleDrawer` 驱动手指跟随与速度判定；返回目标必须查 `PAGE_PARENT` |
-| `src/features/media.js` | 前端媒体数据层（电影/书籍/音乐搜索+详情+字段映射，IIFE + `window.InnerOSMedia`） |
+| `src/features/navigation.js` | V1.29.0 页面父子关系、记忆/资源 Hub 与移动端抽屉手势纯逻辑（IIFE + `window.InnerOSNavigation`）。`drawerProgress/settleDrawer` 驱动手指跟随与速度判定；返回目标必须查 `PAGE_PARENT` |
+| `src/features/library.js` | V1.29.0 收藏页纯逻辑：唯一可见页签为电影/剧集/书籍/地点，并保存当前页签供右下角＋直接打开对应表单（IIFE + `window.InnerOSLibrary`） |
+| `src/features/media.js` | 前端媒体数据层（电影/剧集/书籍/音乐搜索+详情+字段映射，IIFE + `window.InnerOSMedia`）；剧集复用豆瓣影视接口但类型始终保持 `series` |
 | `src/features/sports.js` | V1.28.0 紧凑赛程中心（足球+CS2，IIFE + `window.InnerOSSports`）。固定「主队/今日/明日/最近」四入口，直播与未开赛优先；同 URL 并发读取经 `rawInflight` 合并，内存缓存上限 40；赛程队徽禁止批量写 IndexedDB |
-| `src/features/memory-detail.js` | V1.25.0 记忆详情 UI 纯逻辑：统一线性 SVG 类型图标、Unicode 字素安全截断、日记兜底标题、初记/续写篇章标签、相册循环索引（IIFE + `window.InnerOSMemoryDetail`） |
+| `src/features/memory-detail.js` | V1.29.0 记忆详情 UI 纯逻辑：统一线性 SVG 类型图标（含剧集）、Unicode 字素安全截断、日记兜底标题、初记/续写篇章标签、相册循环索引（IIFE + `window.InnerOSMemoryDetail`） |
 | `src/services/api-client.js` | 前端统一 API Client（`window.InnerOSApi`，兼容新旧信封） |
 | `server.py` | 本地服务默认 :8765（可用 `INNEROS_PORT` 临时换端口）。代理：`/img`（豆瓣图）、`/api/douban`、`/api/sports`、`/api/v1/sports/cs2/matches`；`/api/v1/football/**`、`/api/auth`、`/api/sync` **反代到 pages.dev**；另有 `/api/search` |
 | `functions/_lib.js` | D1 schema 自建（IF NOT EXISTS）/ PBKDF2 / Cookie 会话 |
@@ -35,10 +36,10 @@
 | `functions/_repositories/operation-repository.js` | ARCH-008 操作日志访问：opExists（幂等判据）/record/listSince（游标增量+排除设备）/maxSeq。record 的 `prepend` 参数传入业务语句时用 `db.batch()` 与记录同事务提交 |
 | `functions/_repositories/device-repository.js` | ARCH-008 设备访问：ensureDevice/getCursor/updateCursor（last_seq 由 Service 传入，便于脱离 D1 单测） |
 | `functions/_services/memory-service.js` | Memory 业务编排：createMemory（领域校验）/list（归一化）/append（空追加拒绝）/delete（墓碑）/NOT_FOUND 语义 |
-| `functions/_services/media-service.js` | 媒体编排：Provider 选择（movie/book→douban，music→itunes）/query 校验/错误映射（第三方原始错误只进日志） |
+| `functions/_services/media-service.js` | 媒体编排：Provider 选择（movie/series/book→douban，music→itunes）/query 校验/错误映射（第三方原始错误只进日志） |
 | `functions/_services/sports-service.js` | ARCH-017 体育编排：CS2 优先 PandaScore，未配置/失败时回退 Liquipedia；必须返回真实 provider/degraded 状态，禁止把有限窗口标成完整数据 |
-| `functions/_services/sync-service.js` | ARCH-008/008.1 同步编排：push（validateOperation→幂等→applyOperation→推进游标）/pull（增量+排除本机）。`applyOperation` 的 kind→repository 分发在此，勿搬回路由。请求级错误抛 `ServiceError` + `ErrorCode`；单条错误带 `code` 字段（客户端按 code 判断，禁止依赖中文 message）。可语句化的 5 种 kind 走 `db.batch` 与 operation 记录同事务 |
-| `functions/_adapters/douban-adapter.js` | 豆瓣适配器：searchMedia/getMediaDetail 标准结构 + 旧形状兼容输出（movie/book） |
+| `functions/_services/sync-service.js` | ARCH-008/008.1 同步编排：push（validateOperation→幂等→applyOperation→推进游标）/pull（增量+排除本机）。分页响应的 `next_cursor`：有下一页时只能等于本页最后一条 seq，禁止直接跳到 `last_seq`。`applyOperation` 的 kind→repository 分发在此，勿搬回路由 |
+| `functions/_adapters/douban-adapter.js` | 豆瓣适配器：searchMedia/getMediaDetail 标准结构 + 旧形状兼容输出（movie/series/book；series 走 movie 上游路径但保留独立类型） |
 | `functions/_adapters/itunes-adapter.js` | ARCH-011 iTunes 适配器（music）：searchMedia/getMediaDetail 标准结构；免 Key、country=CN；iTunes 无评分/简介 → score=null、description='' |
 | `functions/_adapters/liquipedia-adapter.js` | ARCH-017 Liquipedia 适配器：官方 MediaWiki action=parse、最多 200 场 ticker、标准比赛字段；描述性 UA + gzip + 15 分钟边缘缓存 |
 | `functions/_adapters/pandascore-adapter.js` | V1.28.1 PandaScore CS2 赛程适配器：Cloudflare Function 通过 `context.env.PANDASCORE_TOKEN` 注入 Secret，使用 `/csgo/` 前缀，最多两页/200 场并做 5 分钟边缘缓存；前端禁止出现第三方 URL 或 Secret |
@@ -48,7 +49,7 @@
 | `app.js` 书籍链路 | ARCH-010：同电影，`mediaToWorkFields(m,'book')` 映射书籍扩展字段（cover/authors/publisher/isbn/...）；保存带标准 `media` 块 |
 | `app.js` 音乐链路 | ARCH-011：搜索/详情走 v1（`/api/v1/media/search\|detail?type=music` → iTunes），`mediaToWorkFields(m,'music')` 映射 artist/album/preview_url/track_price；v1 失败回退旧直连 iTunes；保存带标准 `media` 块 |
 | `src/services/api-client.js` | 前端统一 API Client（InnerOSApi，经典脚本命名空间；新调用必经） |
-| `src/features/media.js` | ARCH-012/1.16.1 前端媒体数据层：`mediaToWorkFields`/`searchMovie`/`searchBook`/`searchMusic`/`enrichWorkDetail` 从 app.js 迁出（IIFE + `window.InnerOSMedia`）。**唯一前端媒体数据入口**；app.js 的 `ContentProvider`/`enrichWorkDetail` 现为薄委托。**第三方 URL（/api/douban、itunes）只存在于本文件的「兼容 fallback 层」（legacy* 函数），feature 主链始终走 v1** |
+| `src/features/media.js` | ARCH-012/1.29.0 前端媒体数据层：`mediaToWorkFields`/`searchMovie`/`searchSeries`/`searchBook`/`searchMusic`/`enrichWorkDetail`（IIFE + `window.InnerOSMedia`）。**唯一前端媒体数据入口**；第三方 URL 只存在于兼容 fallback 层，feature 主链始终走 v1 |
 | `tests/unit/` | 零依赖单测：errors/domain-memory/media/navigation/memory-detail/sync/sports/pet 等（node 直接运行）；导航覆盖父级与横滑判定，sports 覆盖统一 Match、缓存降级、Liquipedia Adapter/Service/v1 路由与 200 场请求 |
 | `tests/integration/sync-route.test.mjs` | ARCH-008.2 集成测试：真实 `onRequestPost/Get` + Cookie 会话 + 内存 D1 仿真（按 SQL 模式处理，未知 SQL 抛错防漂移）。**改同步相关代码后必跑** |
 | `tests/e2e/media-sync-e2e.py` | ARCH-013 真实 D1 端到端：电影/书籍/音乐 搜索→详情→保存→刷新→pull→删除→pull + 跨设备同步 + 幂等 + 墓碑 + user isolation + 稳定错误码。**需先起 wrangler**（零第三方依赖，Python 直接跑） |
@@ -85,10 +86,10 @@ curl -X POST https://inneros.pages.dev/api/...     # 线上接口探测（部署
    **PandaScore**：CS2 完整赛程优先源，Secret 名固定为 Cloudflare `PANDASCORE_TOKEN`；只能由 Function 的 `context.env` 读取，不得写入前端、仓库或提交 `.env`。PandaScore CS2 路径必须用 `/csgo/`；前端只请求 `/api/v1/sports/cs2/matches`。没有 Secret 时如实显示 Liquipedia 有限回退，不抓取 5E/HLTV 页面补数据。
 6. **D1 限制**：绑定参数 ≤1MB —— 附件 base64 压缩到 ≤1280px/JPEG0.8 后仍超 900KB 则跳过云端（原图只留本地）。
 7. IndexedDB 结构变更必须递增 `DB_VERSION` 并写迁移（v4 做过数字 id→UUID 迁移，勿回退）。
-8. **UI 约定**：右下角＋按钮只在记忆页显示（非记忆页 navigate 里隐藏）；详情页打开时＋=追加到当前记录（captureTriggerClick）；手机详情页左上角保留返回兜底，右上角为更多菜单+分享，删除收进更多菜单；首页/时间线不放编辑图标，篇章编辑只在详情出现；只有日记标题可在详情原位编辑，电影/书籍等标题只读；首页摘要固定展示初记；首页赛程=收藏制（★ localStorage `inneros_fav_matches`）；速记(type `quick`)不计入统计；日记留空标题才按 Unicode 字素安全生成兜底标题；时间线每条直显日期时间类型；侧边栏 overflow-y:auto；皮肤偏好保存在 localStorage `inneros_skin`。
+8. **UI 约定**：右下角＋按钮只在记忆页显示；收藏页＋按当前页签直接打开电影/剧集/书籍/地点表单；收藏可见页签固定为电影/剧集/书籍/地点（音乐/游戏数据不删除，只不在收藏页展示）。详情页＋=追加到当前记录；只有日记标题可在详情原位编辑，电影/剧集/书籍等标题只读；首页摘要固定展示初记；速记不计入统计；时间线每条直显日期时间类型；皮肤偏好保存在 localStorage `inneros_skin`。
 9. D1 里有测试账号残留（e2e@/curltest@/notarget@inneros.dev），勿当用户数据。
 10. **D1 原子性**：无交互式事务（不能 BEGIN…COMMIT 跨 await）。要原子就用 `db.batch([stmt...])`（batch 即事务）。需先读后写的逻辑（如 upsertNewer 冲突判定）无法进 batch，改靠"写入语义幂等 + op_id 未记录即可安全重试"保证一致性。
-11. **`operations.seq` 是全局 AUTOINCREMENT**，不是每账号从 1 开始。写同步相关断言/客户端逻辑时禁止用"条数"推算 seq，必须取实际返回值（踩过两次）。
+11. **`operations.seq` 是全局 AUTOINCREMENT**，不是每账号从 1 开始。写同步相关断言/客户端逻辑时禁止用"条数"推算 seq，必须取实际返回值；pull 分页有下一页时使用 `next_cursor=本页最后一条 seq`，只有读完才可推进到 `last_seq`。
 12. **Service 抛错必须 `new ServiceError(...)`**，禁止自建 Error 类或裸 Error + `.code`。v1 路由用 `e instanceof ServiceError` 判定，裸 Error 会被判成内部错误 → **所有业务/第三方错误都退化成 500 INTERNAL**（ARCH-009 修复过一次：media/memory service 原用本地 businessError 造裸 Error）。
 
 ## 网页开发可靠性守则

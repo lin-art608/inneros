@@ -1,4 +1,4 @@
-// GET /api/v1/media/search?type=movie|book&query=... —— 统一媒体搜索（ARCH-006）
+// GET /api/v1/media/search?type=movie|series|book|music&query=... —— 统一媒体搜索（ARCH-006）
 // 经 DoubanAdapter 转换为标准结构；未来加 TMDB/OpenLibrary 只增 Adapter 不改此路由。
 
 import { ok, fail, errors, ServiceError } from '../../../_infra/errors.js';

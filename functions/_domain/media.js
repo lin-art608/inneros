@@ -4,7 +4,7 @@
 //   - 第三方（豆瓣/TMDB/...）的原始 JSON 只进 providerMetadata，业务层不直接依赖它；
 //   - 保存后的电影进入统一 Memory/Media 数据模型，UI 不再读取第三方字段。
 
-export const MEDIA_TYPES = ['movie', 'book', 'music', 'game'];
+export const MEDIA_TYPES = ['movie', 'series', 'book', 'music', 'game'];
 export const MEDIA_SOURCES = ['douban', 'tmdb', 'openlibrary'];
 
 // 标准 Media 结构（Adapter 输出 / 业务层流通的唯一形态）
@@ -58,7 +58,7 @@ export function mediaToMemoryPatch(media, mediaType) {
     rating: m.score,
     media: { ...m, mediaType: type },
   };
-  if (type === 'movie') {
+  if (type === 'movie' || type === 'series') {
     patch.director = m.creators[0] || '';
     patch.runtime = m.providerMetadata.runtime || null;
   } else if (type === 'book') {

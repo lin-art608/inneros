@@ -229,6 +229,7 @@ const ATT_OP = { op_id: 'r-op3', kind: 'upsert_attachment', entity_id: 'r-att1',
   const other = await callRoute(db, 'GET', 'pull', { query: 'cursor=0&device_id=dev-B&device_name=' + encodeURIComponent('笔记本'), cookie: COOKIE });
   assert.equal(other.json.ops.length, 3, '其他设备应拉到 3 条');
   assert.equal(other.json.last_seq, 3);
+  assert.equal(other.json.next_cursor, 3);
   assert.equal(other.json.has_more, false);
   assert.deepEqual(other.json.ops.map(o => o.kind), ['upsert_memory', 'append_entry', 'upsert_attachment']);
 }

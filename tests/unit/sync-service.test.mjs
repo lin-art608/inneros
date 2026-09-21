@@ -357,4 +357,27 @@ const DEV_B = 'device-B';
   assert.equal(memory.attachments.size, 0, '缺少 memory_id 不应写入附件');
 }
 
-console.log('sync-service.test: 全部通过（12 组）');
+// 13) 分页游标只能推进到本页末尾，不能直接跳到账户最大 seq
+{
+  const { svc } = build();
+  const all = Array.from({ length: 501 }, (_, i) => ({
+    op_id: 'page-' + i,
+    kind: 'upsert_memory',
+    entity_id: 'page-mem-' + i,
+    payload: { data: { title: 'T' + i }, updated_at: `2026-09-01T00:${String(i % 60).padStart(2, '0')}:00Z` },
+  }));
+  await svc.push({ userId: USER, deviceId: DEV_A, operations: all.slice(0, 200) });
+  await svc.push({ userId: USER, deviceId: DEV_A, operations: all.slice(200, 400) });
+  await svc.push({ userId: USER, deviceId: DEV_A, operations: all.slice(400) });
+  const first = await svc.pull({ userId: USER, cursor: 0, deviceId: DEV_B });
+  assert.equal(first.ops.length, 500);
+  assert.equal(first.hasMore, true);
+  assert.equal(first.lastSeq, 501);
+  assert.equal(first.nextCursor, 500, '有下一页时不得把 cursor 跳到 501');
+  const second = await svc.pull({ userId: USER, cursor: first.nextCursor, deviceId: DEV_B });
+  assert.equal(second.ops.length, 1);
+  assert.equal(second.ops[0].seq, 501);
+  assert.equal(second.nextCursor, 501);
+}
+
+console.log('sync-service.test: 全部通过（13 组）');
