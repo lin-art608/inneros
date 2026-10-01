@@ -1,0 +1,34 @@
+{
+  "name": "inneros-desktop",
+  "version": "1.30.0",
+  "private": true,
+  "description": "InnerOS Windows 桌面应用",
+  "author": "InnerOS",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke-test",
+    "dist": "electron-builder --win portable nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "asia.inneros.desktop",
+    "productName": "InnerOS",
+    "directories": { "output": "dist" },
+    "files": ["main.cjs", "policy.cjs", "icon.png", "package.json"],
+    "win": { "icon": "icon.png", "signExecutable": false },
+    "portable": { "artifactName": "InnerOS-${version}-portable.exe" },
+    "nsis": {
+      "artifactName": "InnerOS-${version}-setup.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "InnerOS",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

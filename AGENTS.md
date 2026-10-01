@@ -24,6 +24,7 @@
 | `src/features/memory-detail.js` | V1.29.0 记忆详情 UI 纯逻辑：统一线性 SVG 类型图标（含剧集）、Unicode 字素安全截断、日记兜底标题、初记/续写篇章标签、相册循环索引（IIFE + `window.InnerOSMemoryDetail`） |
 | `src/services/api-client.js` | 前端统一 API Client（`window.InnerOSApi`，兼容新旧信封） |
 | `server.py` | 本地服务默认 :8765（可用 `INNEROS_PORT` 临时换端口）。代理：`/img`（豆瓣图）、`/api/douban`、`/api/sports`、`/api/v1/sports/cs2/matches`；`/api/v1/football/**`、`/api/auth`、`/api/sync` **反代到 pages.dev**；另有 `/api/search` |
+| `desktop/` | V1.30 Windows Electron 桌面端，独立运行时与 `%APPDATA%/InnerOS` 数据目录，加载线上 pages.dev；`npm ci` / `npm run smoke` / `npm run dist`，产物 dist 不入库。禁止给远程网页启用 Node 集成或原生桥；桌面冷启动目前需联网 |
 | `functions/_lib.js` | D1 schema 自建（IF NOT EXISTS）/ PBKDF2 / Cookie 会话 |
 | `functions/api/auth/[action].js` | register / login / logout / me / send-code（Resend 验证码） |
 | `functions/api/sync/[action].js` | push（幂等批量）/ pull（游标增量）。**ARCH-008 后为薄路由**：只 auth/parse/service/response，编排在 sync-service |
