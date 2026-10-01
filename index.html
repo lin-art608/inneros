@@ -109,12 +109,13 @@ body {
 .auth-screen {
   position:fixed; inset:0;
   background:var(--bg);
-  display:flex; align-items:center; justify-content:center;
+  display:flex; align-items:flex-start; justify-content:center; overflow-y:auto;
   z-index:999;
   padding:20px;
 }
 .auth-card {
   width:100%; max-width:400px;
+  margin:auto; flex-shrink:0;
   background:var(--bg-elevated);
   border:1px solid var(--border);
   border-radius:var(--radius-lg);
@@ -150,6 +151,15 @@ body {
   transition:all 0.2s ease;
 }
 .auth-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(139,115,85,0.1); }
+.auth-password { display:flex; align-items:center; gap:8px; }
+.auth-password .auth-input { flex:1; min-width:0; }
+.auth-password button { flex-shrink:0; padding:12px; }
+.auth-tabs[hidden], #reset-form[hidden] { display:none; }
+.auth-link { display:block; margin:12px 0; padding:8px 0; border:0; background:none; color:var(--text-secondary); cursor:pointer; font:inherit; }
+.auth-message { margin:12px 0; font-size:13px; line-height:1.6; color:var(--text-secondary); overflow-wrap:anywhere; }
+.auth-message.is-error { color:var(--c-event); }
+.auth-code-row { display:flex; gap:8px; }
+.auth-code-row input { flex:1; min-width:0; }
 .auth-btn {
   width:100%; padding:14px; font-size:15px; font-weight:600;
   border-radius:var(--radius-sm); border:none; cursor:pointer;
@@ -1376,10 +1386,11 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
       </div>
       <div class="auth-field">
         <div class="auth-label">密码</div>
-        <input type="password" class="auth-input" id="login-password" placeholder="••••••••">
+        <div class="auth-password"><input type="password" class="auth-input" id="login-password" placeholder="••••••••" autocomplete="current-password" aria-label="登录密码"><button type="button" class="auth-code-btn" data-password-target="login-password" aria-label="显示或隐藏登录密码" aria-pressed="false" onclick="InnerOSAccount.toggle('login-password',this)">显示</button></div>
       </div>
       <div class="auth-error" id="login-error"></div>
       <button class="auth-btn auth-btn-primary" onclick="handleLogin()">登录</button>
+      <button type="button" class="auth-link" onclick="InnerOSAccount.openReset()">忘记密码 / 邮件修改密码</button>
       <div class="auth-divider">或</div>
       <button class="auth-btn auth-btn-ghost" onclick="enterGuest()">游客模式浏览</button>
     </div>
@@ -1394,7 +1405,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
       </div>
       <div class="auth-field">
         <div class="auth-label">密码</div>
-        <input type="password" class="auth-input" id="reg-password" placeholder="至少 6 位">
+        <div class="auth-password"><input type="password" class="auth-input" id="reg-password" placeholder="至少 6 位" autocomplete="new-password" aria-label="注册密码"><button type="button" class="auth-code-btn" data-password-target="reg-password" aria-label="显示或隐藏注册密码" aria-pressed="false" onclick="InnerOSAccount.toggle('reg-password',this)">显示</button></div>
       </div>
       <div class="auth-field">
         <div class="auth-label">邮箱验证码</div>
@@ -1406,6 +1417,16 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
       <div class="auth-error" id="reg-error"></div>
       <button class="auth-btn auth-btn-primary" onclick="handleRegister()">创建账户</button>
     </div>
+    <form id="reset-form" hidden onsubmit="InnerOSAccount.submit(event)">
+      <h2>邮件修改密码</h2>
+      <div class="auth-field"><label class="auth-label" for="reset-email">注册邮箱</label><input class="auth-input" id="reset-email" type="email" autocomplete="email" required maxlength="254" placeholder="you@example.com"></div>
+      <div class="auth-field"><label class="auth-label" for="reset-code">邮箱验证码</label><div class="auth-code-row"><input class="auth-input" id="reset-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="6 位验证码"><button type="button" class="auth-code-btn" id="reset-code-btn" onclick="InnerOSAccount.sendCode()">获取验证码</button></div></div>
+      <div class="auth-field"><label class="auth-label" for="reset-password">新密码</label><div class="auth-password"><input class="auth-input" id="reset-password" type="password" autocomplete="new-password" minlength="6" maxlength="128" required placeholder="6–128 位"><button type="button" class="auth-code-btn" data-password-target="reset-password" aria-label="显示或隐藏新密码" aria-pressed="false" onclick="InnerOSAccount.toggle('reset-password',this)">显示</button></div></div>
+      <div class="auth-field"><label class="auth-label" for="reset-confirm">再次输入新密码</label><div class="auth-password"><input class="auth-input" id="reset-confirm" type="password" autocomplete="new-password" minlength="6" maxlength="128" required><button type="button" class="auth-code-btn" data-password-target="reset-confirm" aria-label="显示或隐藏确认密码" aria-pressed="false" onclick="InnerOSAccount.toggle('reset-confirm',this)">显示</button></div></div>
+      <div id="reset-message" class="auth-message" role="status" aria-live="polite"></div>
+      <button class="auth-btn auth-btn-primary" id="reset-submit" type="submit">验证并修改密码</button>
+      <button class="auth-link" id="reset-close" type="button" onclick="InnerOSAccount.close()">返回登录</button>
+    </form>
   </div>
 </div>
 
@@ -1553,7 +1574,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
   <div class="viewer-counter" id="viewer-counter"></div>
 </div>
 
-<script src="src/services/api-client.js?v=1.20.1"></script>
+<script src="src/services/api-client.js?v=1.31.0"></script>
 <script src="src/features/media.js?v=1.29.0"></script>
 <script src="src/features/navigation.js?v=1.29.0"></script>
 <script src="src/features/library.js?v=1.29.0"></script>
@@ -1568,6 +1589,7 @@ confirm-msg { font-size:14px; color:var(--text-secondary); margin-bottom:24px; l
 <script src="src/pet/pet-events.js?v=1.23.0"></script>
 <script src="src/pet/pet-interact.js?v=1.23.0"></script>
 <script src="src/pet/pet-mount.js?v=1.23.0"></script>
-<script src="app.js?v=1.30.0"></script>
+<script src="src/features/account.js?v=1.31.0"></script>
+<script src="app.js?v=1.31.0"></script>
 </body>
 </html>

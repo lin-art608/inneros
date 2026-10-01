@@ -2,7 +2,7 @@
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.30.0';
+const APP_VERSION = 'v1.31.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -1588,7 +1588,8 @@ async function renderSettings() {
       <div class="section-label">账户 · Account</div>
       <div class="settings-card">
         ${authState.loggedIn ? `
-          <div class="settings-row"><div><div class="settings-row-label">✓ 已登录：${authState.email}</div><div class="settings-row-desc">所有设备自动同步（改动即时 + 每 5 分钟）；删除会同步到所有设备。</div></div></div>
+          <div class="settings-row"><div><div class="settings-row-label">✓ 已登录：${escapeHtml(authState.email)}</div><div class="settings-row-desc">所有设备自动同步（改动即时 + 每 5 分钟）；删除会同步到所有设备。</div></div></div>
+          <div class="settings-row"><div><div class="settings-row-label">账户密码</div><div class="settings-row-desc">通过注册邮箱验证后修改，可显示或隐藏正在输入的新密码。</div></div><button class="btn btn-ghost" onclick="InnerOSAccount.openFromSettings()">修改密码</button></div>
           <div class="settings-row"><div><div class="settings-row-label">同步状态</div><div class="settings-row-desc" id="cloud-sync-status">${lastCloud ? '✓ 上次同步 ' + new Date(lastCloud).toLocaleString() : '从未同步（保存/删除内容后自动同步）'}</div></div><button class="btn btn-ghost" onclick="syncNow()">立即同步</button></div>
           <div class="settings-row"><div><div class="settings-row-label">退出登录</div><div class="settings-row-desc">本机数据保留，仅停止云同步。</div></div><button class="btn btn-ghost" onclick="logoutAccount()">退出</button></div>
         ` : `
@@ -2898,7 +2899,13 @@ async function syncNow() {
 function startAutoSync() {
   if (startAutoSync._t) return;
   startAutoSync._t = setInterval(() => syncNow(), 60e3);
-  window.addEventListener('online', () => syncNow());
+  window.addEventListener('online', syncOnOnline);
+}
+function syncOnOnline() { syncNow(); }
+function stopAutoSync() {
+  clearInterval(startAutoSync._t);
+  startAutoSync._t = null;
+  window.removeEventListener('online', syncOnOnline);
 }
 async function pushPendingOps() {
   for (let i = 0; i < 60; i++) {
@@ -3222,6 +3229,16 @@ async function dedupSeeds() {
 }
 
 // === Init ===
+InnerOSAccount.configure({
+  getEmail: () => authState.loggedIn ? authState.email : '',
+  onReset: message => {
+    stopAutoSync();
+    authState.loggedIn = false; authState.email = null; authState.guest = false;
+    localStorage.removeItem('inneros_guest');
+    showAuthScreen();
+    authError('login-error', message);
+  }
+});
 (async function init() {
   applySkin(localStorage.getItem('inneros_skin') || 'smoke', false);
   hydrateTypeIcons();

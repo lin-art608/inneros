@@ -131,7 +131,7 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if (self.path.startswith('/api/auth') or self.path.startswith('/api/sync')
-                or self.path.startswith('/api/v1/football')):
+                or self.path.startswith('/api/v1/football') or self.path.startswith('/api/v1/auth/')):
             self._proxy_api()
         elif self.path.startswith('/img?url='):
             self.handle_image_proxy()
@@ -320,7 +320,8 @@ class MemoryOSHandler(http.server.SimpleHTTPRequestHandler):
         }
 
     def do_POST(self):
-        if self.path.startswith('/api/auth') or self.path.startswith('/api/sync'):
+        if (self.path.startswith('/api/auth') or self.path.startswith('/api/sync')
+                or self.path.startswith('/api/v1/auth/')):
             self._proxy_api()
         else:
             self.send_error(404)

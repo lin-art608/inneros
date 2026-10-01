@@ -22,11 +22,14 @@
 | `src/features/media.js` | 前端媒体数据层（电影/剧集/书籍/音乐搜索+详情+字段映射，IIFE + `window.InnerOSMedia`）；剧集复用豆瓣影视接口但类型始终保持 `series` |
 | `src/features/sports.js` | V1.28.0 紧凑赛程中心（足球+CS2，IIFE + `window.InnerOSSports`）。固定「主队/今日/明日/最近」四入口，直播与未开赛优先；同 URL 并发读取经 `rawInflight` 合并，内存缓存上限 40；赛程队徽禁止批量写 IndexedDB |
 | `src/features/memory-detail.js` | V1.29.0 记忆详情 UI 纯逻辑：统一线性 SVG 类型图标（含剧集）、Unicode 字素安全截断、日记兜底标题、初记/续写篇章标签、相册循环索引（IIFE + `window.InnerOSMemoryDetail`） |
+| `src/features/account.js` | V1.31 密码显示/隐藏与邮件重置面板（`window.InnerOSAccount`）；设置页与登录页共用流程，只显示正在输入的密码，不保存明文 |
 | `src/services/api-client.js` | 前端统一 API Client（`window.InnerOSApi`，兼容新旧信封） |
 | `server.py` | 本地服务默认 :8765（可用 `INNEROS_PORT` 临时换端口）。代理：`/img`（豆瓣图）、`/api/douban`、`/api/sports`、`/api/v1/sports/cs2/matches`；`/api/v1/football/**`、`/api/auth`、`/api/sync` **反代到 pages.dev**；另有 `/api/search` |
+| `server.py` 密码链路 | `/api/v1/auth/**` 的 GET/POST 反代线上，透传浏览器 UA；本地不重复实现 D1 密码逻辑 |
 | `desktop/` | V1.30 Windows Electron 桌面端，独立运行时与 `%APPDATA%/InnerOS` 数据目录，加载线上 pages.dev；`npm ci` / `npm run smoke` / `npm run dist`，产物 dist 不入库。禁止给远程网页启用 Node 集成或原生桥；桌面冷启动目前需联网 |
 | `functions/_lib.js` | D1 schema 自建（IF NOT EXISTS）/ PBKDF2 / Cookie 会话 |
 | `functions/api/auth/[action].js` | register / login / logout / me / send-code（Resend 验证码） |
+| `functions/api/v1/auth/[action].js` | V1.31 send-reset-code / reset-password，统一信封；PasswordService → PasswordRepository/EmailAdapter；重置验证码独立哈希存储，D1 batch 单次消费+改密+撤销所有旧会话 |
 | `functions/api/sync/[action].js` | push（幂等批量）/ pull（游标增量）。**ARCH-008 后为薄路由**：只 auth/parse/service/response，编排在 sync-service |
 | `functions/api/douban.js` | 豆瓣 suggest + rexxar 详情（电影/书籍简介、评分） |
 | `functions/api/sports.js` | 旧兼容体育接口：足球=TheSportsDB（官方免费 key 123），CS2=Liquipedia teamsearch/cs2matches；新功能禁止继续堆入，主链走 v1 |
@@ -53,6 +56,7 @@
 | `src/features/media.js` | ARCH-012/1.29.0 前端媒体数据层：`mediaToWorkFields`/`searchMovie`/`searchSeries`/`searchBook`/`searchMusic`/`enrichWorkDetail`（IIFE + `window.InnerOSMedia`）。**唯一前端媒体数据入口**；第三方 URL 只存在于兼容 fallback 层，feature 主链始终走 v1 |
 | `tests/unit/` | 零依赖单测：errors/domain-memory/media/navigation/memory-detail/sync/sports/pet 等（node 直接运行）；导航覆盖父级与横滑判定，sports 覆盖统一 Match、缓存降级、Liquipedia Adapter/Service/v1 路由与 200 场请求 |
 | `tests/integration/sync-route.test.mjs` | ARCH-008.2 集成测试：真实 `onRequestPost/Get` + Cookie 会话 + 内存 D1 仿真（按 SQL 模式处理，未知 SQL 抛错防漂移）。**改同步相关代码后必跑** |
+| `tests/integration/password-route.test.mjs` | V1.31 密码重置集成：Node 22.13+ 内置 SQLite 验证真实 SQL、并发单次消费、事务回滚、会话隔离、过期与限流；不访问真实邮箱或用户 |
 | `tests/e2e/media-sync-e2e.py` | ARCH-013 真实 D1 端到端：电影/书籍/音乐 搜索→详情→保存→刷新→pull→删除→pull + 跨设备同步 + 幂等 + 墓碑 + user isolation + 稳定错误码。**需先起 wrangler**（零第三方依赖，Python 直接跑） |
 | `tests/run-all.sh` | 零依赖快速测试入口：一条命令跑全部单测 + 集成（**不含** E2E） |
 | `tests/run-e2e.sh` | 完整 E2E 入口：自动起 wrangler 本地 D1 → 跑 Python E2E → 停止 wrangler（需先 `npm install --no-save wrangler`） |
@@ -60,6 +64,7 @@
 | `src/pet/*` | 桌宠网页模块（config/adapter/view/controller/events/mount + **state（属性数值）/interact（点击菜单·双击喂食·自动说话）** + pet.css）：挂载于 AI 助手页 `#pet-container`，对外 `window.InnerOSPet`；属性存 localStorage `inneros_pet_state`（不进 IndexedDB/不上云）。**桌面版桌宠素材源在仓库外，勿改动 assets/pet 帧命名规则（{action}_{i}.png）**。样式改浮层显隐时注意：作者 `display` 会盖过 UA 的 `[hidden]{display:none}`，需显式写 `[hidden]` 规则。**V1.23.0+ 新增**：`image-rendering:crisp-edges` 高清渲染、`pet-draggable` 自由拖动（位置存 `inneros_pet_position`）、右键菜单+左键互动效果、`microActions` 待机微动作（blink/lookaround/stretch/adjust，CSS transform 叠加，无需额外素材） |
 
 ## 命令
+快速测试需要 Node 22.13+（密码重置集成测试使用内置 SQLite；当前开发环境 Node 24）。
 ```
 python server.py                                   # 本地服务 localhost:8765（/api/auth、/api/sync 反代线上）
 node --check app.js                                # 语法检查（每次改完必跑）
@@ -72,10 +77,12 @@ curl -X POST https://inneros.pages.dev/api/...     # 线上接口探测（部署
 ## 数据契约
 **IndexedDB `memory_os` v4**：`entries`（id=uuid；含 type/title/entries[]追加模型/photos dataURL/seed 标记）、`teams`（sport/provider/provider_team_id/tsdb_id/badge）、`meta`（kv）、`ops`（op_id/kind/entity_id/payload/created_at —— 待推送操作队列）。
 **D1**：users / sessions / devices(last_seq 游标) / memories(kind memory|team, data JSON, deleted 墓碑, _conflicts) / memory_entries(只追加) / attachments(一图一行 base64≤900KB) / operations(seq 游标源) / codes(注册验证码)。
+**V1.31 密码重置**：password_reset_codes（验证码盐+SHA-256 哈希/10 分钟过期/5 次尝试/单次 claim/60 秒冷却/5 次每小时）；password_reset_limits（IP 哈希+按用途小时计数）。注册 codes 不得用于重置；密码不存明文，重置必须以 db.batch 原子消费凭证、更新哈希、撤销旧会话。
 **操作类型**：upsert_memory（新者胜，败方进 data._conflicts）/ append_entry（只追加幂等）/ delete_memory·delete_entry（墓碑）/ upsert_attachment。
 **同步时机**：改动即时 + 60 秒定时 + online 事件；push 批 50；pull 排除本机操作。
 
 ## API 一览（均带 CORS）
+新增密码管理：`POST /api/v1/auth/send-reset-code`、`POST /api/v1/auth/reset-password`，沿用统一信封，不迁移旧鉴权路由。
 `/api/auth/register|login|logout|send-code`(POST) `/api/auth/me`(GET，Cookie 会话 90 天) · `/api/sync/push`(POST) `/api/sync/pull?cursor&device_id`(GET) · `/api/v1/sports/cs2/matches` · `/api/douban?type=movie|book&q=` `?type=detail&kind=&id=` · `/api/sports?type=teamsearch|matches|leagueseason|cs2matches`（旧兼容） · `/img?url=`
 
 ## 硬性约束与踩坑清单（违反必返工）

@@ -30,6 +30,7 @@
       headers: Object.assign({ 'Content-Type': 'application/json' }, opts.headers),
     };
     if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
+    if (opts.signal) init.signal = opts.signal;
     const res = await fetch(path, init);
 
     let data = null;
