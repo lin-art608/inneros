@@ -37,8 +37,11 @@ export function createMemoryRepository(db) {
     },
 
     // ---- 写入（新者胜 + 败方保留，业务规则与既有同步语义一致）----
+    // V1.32：data 与冲突副本都先剔除 entries / 照片原图——历史行里可能存着数 MB 的 base64，
+    // 直接塞进 _conflicts 会再次超过 D1 单行上限，让推送重新失败。
     async upsertNewer({ userId, id, kind, data, updatedAt, deleted }) {
-      const dataStr = JSON.stringify(data || {});
+      const incoming = stripBulk(data || {});
+      const dataStr = JSON.stringify(incoming);
       const ex = await this.getById(userId, id);
       if (!ex) {
         await db.prepare('INSERT INTO memories(id, user_id, kind, data, deleted, updated_at) VALUES(?,?,?,?,?,?)')
@@ -46,11 +49,11 @@ export function createMemoryRepository(db) {
         return { applied: true, conflict: false };
       }
       if (updatedAt > ex.updated_at) {
-        let finalData = data || {};
+        let finalData = incoming;
         let conflict = 0;
         if (ex.data !== dataStr) {
-          const exData = safeParse(ex.data);
-          finalData = { ...(data || {}), _conflicts: [...(exData._conflicts || []), { data: exData, updated_at: ex.updated_at }] };
+          const exData = stripBulk(safeParse(ex.data));
+          finalData = { ...incoming, _conflicts: [...(exData._conflicts || []), { data: exData, updated_at: ex.updated_at }] };
           conflict = 1;
         }
         await db.prepare('UPDATE memories SET data = ?, deleted = ?, updated_at = ?, conflict = ? WHERE id = ? AND user_id = ?')
@@ -58,10 +61,10 @@ export function createMemoryRepository(db) {
         return { applied: true, conflict: conflict === 1 };
       }
       if (updatedAt < ex.updated_at) {
-        const exData = safeParse(ex.data);
-        if (JSON.stringify(exData) !== JSON.stringify(data || {})) {
+        const exData = stripBulk(safeParse(ex.data));
+        if (JSON.stringify(exData) !== JSON.stringify(incoming)) {
           await db.prepare('UPDATE memories SET data = ?, conflict = 1 WHERE id = ? AND user_id = ?')
-            .bind(JSON.stringify({ ...exData, _conflicts: [...(exData._conflicts || []), { data: data || {}, updated_at: updatedAt }] }), id, userId).run();
+            .bind(JSON.stringify({ ...exData, _conflicts: [...(exData._conflicts || []), { data: incoming, updated_at: updatedAt }] }), id, userId).run();
           return { applied: false, conflict: true };
         }
       }
@@ -137,3 +140,19 @@ export function createMemoryRepository(db) {
 }
 
 function safeParse(s) { try { return JSON.parse(s); } catch (e) { return {}; } }
+
+// V1.32：D1 行瘦身。剔除外置大字段（entries / 照片 data URL），但保留 _conflicts
+// （冲突历史要留给用户看），并把每个冲突副本也压瘦，避免历史 base64 让行重新超过 1MB。
+function stripBulk(data) {
+  const src = data && typeof data === 'object' ? data : {};
+  const out = {};
+  for (const [k, v] of Object.entries(src)) {
+    if (k === 'entries' || k === 'photos' || k === 'photo_ids' || k === 'sync_shell') continue;
+    if (typeof v === 'string' && v.slice(0, 5) === 'data:') continue;
+    out[k] = v;
+  }
+  if (Array.isArray(out._conflicts)) {
+    out._conflicts = out._conflicts.map(c => ({ updated_at: c && c.updated_at, data: stripBulk(c && c.data) }));
+  }
+  return out;
+}

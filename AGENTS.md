@@ -26,6 +26,7 @@ InnerOS：无框架纯静态 Web App + Cloudflare Pages Functions + D1 + Resend�
 | `src/features/memory-detail.js` | 记忆详情 UI 纯逻辑：线性 SVG 类型图标、Unicode 字素安全截断、日记兜底标题、初记/续写篇章、相册循环索引（`window.InnerOSMemoryDetail`） |
 | `src/features/account.js` | 密码显示/隐藏与邮件重置面板（`window.InnerOSAccount`）；只显示正在输入的密码，不保存明文 |
 | `src/services/api-client.js` | 前端统一 API Client（`window.InnerOSApi`，兼容新旧信封）；新调用必经 |
+| `src/features/sync-merge.js` | V1.32 同步合并纯逻辑（`window.InnerOSSyncMerge`）：upsert 快照瘦身、回放保留本地 `entries`、篇章增改删、附件挂载。**改同步协议必须同步单测** |
 | `src/pet/*` | 桌宠模块（config/adapter/view/controller/events/mount + state/interact + pet.css）：挂 AI 助手页 `#pet-container`，对外 `window.InnerOSPet`；属性存 localStorage `inneros_pet_state`（不进 IndexedDB/不上云）。**勿改 `assets/pet` 帧命名 `{action}_{i}.png`**；浮层 `[hidden]` 必须显式写样式规则 |
 | `server.py` | 本地服务 :8765（`INNEROS_PORT` 可换）。代理 `/img`、`/api/douban`、`/api/sports`、`/api/v1/sports/cs2/matches`；`/api/v1/football/**`、`/api/auth`、`/api/sync`、`/api/v1/auth/**` 反代线上并透传浏览器 UA |
 | `desktop/` | V1.30 Windows Electron 桌面端：独立运行时、`%APPDATA%/InnerOS` 数据目录、加载线上 pages.dev；`npm ci` / `npm run smoke` / `npm run dist`，产物 dist 不入库；禁止给远程网页开 Node 集成或原生桥 |
@@ -88,6 +89,7 @@ git diff --check                                   # 收尾必跑
 14. **D1 测试账号残留**（e2e@/curltest@/notarget@inneros.dev），勿当用户数据。
 15. **集成测试 query 与 `params.action` 必须分离**：CF Pages 路径参数不含 `?xxx`，拼进去会 404。
 16. **长期约定**：改数据链路前后各跑一次 `tests/run-all.sh`；改同步必跑 sync-route 集成；E2E 断言要覆盖异常分支，不能只测 happy path。
+17. **`upsert_memory` 只传元数据**（V1.32）：不得携带 `entries` / 照片 base64；回放**永不允许覆盖本地已有条目**。带照片的记录曾因 payload 超 D1 上限而永远推不上去，旧快照回放又抹掉其他设备的篇章 → 跨设备丢记录。改同步协议必须配 `tests/unit/sync-merge.test.mjs` 与 `tests/integration/sync-route.test.mjs`。
 
 ## 交付流程（默认不代推）
 

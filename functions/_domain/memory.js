@@ -80,6 +80,22 @@ export function validateMemory(mem) {
 
 // 同步操作校验（ARCH-004 附带：operations 的合法 kind 与最小字段）
 export const SYNC_OP_KINDS = ['upsert_memory', 'append_entry', 'update_entry', 'delete_entry', 'delete_memory', 'upsert_attachment'];
+
+// V1.32：upsert_memory 只允许承载元数据。
+// entries 走 append_entry（只追加），照片走 upsert_attachment；把 base64 原图放进 upsert
+// 会超过 D1 单值上限导致推送永久失败，且旧快照回放时会覆盖其他设备的条目。
+const UPSERT_DROP_KEYS = ['entries', 'photos', 'photo_ids', '_conflicts', 'sync_shell', 'legacy_id'];
+export function slimMemoryData(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (UPSERT_DROP_KEYS.includes(k)) continue;
+    if (typeof v === 'string' && v.slice(0, 5) === 'data:') continue;
+    out[k] = v;
+  }
+  return out;
+}
+
 export function validateOperation(op) {
   const errs = [];
   if (!op || typeof op !== 'object') return { ok: false, errors: ['operation 必须是对象'] };

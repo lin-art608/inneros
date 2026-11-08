@@ -12,6 +12,7 @@
 //           upsert 新者胜（败方进 _conflicts）/ 删除墓碑优先（旧快照不复活）/ append 幂等。
 
 import { ErrorCode, ServiceError } from '../_infra/errors.js';
+import { slimMemoryData } from '../_domain/memory.js';
 
 const MAX_OPS_PER_PUSH = 200;
 const MAX_OPS_PER_PULL = 500;
@@ -45,13 +46,15 @@ export function createSyncService({ memoryRepository, operationRepository, devic
         const kind = String(op.kind || '');
         const entityId = String(op.entity_id || '');
         const createdAt = String(op.created_at || nowIso());
+        // V1.32：upsert 只接收元数据（历史客户端仍会带 entries/照片原图，这里统一剔除再落库）
+        const payload = slimPayload(kind, op.payload);
         if (!opId || !kind) {
           errors.push({ op_id: opId, code: ErrorCode.VALIDATION_ERROR, error: '缺少 op_id/kind' });
           continue;
         }
         // 领域校验：未知 kind / 缺 entity_id 只让该条失败，不影响整批（与既有行为一致）
         if (validateOperation) {
-          const v = validateOperation({ ...op, op_id: opId, kind, entity_id: entityId });
+          const v = validateOperation({ ...op, payload, op_id: opId, kind, entity_id: entityId });
           if (!v.ok) {
             errors.push({ op_id: opId, code: ErrorCode.VALIDATION_ERROR, error: v.errors[0] });
             continue;
@@ -61,10 +64,10 @@ export function createSyncService({ memoryRepository, operationRepository, devic
         const collect = BATCHABLE_KINDS.has(kind) ? [] : null;
         try {
           if (await operationRepository.opExists(userId, opId)) { skipped++; continue; }
-          await applyOperation(memoryRepository, userId, kind, entityId, op.payload || {}, collect);
+          await applyOperation(memoryRepository, userId, kind, entityId, payload, collect);
           await operationRepository.record({
             opId, userId, deviceId, kind, entityId,
-            payload: op.payload || {}, createdAt,
+            payload, createdAt,
             prepend: collect, // null 或语句数组；数组非空时走 db.batch 原子提交
           });
           applied++;
@@ -86,13 +89,25 @@ export function createSyncService({ memoryRepository, operationRepository, devic
       const ops = await operationRepository.listSince({
         userId, cursor: from, excludeDeviceId: deviceId, limit: MAX_OPS_PER_PULL,
       });
+      // V1.32：历史 operation 的 payload 里可能存着整条记录（含 base64 照片）。
+      // 回放时只下发元数据——既减小流量，也避免旧客户端拿旧快照覆盖本地 entries。
+      const slimOps = ops.map(o => ({ ...o, payload: slimPayload(o.kind, o.payload) }));
       const lastSeq = await operationRepository.maxSeq(userId);
       const hasMore = ops.length === MAX_OPS_PER_PULL;
       // 分页未结束时只能推进到本页最后一条；若直接返回账户最大 seq，客户端会跳过中间页。
       const nextCursor = hasMore && ops.length ? Number(ops[ops.length - 1].seq) : lastSeq;
-      return { ops, lastSeq, nextCursor, hasMore };
+      return { ops: slimOps, lastSeq, nextCursor, hasMore };
     },
   };
+}
+
+// V1.32：upsert_memory 的 entries / 照片原图一律剥离。
+// entries 只能经 append_entry 维护，照片经 upsert_attachment；upsert 带整条记录既会撑爆
+// D1 单值上限（推送永久失败），又会在回放时覆盖其他设备的条目（跨设备丢记录的直接原因）。
+function slimPayload(kind, payload) {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  if (kind !== 'upsert_memory') return p;
+  return { ...p, data: slimMemoryData(p.data) };
 }
 
 // 单个操作的落地分发：冲突/墓碑/幂等的具体规则仍在 MemoryRepository（ARCH-005），

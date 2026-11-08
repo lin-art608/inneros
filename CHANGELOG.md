@@ -7,6 +7,39 @@
 
 ## [Unreleased]
 
+### V1.32.0 云同步丢数据修复：upsert 瘦身 / 回放不覆盖篇章 / 云端重建（2026-11-08）
+
+> 根因（两个缺陷叠加，从云同步 v2 上线起就存在）：
+> ① `enqueueMemoryUpsert()` 把整条记录（含 `entries[].photos` 的 **原图 base64**）塞进 `upsert_memory` payload。带照片的记录单值动辄数 MB，超过 D1 绑定上限 → 该条 upsert **永远推送失败**，其他设备只收到 `append_entry`，于是出现「（同步恢复中）」空壳、手机与电脑记录对不上。
+> ② 客户端 `replayOps()` 处理 `upsert_memory` 时用 `{...本地, ...远端}` 整体覆盖 `entries`。远端旧快照会把本机较新的篇章抹掉；V1.29 新增的「按账户从游标 0 重放一次」让这件事在一次启动里批量发生 —— 这是用户感知到的“数据丢了”的直接原因。另外 `update_entry` 在回放里完全没有分支，改过的文字其他设备永远不变；附件若先于条目到达会被直接丢弃。
+
+**Fixed**
+
+- upsert 只传元数据：`memoryDataSnapshot` → `InnerOSSyncMerge.slimMemory`（剔除 `entries`/`photos`/`data:` 原图/`_conflicts`），服务端 `slimMemoryData` 再兜底剥离一次。
+- 回放不再覆盖本地篇章：新增 `src/features/sync-merge.js`（纯逻辑，可单测），`mergeMemory` 永远保留本地 `entries`，远端快照只在本地没有篇章时兜底；本地 `updated_at` 更新时不回退元数据。
+- 补齐 `update_entry` 回放（此前完全没有分支）；附件先于条目到达时暂存并重试挂载。
+- 回放失败不再推进游标（此前 `catch` 后照常前进，该设备会永久跳过这段记录）；同一操作连续失败 3 次才跳过，避免一条坏数据卡死整条链。
+- 推送按本地单调序号排序（主体 → 条目 → 附件），修掉 UUID 主键导致附件先于条目推送、照片永远挂不上的问题；部分失败会在设置页显示「⚠ 部分记录未同步」，不再假装成功；整批无进展时立即停止空转（原先每轮会重复发 60 次相同请求）。
+- 启动时一次性把队列里的旧 upsert（含原图）压缩为元数据版本，避免历史大 payload 继续卡住同步。
+- 冲突副本同样瘦身：`upsertNewer` 写 `_conflicts` 前剥离历史 base64，避免旧行把新行再次撑爆 D1 单行上限。
+- 切换账号前先补推待同步操作，仍有剩余时明确告知条数，而不是静默清空。
+
+**Added**
+
+- 设置页「从云端重建」：以空 `device_id` 重新拉取全部操作日志并按顺序回放（含本机历史），用于补回本机被旧回放覆盖掉的篇章与照片；只增不减，不会删除本机新建内容。
+
+**Changed**
+
+- 服务端 `pull` 下发操作时同样剥离 `entries` 与照片原图：旧客户端即使未更新，也不会再拿旧快照覆盖本地条目（**这是不更新客户端也能止血的关键**）。
+- `APP_VERSION` → v1.32.0，`index.html` 的 `app.js?v=` 同步破缓存。
+
+#### 实测
+
+- 新增 `tests/unit/sync-merge.test.mjs`（8 组：快照瘦身/旧快照不覆盖/本地较新不回退/追加幂等/改字/删篇章/附件挂载）；`domain-memory` 补 `slimMemoryData` 断言；`sync-route` 集成新增第 8 组：带 5KB base64 与 entries 的 upsert 落库与回放均只剩元数据。
+- `bash tests/run-all.sh`：21 套全部通过；`node --check app.js`、`src/features/sync-merge.js`、`functions/_domain/memory.js`、`functions/_services/sync-service.js`、`functions/_repositories/memory-repository.js` 通过。
+- 真实 D1 E2E（wrangler 本地）：电影与书籍的 保存/刷新/pull/修改/删除/墓碑 链路全部通过；音乐段因上游 iTunes 搜索返回空失败（环境网络问题，与本轮改动无关）。
+- 未做：真机双端验证与线上恢复效果确认（需部署后在设置页点「从云端重建」）。
+
 ### 文档整合：核心文档收口与项目开发守则（2026-10-21）
 
 > 根因：执行方案、调研与工作日志分散在 9 份 md（`.audit-doc/`、`docs/`、`.workbuddy/`、`.zcode/`），同一事实多处重复，且部分状态已过期（Resend 域名已验证、`FOOTBALL_API_KEY` 已配置）。本轮只动文档，不改代码、不改版本号。

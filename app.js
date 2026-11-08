@@ -1,8 +1,8 @@
-﻿// ============================================================
+// ============================================================
 // Personal Memory OS — InnerOS
 // 版本号：每轮迭代必须递增（见 AGENTS.md 工作约定），同时更新 index.html 的 app.js?v=
 // ============================================================
-const APP_VERSION = 'v1.31.0';
+const APP_VERSION = 'v1.32.0';
 console.log('%cInnerOS ' + APP_VERSION, 'color:#8B7355;font-weight:bold');
 
 // === Type Metadata ===
@@ -1588,9 +1588,10 @@ async function renderSettings() {
       <div class="section-label">账户 · Account</div>
       <div class="settings-card">
         ${authState.loggedIn ? `
-          <div class="settings-row"><div><div class="settings-row-label">✓ 已登录：${escapeHtml(authState.email)}</div><div class="settings-row-desc">所有设备自动同步（改动即时 + 每 5 分钟）；删除会同步到所有设备。</div></div></div>
+          <div class="settings-row"><div><div class="settings-row-label">✓ 已登录：${escapeHtml(authState.email)}</div><div class="settings-row-desc">所有设备自动同步（改动即时 + 每 60 秒）；删除会同步到所有设备。</div></div></div>
           <div class="settings-row"><div><div class="settings-row-label">账户密码</div><div class="settings-row-desc">通过注册邮箱验证后修改，可显示或隐藏正在输入的新密码。</div></div><button class="btn btn-ghost" onclick="InnerOSAccount.openFromSettings()">修改密码</button></div>
           <div class="settings-row"><div><div class="settings-row-label">同步状态</div><div class="settings-row-desc" id="cloud-sync-status">${lastCloud ? '✓ 上次同步 ' + new Date(lastCloud).toLocaleString() : '从未同步（保存/删除内容后自动同步）'}</div></div><button class="btn btn-ghost" onclick="syncNow()">立即同步</button></div>
+          <div class="settings-row"><div><div class="settings-row-label">从云端重建</div><div class="settings-row-desc">本机记录与另一台设备不一致时使用：按云端操作日志重放，补回丢失的篇章。不会删除本机新建内容。</div></div><button class="btn btn-ghost" onclick="rebuildFromCloud()">重建</button></div>
           <div class="settings-row"><div><div class="settings-row-label">退出登录</div><div class="settings-row-desc">本机数据保留，仅停止云同步。</div></div><button class="btn btn-ghost" onclick="logoutAccount()">退出</button></div>
         ` : `
           <div class="settings-row"><div><div class="settings-row-label">${authState.guest ? '访客模式' : '未登录'}</div><div class="settings-row-desc">${authState.guest ? '数据仅存本机。登录后可在所有设备间同步。' : '登录后可在所有设备间同步你的记忆（免费）。'}</div></div><button class="btn btn-ghost" onclick="goLogin()">去登录</button></div>
@@ -2750,8 +2751,14 @@ async function afterAuth(email) {
   // 上一个账号的数据在云端不受影响，换回其账号登录即可取回。
   const lastAccount = localStorage.getItem('inneros_last_account');
   if (lastAccount && lastAccount !== email) {
+    // 切换账号前先尽量把上一账号的待同步操作推上去：清空本机缓存会连同 ops 队列一起删掉，
+    // 没推成功的记录将永久丢失（V1.32 起至少先补推一次并告知剩余条数）。
+    let pending = 0;
+    try { await pushPendingOps(); } catch (e) { console.warn('切换账号前补推失败', e); }
+    try { pending = (await opsGetAll()).length; } catch (e) {}
     await wipeLocalCacheForAccountSwitch();
-    showToast('已切换账号：本机缓存已清空，正在从云端拉取 ' + email + ' 的数据', 'success');
+    if (pending) showToast('已切换账号：本机有 ' + pending + ' 条记录未能推送，已随缓存清空', 'error');
+    else showToast('已切换账号：本机缓存已清空，正在从云端拉取 ' + email + ' 的数据', 'success');
   }
   localStorage.setItem('inneros_last_account', email);
   showToast('欢迎，' + email, 'success');
@@ -2804,14 +2811,37 @@ function getDeviceName() {
 }
 
 // ---- 操作日志队列 ----
+// op.n：本地单调序号，保证推送顺序是「先主体、后条目、再附件」。
+// IndexedDB 的 ops 以 op_id（UUID）为主键，getAll 按 UUID 排序是乱的；
+// 曾因此把 attachment 先于 append_entry 推上去，导致其他设备照片永远挂不上。
+let opSeqCache = null;
+function nextOpSeq() {
+  if (opSeqCache == null) opSeqCache = parseInt(localStorage.getItem('inneros_op_seq') || '0', 10) || 0;
+  opSeqCache += 1;
+  localStorage.setItem('inneros_op_seq', String(opSeqCache));
+  return opSeqCache;
+}
 function opAppend(kind, entity_id, payload) {
-  const op = { op_id: uuid(), kind, entity_id: String(entity_id), payload, created_at: new Date().toISOString() };
+  const op = { op_id: uuid(), n: nextOpSeq(), kind, entity_id: String(entity_id), payload, created_at: new Date().toISOString() };
   return new Promise((resolve, reject) => {
     const tx = db.transaction('ops', 'readwrite');
     tx.objectStore('ops').put(op);
     tx.oncomplete = () => resolve(op);
     tx.onerror = () => reject(tx.error);
   });
+}
+function opPut(op) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('ops', 'readwrite');
+    tx.objectStore('ops').put(op);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+function compareOps(a, b) {
+  const na = Number(a.n) || 0, nb = Number(b.n) || 0;
+  if (na !== nb) return na - nb;
+  return String(a.created_at || '').localeCompare(String(b.created_at || '')) || String(a.op_id).localeCompare(String(b.op_id));
 }
 function opsGetAll() {
   return new Promise((resolve, reject) => {
@@ -2829,11 +2859,11 @@ function opDelete(op_id) {
   });
 }
 
-// ---- 记录 → 操作（保存/删除时调用；未登录不入队）----
+// ---- 记录 → 操作（保存/删除时调用；未登录也入队，登录后补传）----
+// V1.32：upsert 只带元数据。此前把 entries（含 base64 原图）一起塞进 payload，
+// 既超过 D1 单值上限导致推送永远失败，又会在回放时用旧快照覆盖其他设备的条目。
 function memoryDataSnapshot(rec) {
-  const data = { ...rec };
-  delete data.id; delete data.legacy_id; delete data._conflicts; delete data.updated_at;
-  return data;
+  return window.InnerOSSyncMerge.slimMemory(rec);
 }
 async function enqueueMemoryUpsert(rec) {
   const updated_at = new Date().toISOString();
@@ -2888,9 +2918,10 @@ async function syncNow() {
   syncInflight = true;
   setCloudSyncStatus('同步中...');
   try {
-    await pushPendingOps();
+    const pushWarn = await pushPendingOps();
     await pullOps();
-    setCloudSyncStatus('✓ 上次同步 ' + new Date().toLocaleTimeString());
+    if (pushWarn) setCloudSyncStatus('⚠ 部分记录未同步：' + pushWarn, true);
+    else setCloudSyncStatus('✓ 上次同步 ' + new Date().toLocaleTimeString());
     await dbPutMeta('last_cloud_sync', new Date().toISOString());
   } catch (e) {
     setCloudSyncStatus('✗ 同步失败：' + (e.message || e), true);
@@ -2907,10 +2938,12 @@ function stopAutoSync() {
   startAutoSync._t = null;
   window.removeEventListener('online', syncOnOnline);
 }
+// 推送：按本地序号排序（主体 → 条目 → 附件），失败不再静默、也不再空转 60 轮
 async function pushPendingOps() {
-  for (let i = 0; i < 60; i++) {
-    const ops = await opsGetAll();
-    if (!ops.length) return;
+  let lastWarn = '';
+  for (let i = 0; i < 12; i++) {
+    const ops = (await opsGetAll()).sort(compareOps);
+    if (!ops.length) return lastWarn;
     const batch = ops.slice(0, 50);
     const r = await api('/api/sync/push', {
       method: 'POST',
@@ -2919,74 +2952,169 @@ async function pushPendingOps() {
     if (!r.ok) throw new Error(r.data.error || '推送失败 HTTP ' + r.status);
     const failed = new Set((r.data.errors || []).map(x => x.op_id));
     for (const o of batch) if (!failed.has(o.op_id)) await opDelete(o.op_id);
-    if (failed.size) console.warn('push 部分失败', r.data.errors);
+    if (failed.size) {
+      const codes = Array.from(new Set((r.data.errors || []).map(x => x.code || x.error).filter(Boolean))).slice(0, 3).join(' / ') || '未知原因';
+      lastWarn = failed.size + ' 条（' + codes + '）';
+      console.warn('push 部分失败', r.data.errors);
+      // 整批都没成功 = 没有任何进展，继续循环只会重复发同样的请求
+      if (failed.size === batch.length) break;
+    }
   }
+  return lastWarn;
 }
+// 附件可能先于条目到达（旧队列按 UUID 排序，顺序随机），先暂存，等条目出现再挂回去
+let pendingAttachments = [];
 async function pullOps(collect) {
   for (let i = 0; i < 60; i++) {
     const cursor = parseInt(localStorage.getItem('inneros_sync_cursor') || '0', 10) || 0;
     const r = await api(`/api/sync/pull?cursor=${cursor}&device_id=${encodeURIComponent(getDeviceId())}&device_name=${encodeURIComponent(getDeviceName())}`);
     if (!r.ok) throw new Error(r.data.error || '拉取失败');
     const ops = r.data.ops || [];
-    if (ops.length) await replayOps(ops, collect);
+    let blockedSeq = null;
+    if (ops.length) blockedSeq = (await replayOps(ops, collect)).blockedSeq;
+    if (blockedSeq != null) {
+      // 关键：有操作没落地就不能推进游标，否则这台设备会永久跳过这段云端记录
+      localStorage.setItem('inneros_sync_cursor', String(Math.max(cursor, Number(blockedSeq) - 1)));
+      throw new Error('有云端操作回放失败（seq ' + blockedSeq + '），已停在原处，稍后自动重试');
+    }
     const pageCursor = r.data.next_cursor ?? (r.data.has_more && ops.length ? ops[ops.length - 1].seq : r.data.last_seq);
     localStorage.setItem('inneros_sync_cursor', String(pageCursor || cursor));
-    if (!r.data.has_more) return;
+    if (!r.data.has_more) { pendingAttachments = []; return; }
   }
 }
+async function flushPendingAttachments() {
+  if (!pendingAttachments.length) return false;
+  const rest = [];
+  let changed = false;
+  for (const att of pendingAttachments) {
+    const mem = await dbGet(att.memoryId);
+    if (mem && window.InnerOSSyncMerge.attachPhoto(mem, att.id, att.dataURL)) { await dbPut(mem); changed = true; }
+    else rest.push(att);
+  }
+  pendingAttachments = rest;
+  return changed;
+}
+// 反复失败的操作：连续 3 次仍失败才跳过，避免一条坏数据把整条同步链永久卡死
+function failedOpsMap() { try { return JSON.parse(localStorage.getItem('inneros_failed_ops') || '{}') || {}; } catch (e) { return {}; } }
+function noteFailedOp(seq) {
+  const m = failedOpsMap();
+  m[seq] = (m[seq] || 0) + 1;
+  localStorage.setItem('inneros_failed_ops', JSON.stringify(m));
+  return m[seq];
+}
+function clearFailedOp(seq) {
+  const m = failedOpsMap();
+  if (!m[seq]) return;
+  delete m[seq];
+  localStorage.setItem('inneros_failed_ops', JSON.stringify(m));
+}
 async function replayOps(ops, collect) {
-  let touched = false;
+  let touched = await flushPendingAttachments();
+  let blockedSeq = null;
   for (const op of ops) {
     const p = op.payload || {};
     try {
       if (op.kind === 'upsert_memory') {
         if (collect) { const d = p.data || {}; bootCloudKeys.add((d.kind === 'team' || d.sport ? 'team@' : (d.type || '') + '@') + (d.title || d.name || '')); }
-        if (p.deleted) { await dbDelete(op.entity_id); touched = true; continue; }
-        const incoming = { ...(p.data || {}), id: op.entity_id };
-        const ex = await dbGet(op.entity_id);
-        if (ex) {
-          const merged = { ...ex, ...incoming, id: op.entity_id };
-          delete merged.sync_shell;
-          await dbPut(merged);
+        if (p.deleted) { await dbDelete(op.entity_id); touched = true; }
+        else {
+          const incoming = { ...(p.data || {}), id: op.entity_id };
+          const ex = await dbGet(op.entity_id);
+          // V1.32：本地条目优先，远端 upsert 不再整体覆盖 entries（这是丢数据的直接原因）
+          await dbPut(window.InnerOSSyncMerge.mergeMemory(ex, incoming, p.updated_at));
+          touched = true;
         }
-        else await dbPut(incoming);
-        touched = true;
       } else if (op.kind === 'append_entry') {
         const e = p.entry || {};
         let mem = await dbGet(p.memory_id);
         if (!mem) mem = { id: p.memory_id, type: 'custom', title: '（同步恢复中）', entries: [], sync_shell: true };
-        mem.entries = mem.entries || [];
-        if (!mem.entries.some(x => x.id === e.id)) {
-          mem.entries.push({ id: e.id, created_at: e.created_at, content: e.content || '', photos: [], photo_ids: e.photo_ids || [] });
-          touched = true;
-        }
+        const r = window.InnerOSSyncMerge.appendEntry(mem.entries, { id: e.id, created_at: e.created_at, content: e.content || '', photos: [], photo_ids: e.photo_ids || [] });
+        mem.entries = r.entries;
+        if (r.changed) touched = true;
         await dbPut(mem);
+      } else if (op.kind === 'update_entry') {
+        // 此前完全没处理 update_entry：改过的文字在其他设备永远不变
+        const mem = await dbGet(p.memory_id);
+        if (mem) {
+          const r = window.InnerOSSyncMerge.updateEntry(mem.entries, (p.entry && p.entry.id) || op.entity_id, p.entry ? p.entry.content : '');
+          if (r.changed) { mem.entries = r.entries; await dbPut(mem); touched = true; }
+        }
       } else if (op.kind === 'delete_memory') {
         await dbDelete(op.entity_id); touched = true;
       } else if (op.kind === 'delete_entry') {
         const mem = p.memory_id ? await dbGet(p.memory_id) : null;
         if (mem) {
-          const before = (mem.entries || []).length;
-          mem.entries = (mem.entries || []).filter(x => x.id !== op.entity_id);
-          if (mem.entries.length !== before) { await dbPut(mem); touched = true; }
+          const r = window.InnerOSSyncMerge.removeEntry(mem.entries, op.entity_id);
+          if (r.changed) { mem.entries = r.entries; await dbPut(mem); touched = true; }
         }
       } else if (op.kind === 'upsert_attachment') {
+        const dataURL = 'data:' + (p.mime || 'image/jpeg') + ';base64,' + (p.data || '');
         const mem = await dbGet(p.memory_id);
-        if (mem) {
-          const dataURL = 'data:' + (p.mime || 'image/jpeg') + ';base64,' + (p.data || '');
-          let placed = false;
-          for (const en of (mem.entries || [])) {
-            if ((en.photo_ids || []).includes(op.entity_id)) {
-              en.photos = en.photos || [];
-              if (!en.photos.some(x => x === dataURL)) { en.photos.push(dataURL); placed = true; }
-            }
-          }
-          if (placed) { await dbPut(mem); touched = true; }
-        }
+        if (mem && window.InnerOSSyncMerge.attachPhoto(mem, op.entity_id, dataURL)) { await dbPut(mem); touched = true; }
+        else pendingAttachments.push({ id: op.entity_id, memoryId: p.memory_id, dataURL });
       }
-    } catch (e) { console.warn('回放失败', op.op_id, e); }
+      if (pendingAttachments.length && await flushPendingAttachments()) touched = true;
+      clearFailedOp(op.seq);
+    } catch (e) {
+      const times = noteFailedOp(op.seq);
+      console.warn('回放失败（第 ' + times + ' 次）', op.seq, op.kind, e);
+      if (times >= 3) { console.warn('同一操作连续失败 3 次，跳过 seq ' + op.seq); continue; }
+      if (blockedSeq == null) blockedSeq = op.seq;
+    }
   }
   if (touched && ['today', 'timeline', 'library'].includes(currentPage)) await navigate(currentPage, true);
+  return { blockedSeq };
+}
+
+// 一次性清理：旧版本把 entries/photos 塞进 upsert 队列，会让推送永久失败。
+// 这里把队列里的 upsert_memory 换成纯元数据版本（条目由 append_entry 负责，不会丢）。
+async function sanitizeQueuedOps() {
+  const flag = 'inneros_ops_slim_v132';
+  if (localStorage.getItem(flag) === '1') return;
+  try {
+    const ops = await opsGetAll();
+    let fixed = 0;
+    for (const op of ops) {
+      if (op.kind !== 'upsert_memory' || !op.payload || !op.payload.data) continue;
+      const before = JSON.stringify(op.payload.data);
+      const slim = window.InnerOSSyncMerge.slimMemory(op.payload.data);
+      if (JSON.stringify(slim).length === before.length) continue;
+      await opPut({ ...op, payload: { ...op.payload, data: slim } });
+      fixed++;
+    }
+    localStorage.setItem(flag, '1');
+    if (fixed) console.info('已压缩 ' + fixed + ' 条本地待同步记录（移除照片原图）');
+  } catch (e) { console.warn('清理本地待同步队列失败', e); }
+}
+
+// 从云端完整重建：按 seq 顺序重放全部操作（含本机历史），用于补回被旧版回放覆盖掉的篇章。
+// device_id 传空 = 不排除本机，否则本机自己推送过的条目永远补不回来。
+async function rebuildFromCloud() {
+  if (!authState.loggedIn) { showToast('请先登录再重建', 'error'); return; }
+  showConfirm('☁️', '从云端重建本机数据', '按云端操作日志顺序重放全部历史（含本机推送过的），补回本机丢失的篇章与照片；不会删除你本机新建的内容。数据多时需要几十秒。', async () => {
+    setCloudSyncStatus('重建中：正在拉取云端历史…');
+    try {
+      await pushPendingOps();
+      let cursor = 0, applied = 0;
+      for (let i = 0; i < 200; i++) {
+        const r = await api(`/api/sync/pull?cursor=${cursor}&device_id=&device_name=${encodeURIComponent(getDeviceName())}`);
+        if (!r.ok) throw new Error(r.data.error || '拉取失败');
+        const ops = r.data.ops || [];
+        if (ops.length) { await replayOps(ops, false); applied += ops.length; }
+        const next = r.data.next_cursor ?? r.data.last_seq;
+        cursor = Number(next) || cursor;
+        if (!r.data.has_more) break;
+      }
+      pendingAttachments = [];
+      localStorage.setItem('inneros_sync_cursor', String(cursor));
+      setCloudSyncStatus('✓ 已从云端重建（回放 ' + applied + ' 条操作）');
+      showToast('重建完成：已回放 ' + applied + ' 条云端操作', 'success');
+      await navigate(currentPage, true);
+    } catch (e) {
+      setCloudSyncStatus('✗ 重建失败：' + (e.message || e), true);
+      showToast('重建失败：' + (e.message || e), 'error');
+    }
+  });
 }
 
 // 首次登录引导：先回放云端（第二台设备即恢复数据），再把本地非 seed 数据推上去
@@ -3244,6 +3372,7 @@ InnerOSAccount.configure({
   hydrateTypeIcons();
   bindViewerGestures();
   try { await initDB(); } catch(e) { console.error('IndexedDB init failed:', e); }
+  try { await sanitizeQueuedOps(); } catch (e) { console.warn('清理待同步队列失败', e); }
   await removeLegacySeeds();
   await checkAuth();
   const guest = localStorage.getItem('inneros_guest') === '1' && !authState.loggedIn;

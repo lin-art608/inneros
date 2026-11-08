@@ -1,7 +1,7 @@
 // ARCH-004 单元测试：Memory 领域模型（归一化/校验/操作校验）
 // 运行：node tests/unit/domain-memory.test.mjs
 import assert from 'node:assert/strict';
-import { normalizeMemory, validateMemory, canonicalType, validateOperation, SYNC_OP_KINDS } from '../../functions/_domain/memory.js';
+import { normalizeMemory, validateMemory, canonicalType, validateOperation, SYNC_OP_KINDS, slimMemoryData } from '../../functions/_domain/memory.js';
 
 // 1) 电影（media）旧字段归一化
 const movie = normalizeMemory({
@@ -37,5 +37,21 @@ assert.equal(validateOperation({ op_id: 'o1', kind: 'upsert_memory', entity_id: 
 assert.equal(validateOperation({ op_id: 'o1', kind: 'hack', entity_id: 'm1' }).ok, false);
 assert.equal(validateOperation({ kind: 'append_entry' }).ok, false);
 assert.deepEqual(SYNC_OP_KINDS.includes('update_entry'), true);
+
+// 6) V1.32：upsert 数据瘦身——entries / 照片原图不得进入同步层
+const slim = slimMemoryData({
+  type: 'diary', title: '雨天',
+  entries: [{ id: 'e1', photos: ['data:image/jpeg;base64,AA'] }],
+  photos: ['data:image/jpeg;base64,BB'],
+  cover: 'data:image/png;base64,CC',
+  poster: 'https://img.example/p.jpg',
+  _conflicts: [{ title: '旧' }],
+});
+assert.equal(slim.entries, undefined);
+assert.equal(slim.photos, undefined);
+assert.equal(slim.cover, undefined);
+assert.equal(slim._conflicts, undefined);
+assert.equal(slim.poster, 'https://img.example/p.jpg');
+assert.equal(slim.title, '雨天');
 
 console.log('domain-memory.test: 全部通过');

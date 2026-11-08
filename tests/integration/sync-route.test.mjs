@@ -321,4 +321,29 @@ const ATT_OP = { op_id: 'r-op3', kind: 'upsert_attachment', entity_id: 'r-att1',
   assert.equal((await res.json()).error, 'bad json');
 }
 
-console.log('sync-route 集成测试: 全部通过（7 组，真实 Route → SyncService → 内存 D1）');
+// 8) V1.32：upsert 落库与回放都不带 entries / 照片原图（此前是跨设备丢记录与推送失败的根因）
+{
+  const db = freshDb();
+  const huge = 'data:image/jpeg;base64,' + 'A'.repeat(5000);
+  const bigData = {
+    type: 'diary', title: '雨天',
+    entries: [{ id: 'e-slim', content: '正文', photos: [huge] }],
+    photos: [huge],
+    _conflicts: [{ data: { title: '旧' } }],
+  };
+  const res = await callRoute(db, 'POST', 'push', { cookie: COOKIE, body: { device_id: 'dev-A', operations: [
+    { op_id: 'slim1', kind: 'upsert_memory', entity_id: 'm-slim', payload: { data: bigData, updated_at: '2026-09-01T00:00:00Z' }, created_at: '2026-09-01T00:00:00Z' },
+  ]}});
+  assert.equal(res.json.applied, 1);
+  const storedData = JSON.parse(db.tables.memories.get('m-slim').data);
+  assert.equal(storedData.entries, undefined, 'D1 的 upsert 数据不能带 entries');
+  assert.equal(storedData.photos, undefined, 'D1 的 upsert 数据不能带照片原图');
+  assert.equal(storedData.title, '雨天');
+  const opRow = db.tables.operations()[0];
+  assert.ok(opRow.payload.length < 800, 'operations.payload 必须是元数据量级，不能存 base64');
+  const pull = await callRoute(db, 'GET', 'pull', { query: 'cursor=0&device_id=dev-B', cookie: COOKIE });
+  assert.equal(pull.json.ops[0].payload.data.entries, undefined, '回放也不能把 entries 下发给客户端');
+  assert.equal(pull.json.ops[0].payload.data.title, '雨天');
+}
+
+console.log('sync-route 集成测试: 全部通过（8 组，真实 Route → SyncService → 内存 D1）');
